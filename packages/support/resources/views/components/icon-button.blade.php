@@ -1,15 +1,7 @@
-@php
-    use Filament\Support\Enums\IconSize;
-    use Filament\Support\Enums\Size;
-    use Filament\Support\View\Components\BadgeComponent;
-    use Filament\Support\View\Components\IconButtonComponent;
-    use Illuminate\View\ComponentAttributeBag;
-@endphp
-
 @props([
     'badge' => null,
     'badgeColor' => 'primary',
-    'badgeSize' => Size::ExtraSmall,
+    'badgeSize' => null,
     'color' => 'primary',
     'disabled' => false,
     'form' => null,
@@ -21,7 +13,7 @@
     'keyBindings' => null,
     'label' => null,
     'loadingIndicator' => true,
-    'size' => Size::Medium,
+    'size' => null,
     'spaMode' => null,
     'tag' => 'button',
     'target' => null,
@@ -30,6 +22,18 @@
 ])
 
 @php
+    use Filament\Support\Enums\IconSize;
+    use Filament\Support\Enums\Size;
+    use Filament\Support\View\ComponentAttributeBag as FilamentComponentAttributeBag;
+    use Filament\Support\View\Components\BadgeComponent;
+    use Filament\Support\View\Components\IconButtonComponent;
+    use Illuminate\Contracts\Support\Htmlable;
+    use Illuminate\View\ComponentAttributeBag;
+    use Illuminate\View\ComponentSlot;
+
+    $badgeSize ??= Size::ExtraSmall;
+    $size ??= Size::Medium;
+
     if (! $size instanceof Size) {
         $size = filled($size) ? (Size::tryFrom($size) ?? $size) : null;
     }
@@ -56,7 +60,11 @@
         $loadingIndicatorTarget = html_entity_decode($wireTarget ?: $form, ENT_QUOTES);
     }
 
+    $hasSeparateLoadingIndicatorTarget = $hasLoadingIndicator && $attributes->has('wire:target') && blank($attributes->get('wire:target'));
+
     $hasTooltip = $hasTooltip = filled($tooltip);
+
+    $loadingDelay = config('filament.livewire_loading_delay', 'default');
 @endphp
 
 <{{ $tag }}
@@ -71,18 +79,22 @@
         x-tooltip="{
             content: @js($tooltip),
             theme: $store.theme,
-            allowHTML: @js($tooltip instanceof \Illuminate\Contracts\Support\Htmlable),
+            allowHTML: @js($tooltip instanceof Htmlable),
         }"
     @endif
     {{
         $attributes
             ->merge([
                 'aria-disabled' => $disabled ? 'true' : null,
-                'aria-label' => $label,
+                // Security: These attributes are rendered without escaping, so the `aria-label` must be escaped here, otherwise an `Htmlable` label could break out of the attribute. `doubleEncode: false` preserves entities that Blade has already escaped in a string label.
+                'aria-label' => filled($label) ? e(trim(strip_tags($label instanceof Htmlable ? $label->toHtml() : $label)), doubleEncode: false) : null,
                 'disabled' => $disabled && blank($tooltip),
                 'form' => $formId,
+                'tabindex' => (($tag === 'a') && $disabled && $hasTooltip) ? '0' : null,
                 'type' => $tag === 'button' ? $type : null,
-                'wire:loading.attr' => $tag === 'button' ? 'disabled' : null,
+                'wire:loading.attr' => $tag === 'button' ? 'aria-disabled' : null,
+                'wire:loading.class' => $tag === 'button' ? $attributes->prepends('fi-disabled') : null,
+                'wire:loading.class.delay.' . $loadingDelay => ($hasLoadingIndicator && (! $hasSeparateLoadingIndicatorTarget)) ? $attributes->prepends('fi-loading') : null,
                 'wire:target' => ($hasLoadingIndicator && $loadingIndicatorTarget) ? $loadingIndicatorTarget : null,
             ], escape: false)
             ->merge([
@@ -102,30 +114,25 @@
             ->color(IconButtonComponent::class, $color)
     }}
 >
-    {{
-        \Filament\Support\generate_icon_html($icon, $iconAlias, (new \Illuminate\View\ComponentAttributeBag([
-            'wire:loading.remove.delay.' . config('filament.livewire_loading_delay', 'default') => $hasLoadingIndicator,
-            'wire:target' => $hasLoadingIndicator ? $loadingIndicatorTarget : false,
-        ])), size: $iconSize)
-    }}
-
     @if ($hasLoadingIndicator)
         {{
-            \Filament\Support\generate_loading_indicator_html((new \Illuminate\View\ComponentAttributeBag([
-                'wire:loading.delay.' . config('filament.livewire_loading_delay', 'default') => '',
-                'wire:target' => $loadingIndicatorTarget,
-            ])), size: $iconSize)
+            \Filament\Support\generate_loading_indicator_html(new Filament\Support\View\ComponentAttributeBag([
+                'wire:loading.class.delay.' . $loadingDelay => $hasSeparateLoadingIndicatorTarget ? 'fi-loading' : null,
+                'wire:target' => $hasSeparateLoadingIndicatorTarget ? $loadingIndicatorTarget : null,
+            ]), size: $iconSize)
         }}
     @endif
 
+    {{ \Filament\Support\generate_icon_html($icon, $iconAlias, size: $iconSize) }}
+
     @if (filled($badge))
         <div class="fi-icon-btn-badge-ctn">
-            @if ($badge instanceof \Illuminate\View\ComponentSlot)
+            @if ($badge instanceof ComponentSlot)
                 {{ $badge }}
             @else
                 <span
                     {{
-                        (new ComponentAttributeBag)->color(BadgeComponent::class, $badgeColor)->class([
+                        (new FilamentComponentAttributeBag)->color(BadgeComponent::class, $badgeColor)->class([
                             'fi-badge',
                             ($badgeSize instanceof Size) ? "fi-size-{$badgeSize->value}" : (is_string($badgeSize) ? $badgeSize : ''),
                         ])

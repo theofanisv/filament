@@ -17,7 +17,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use League\Csv\Writer;
-use SplTempFileObject;
+use League\Flysystem\UnableToWriteFile;
 use Throwable;
 
 class ExportCsv implements ShouldQueue
@@ -63,65 +63,79 @@ class ExportCsv implements ShouldQueue
 
     public function handle(): void
     {
+        if ($this->batch()?->cancelled()) {
+            return;
+        }
+
         /** @var Authenticatable $user */
         $user = $this->export->user;
 
         auth()->setUser($user);
 
-        $processedRows = 0;
-        $successfulRows = 0;
+        try {
+            $processedRows = 0;
+            $successfulRows = 0;
 
-        $csv = Writer::from(new SplTempFileObject);
-        $csv->setDelimiter($this->exporter::getCsvDelimiter());
+            $csv = Writer::fromString();
+            $csv->setDelimiter($this->exporter::getCsvDelimiter());
 
-        $query = EloquentSerializeFacade::unserialize($this->query);
+            $query = EloquentSerializeFacade::unserialize($this->query);
 
-        foreach ($this->exporter->getCachedColumns() as $column) {
-            $column->applyRelationshipAggregates($query);
-            $column->applyEagerLoading($query);
-        }
+            // Pagination was already applied when selecting the record keys for this job.
+            $query->getQuery()->limit = null;
+            $query->getQuery()->offset = null;
 
-        foreach ($query->find($this->records) as $record) {
-            try {
-                $csv->insertOne(($this->exporter)($record));
-
-                $successfulRows++;
-            } catch (Throwable $exception) {
-                report($exception);
+            foreach ($this->exporter->getCachedColumns() as $column) {
+                $column->applyRelationshipAggregates($query);
+                $column->applyEagerLoading($query);
             }
 
-            $processedRows++;
+            foreach ($query->find($this->records) as $record) {
+                try {
+                    $csv->insertOne(($this->exporter)($record));
+
+                    $successfulRows++;
+                } catch (Throwable $exception) {
+                    report($exception);
+                }
+
+                $processedRows++;
+            }
+
+            $filePath = $this->export->getFileDirectory() . DIRECTORY_SEPARATOR . str_pad(strval($this->page), 16, '0', STR_PAD_LEFT) . '.csv';
+
+            DB::transaction(function () use ($csv, $filePath, $processedRows, $successfulRows): void {
+                $this->export::query()
+                    ->whereKey($this->export->getKey())
+                    ->lockForUpdate()
+                    ->update([
+                        'processed_rows' => new Expression('processed_rows + ' . $processedRows),
+                        'successful_rows' => new Expression('successful_rows + ' . $successfulRows),
+                    ]);
+
+                $this->export::query()
+                    ->whereKey($this->export->getKey())
+                    ->whereColumn('processed_rows', '>', 'total_rows')
+                    ->lockForUpdate()
+                    ->update([
+                        'processed_rows' => new Expression('total_rows'),
+                    ]);
+
+                $this->export::query()
+                    ->whereKey($this->export->getKey())
+                    ->whereColumn('successful_rows', '>', 'total_rows')
+                    ->lockForUpdate()
+                    ->update([
+                        'successful_rows' => new Expression('total_rows'),
+                    ]);
+
+                if (! $this->export->getFileDisk()->put($filePath, $csv->toString(), Filesystem::VISIBILITY_PRIVATE)) {
+                    throw UnableToWriteFile::atLocation($filePath);
+                }
+            });
+        } finally {
+            auth()->forgetGuards();
         }
-
-        $filePath = $this->export->getFileDirectory() . DIRECTORY_SEPARATOR . str_pad(strval($this->page), 16, '0', STR_PAD_LEFT) . '.csv';
-
-        DB::transaction(function () use ($csv, $filePath, $processedRows, $successfulRows): void {
-            $this->export::query()
-                ->whereKey($this->export->getKey())
-                ->lockForUpdate()
-                ->update([
-                    'processed_rows' => new Expression('processed_rows + ' . $processedRows),
-                    'successful_rows' => new Expression('successful_rows + ' . $successfulRows),
-                ]);
-
-            $this->export::query()
-                ->whereKey($this->export->getKey())
-                ->whereColumn('processed_rows', '>', 'total_rows')
-                ->lockForUpdate()
-                ->update([
-                    'processed_rows' => new Expression('total_rows'),
-                ]);
-
-            $this->export::query()
-                ->whereKey($this->export->getKey())
-                ->whereColumn('successful_rows', '>', 'total_rows')
-                ->lockForUpdate()
-                ->update([
-                    'successful_rows' => new Expression('total_rows'),
-                ]);
-
-            $this->export->getFileDisk()->put($filePath, $csv->toString(), Filesystem::VISIBILITY_PRIVATE);
-        });
     }
 
     public function retryUntil(): ?CarbonInterface

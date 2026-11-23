@@ -62,21 +62,25 @@ class GridAction
                                         endSpan: null,
                                     },
                                     two_start_third: {
+                                        columns: 2,
                                         isAsymmetric: true,
                                         startSpan: 1,
                                         endSpan: 2,
                                     },
                                     two_end_third: {
+                                        columns: 2,
                                         isAsymmetric: true,
                                         startSpan: 2,
                                         endSpan: 1,
                                     },
                                     two_start_fourth: {
+                                        columns: 2,
                                         isAsymmetric: true,
                                         startSpan: 1,
                                         endSpan: 3,
                                     },
                                     two_end_fourth: {
+                                        columns: 2,
                                         isAsymmetric: true,
                                         startSpan: 3,
                                         endSpan: 1,
@@ -97,7 +101,10 @@ class GridAction
                             ->default('lg'),
                         Toggle::make('isAsymmetric')
                             ->label(__('filament-forms::components.rich_editor.actions.grid.modal.form.is_asymmetric.label'))
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->visibleJs(<<<'JS'
+                                Number($get('columns')) === 2
+                            JS),
                         TextInput::make('columns')
                             ->label(__('filament-forms::components.rich_editor.actions.grid.modal.form.columns.label'))
                             ->integer()
@@ -126,7 +133,7 @@ class GridAction
                     ]),
             ])
             ->action(function (array $arguments, array $data, RichEditor $component): void {
-                if ($data['isAsymmetric']) {
+                if ($data['isAsymmetric'] ?? false) {
                     $columns = [(int) ($data['startSpan'] ?? 1), (int) ($data['endSpan'] ?? 1)];
                 } else {
                     $columns = array_fill(0, max(2, (int) ($data['columns'] ?? 2)), 1);

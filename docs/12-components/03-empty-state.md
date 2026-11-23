@@ -2,6 +2,7 @@
 title: Empty State Blade component
 ---
 
+
 ## Introduction
 
 An empty state can be used to communicate that there is no content to display yet, and to guide the user towards the next action. A heading is required:
@@ -13,6 +14,8 @@ An empty state can be used to communicate that there is no content to display ye
     </x-slot>
 </x-filament::empty-state>
 ```
+
+<AutoScreenshot name="components/empty-state/simple" alt="An empty state with icon, description and action button" />
 
 ## Adding a description to the empty state
 
@@ -29,6 +32,8 @@ You can add a description below the heading to the empty state by using the `des
     </x-slot>
 </x-filament::empty-state>
 ```
+
+<AutoScreenshot name="components/empty-state/description" alt="An empty state with a description" />
 
 ## Adding an icon to the empty state
 
@@ -59,6 +64,8 @@ By default, the color of the empty state icon is `primary`. You can change it to
 </x-filament::empty-state>
 ```
 
+<AutoScreenshot name="components/empty-state/icon-color" alt="An empty state with a colored icon" />
+
 ### Changing the size of the empty state icon
 
 By default, the size of the empty state icon is "large". You can change it to be "small" or "medium" by using the `icon-size` attribute:
@@ -83,6 +90,7 @@ By default, the size of the empty state icon is "large". You can change it to be
 </x-filament::empty-state>
 ```
 
+<AutoScreenshot name="components/empty-state/icon-sizes" alt="Empty states with different icon sizes" />
 
 ## Adding footer actions to the empty state
 
@@ -93,7 +101,7 @@ You can add actions below the description by using the `footer` slot. This is us
     <x-slot name="heading">
         No users yet
     </x-slot>
-    
+
     <x-slot name="footer">
         <x-filament::button icon="heroicon-m-plus">
             Create user
@@ -101,3 +109,19 @@ You can add actions below the description by using the `footer` slot. This is us
     </x-slot>
 </x-filament::empty-state>
 ```
+
+<AutoScreenshot name="components/empty-state/actions" alt="An empty state with footer actions" />
+
+## Removing the empty state container
+
+By default, empty states have a background color, shadow and border. You can remove these styles and just render the content of the empty state without the container using the `:contained` attribute:
+
+```blade
+<x-filament::empty-state :contained="false">
+    <x-slot name="heading">
+        No users yet
+    </x-slot>
+</x-filament::empty-state>
+```
+
+<AutoScreenshot name="components/empty-state/not-contained" alt="An empty state without a container" />

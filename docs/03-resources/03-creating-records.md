@@ -2,6 +2,8 @@
 title: Creating records
 ---
 
+<AutoScreenshot name="panels/resources/creating" alt="Resource create page" />
+
 ## Customizing data before saving
 
 Sometimes, you may wish to modify form data before it is finally saved to the database. To do this, you may define a `mutateFormDataBeforeCreate()` method on the Create page class, which accepts the `$data` as an array, and returns the modified version:
@@ -208,6 +210,35 @@ class CreateUser extends CreateRecord
 
 Alternatively, if you're creating records in a modal action, check out the [Actions documentation](../actions/create#lifecycle-hooks).
 
+### Defining lifecycle hooks in traits
+
+To define a lifecycle hook in a trait, suffix the hook name with the trait's name. This follows the `boot{TraitName}()` convention used by Eloquent and the `mount{TraitName}()` convention used by Livewire, allowing reusable traits to hook into the page lifecycle without colliding with hooks defined on the page itself:
+
+```php
+use Filament\Resources\Pages\CreateRecord;
+
+trait HandlesDrafts
+{
+    protected function afterCreateHandlesDrafts(): void
+    {
+        // Runs after the form fields are saved to the database, in addition
+        // to the hook on the page.
+    }
+}
+
+class CreateUser extends CreateRecord
+{
+    use HandlesDrafts;
+
+    protected function afterCreate(): void
+    {
+        // Both lifecycle hooks are called.
+    }
+}
+```
+
+The page's own hook is called first, followed by each trait hook. Hooks from traits used by other traits are also called. Trait hooks are called automatically, so you should not also call them from the page's own hook.
+
 ## Halting the creation process
 
 At any time, you may call `$this->halt()` from inside a lifecycle hook or mutation method, which will halt the entire creation process:
@@ -253,10 +284,11 @@ On the page class, add the corresponding `HasWizard` trait:
 ```php
 use App\Filament\Resources\Categories\CategoryResource;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Resources\Pages\CreateRecord\Concerns\HasWizard;
 
 class CreateCategory extends CreateRecord
 {
-    use CreateRecord\Concerns\HasWizard;
+    use HasWizard;
     
     protected static string $resource = CategoryResource::class;
 
@@ -313,6 +345,8 @@ Alternatively, if you're creating records in a modal action, check out the [Acti
 
 Now, create a new record to see your wizard in action! Edit will still use the form defined within the resource class.
 
+<AutoScreenshot name="panels/resources/creating-wizard" alt="Resource create page with wizard" />
+
 If you'd like to allow free navigation, so all the steps are skippable, override the `hasSkippableSteps()` method:
 
 ```php
@@ -327,7 +361,7 @@ public function hasSkippableSteps(): bool
 If you'd like to reduce the amount of repetition between the resource form and wizard steps, it's a good idea to extract public static form functions for your fields, where you can easily retrieve an instance of a field from the form schema or the wizard:
 
 ```php
-use Filament\Forms;
+use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 
 class CategoryForm
@@ -342,7 +376,7 @@ class CategoryForm
             ]);
     }
     
-    public static function getNameFormField(): Forms\Components\TextInput
+    public static function getNameFormField(): TextInput
     {
         return TextInput::make('name')
             ->required()
@@ -350,7 +384,7 @@ class CategoryForm
             ->afterStateUpdated(fn ($state, callable $set) => $set('slug', Str::slug($state)));
     }
     
-    public static function getSlugFormField(): Forms\Components\TextInput
+    public static function getSlugFormField(): TextInput
     {
         return TextInput::make('slug')
             ->disabled()
@@ -363,10 +397,11 @@ class CategoryForm
 ```php
 use App\Filament\Resources\Categories\Schemas\CategoryForm;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Resources\Pages\CreateRecord\Concerns\HasWizard;
 
 class CreateCategory extends CreateRecord
 {
-    use CreateRecord\Concerns\HasWizard;
+    use HasWizard;
     
     protected static string $resource = CategoryResource::class;
 
@@ -391,14 +426,15 @@ Filament includes an `ImportAction` that you can add to the `getHeaderActions()`
 
 ```php
 use App\Filament\Imports\ProductImporter;
-use Filament\Actions;
+use Filament\Actions\CreateAction;
+use Filament\Actions\ImportAction;
 
 protected function getHeaderActions(): array
 {
     return [
-        Actions\ImportAction::make()
+        ImportAction::make()
             ->importer(ProductImporter::class),
-        Actions\CreateAction::make(),
+        CreateAction::make(),
     ];
 }
 ```
@@ -415,7 +451,7 @@ For example, you may add a new button action in the header of the Create page:
 
 ```php
 use App\Filament\Imports\UserImporter;
-use Filament\Actions;
+use Filament\Actions\ImportAction;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateUser extends CreateRecord
@@ -425,7 +461,7 @@ class CreateUser extends CreateRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\ImportAction::make()
+            ImportAction::make()
                 ->importer(UserImporter::class),
         ];
     }
@@ -482,6 +518,8 @@ protected function getFormActions(): array
 }
 ```
 
+<AutoScreenshot name="panels/resources/creating-header-action" alt="Resource create page with create action in the header" />
+
 ## Custom page content
 
 Each page in Filament has its own [schema](../schemas), which defines the overall structure and content. You can override the schema for the page by defining a `content()` method on it. The `content()` method for the Create page contains the following components by default:
@@ -502,7 +540,7 @@ Inside the `components()` array, you can insert any [schema component](../schema
 
 ### Using a custom Blade view
 
-For further customization opportunities, you can override the static `$view` property on the page class to a custom view in your app:
+For further customization opportunities, you can override the `$view` property on the page class to a custom view in your app:
 
 ```php
 protected string $view = 'filament.resources.users.pages.create-user';

@@ -2,16 +2,20 @@
 
 namespace Filament\Auth\Pages;
 
+use DanHarrin\LivewireRateLimiting\Exceptions\TooManyRequestsException;
+use DanHarrin\LivewireRateLimiting\WithRateLimiting;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Auth\MultiFactor\Contracts\MultiFactorAuthenticationProvider;
 use Filament\Auth\Notifications\NoticeOfEmailChangeRequest;
+use Filament\Auth\Notifications\VerifyEmail;
 use Filament\Auth\Notifications\VerifyEmailChange;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification as FilamentNotification;
 use Filament\Pages\Concerns;
 use Filament\Pages\Page;
+use Filament\Pages\PageConfiguration;
 use Filament\Panel;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
@@ -21,20 +25,27 @@ use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Components\Attributes\Exposed;
+use Filament\Support\Components\Attributes\Unexposed;
 use Filament\Support\Enums\Alignment;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Facades\FilamentView;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Contracts\Translation\HasLocalePreference;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Js;
 use Illuminate\Validation\Rules\Password;
 use League\Uri\Components\Query;
 use LogicException;
+use SensitiveParameter;
 use Throwable;
 
 /**
@@ -45,6 +56,7 @@ class EditProfile extends Page
     use Concerns\CanUseDatabaseTransactions;
     use Concerns\HasMaxWidth;
     use Concerns\HasTopbar;
+    use WithRateLimiting;
 
     /**
      * @var array<string, mixed> | null
@@ -55,41 +67,49 @@ class EditProfile extends Page
 
     protected string $view;
 
+    #[Unexposed]
     public function getLayout(): string
     {
         return static::$layout ?? (static::isSimple() ? 'filament-panels::components.layout.simple' : 'filament-panels::components.layout.index');
     }
 
+    #[Unexposed]
     public static function isSimple(): bool
     {
         return Filament::isProfilePageSimple();
     }
 
+    #[Unexposed]
     public function getView(): string
     {
         return $this->view ?? 'filament-panels::auth.pages.edit-profile';
     }
 
+    #[Unexposed]
     public static function getLabel(): string
     {
         return static::$title ?? __('filament-panels::auth/pages/edit-profile.label');
     }
 
+    #[Unexposed]
     public static function getRelativeRouteName(Panel $panel): string
     {
         return 'profile';
     }
 
+    #[Unexposed]
     public static function isTenantSubscriptionRequired(Panel $panel): bool
     {
         return false;
     }
 
+    #[Unexposed]
     public function mount(): void
     {
         $this->fillForm();
     }
 
+    #[Unexposed]
     public function getUser(): Authenticatable & Model
     {
         $user = Filament::auth()->user();
@@ -114,19 +134,21 @@ class EditProfile extends Page
         $this->callHook('afterFill');
     }
 
-    public static function registerRoutes(Panel $panel): void
+    #[Unexposed]
+    public static function registerRoutes(Panel $panel, ?PageConfiguration $configuration = null): void
     {
         if (filled(static::getCluster())) {
             Route::name(static::prependClusterRouteBaseName($panel, ''))
                 ->prefix(static::prependClusterSlug($panel, ''))
-                ->group(fn () => static::routes($panel));
+                ->group(fn () => static::routes($panel, $configuration));
 
             return;
         }
 
-        static::routes($panel);
+        static::routes($panel, $configuration);
     }
 
+    #[Unexposed]
     public static function getRouteName(?Panel $panel = null): string
     {
         $panel ??= Filament::getCurrentOrDefaultPanel();
@@ -147,13 +169,40 @@ class EditProfile extends Page
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    protected function mutateFormDataBeforeSave(array $data): array
+    protected function mutateFormDataBeforeSave(#[SensitiveParameter] array $data): array
     {
         return $data;
     }
 
+    #[Exposed]
     public function save(): void
     {
+        try {
+            $this->rateLimit(5);
+        } catch (TooManyRequestsException $exception) {
+            $this->getRateLimitedNotification($exception)?->send();
+
+            return;
+        }
+
+        $rateLimitingKey = 'filament:auth:edit_profile:rate_limit:' . Filament::getUserScopedAuthIdentifier();
+
+        if (RateLimiter::tooManyAttempts($rateLimitingKey, maxAttempts: 5)) {
+            $this->getRateLimitedNotification(new TooManyRequestsException(
+                static::class,
+                'save',
+                request()->ip(),
+                RateLimiter::availableIn($rateLimitingKey),
+            ))?->send();
+
+            return;
+        }
+
+        RateLimiter::hit($rateLimitingKey);
+
+        $user = $this->getUser();
+        $emailForVerification = ($user instanceof MustVerifyEmail) ? $user->getEmailForVerification() : null;
+
         try {
             $this->beginDatabaseTransaction();
 
@@ -167,7 +216,7 @@ class EditProfile extends Page
 
             $this->callHook('beforeSave');
 
-            $this->handleRecordUpdate($this->getUser(), $data);
+            $this->handleRecordUpdate($user, $data);
 
             $this->callHook('afterSave');
         } catch (Halt $exception) {
@@ -193,7 +242,24 @@ class EditProfile extends Page
         $this->data['password'] = null;
         $this->data['passwordConfirmation'] = null;
 
+        if (($user instanceof MustVerifyEmail) && ($user->getEmailForVerification() !== $emailForVerification)) {
+            $this->sendEmailVerificationNotification($user);
+        }
+
         $this->getSavedNotification()?->send();
+
+        $panel = Filament::getCurrentOrDefaultPanel();
+
+        if (
+            static::isEmailVerificationRequired($panel) &&
+            ($user instanceof MustVerifyEmail) &&
+            (! $user->hasVerifiedEmail()) &&
+            filled($emailVerificationPromptUrl = $panel->getEmailVerificationPromptUrl())
+        ) {
+            $this->redirect($emailVerificationPromptUrl, navigate: FilamentView::hasSpaMode($emailVerificationPromptUrl));
+
+            return;
+        }
 
         if ($redirectUrl = $this->getRedirectUrl()) {
             $this->redirect($redirectUrl, navigate: FilamentView::hasSpaMode($redirectUrl));
@@ -203,7 +269,7 @@ class EditProfile extends Page
     /**
      * @param  array<string, mixed>  $data
      */
-    protected function handleRecordUpdate(Model $record, array $data): Model
+    protected function handleRecordUpdate(Model $record, #[SensitiveParameter] array $data): Model
     {
         if (Filament::hasEmailChangeVerification() && array_key_exists('email', $data)) {
             $this->sendEmailChangeVerification($record, $data['email']);
@@ -211,9 +277,63 @@ class EditProfile extends Page
             unset($data['email']);
         }
 
-        $record->update($data);
+        $record->fill($data);
+
+        $shouldInvalidateEmailVerification = ($record instanceof MustVerifyEmail) && $record->isDirty('email');
+        $originalEmailVerifiedAt = $record->getOriginal('email_verified_at');
+
+        if ($shouldInvalidateEmailVerification) {
+            $record->setAttribute('email_verified_at', null);
+        }
+
+        if (! $record->save()) {
+            $record->refresh();
+
+            throw (new Halt)->rollBackDatabaseTransaction();
+        }
+
+        if (
+            $shouldInvalidateEmailVerification &&
+            (! $record->wasChanged('email')) &&
+            ($originalEmailVerifiedAt !== null) &&
+            ($record->getAttributeValue('email_verified_at') === null)
+        ) {
+            $record->newModelQuery()
+                ->whereKey($record->getKey())
+                ->where('email', $record->getAttributeValue('email'))
+                ->whereNull('email_verified_at')
+                ->update(['email_verified_at' => $originalEmailVerifiedAt]);
+
+            $record->refresh();
+        }
 
         return $record;
+    }
+
+    protected function sendEmailVerificationNotification(Model $record): void
+    {
+        if (! Filament::hasEmailVerification()) {
+            return;
+        }
+
+        if (! $record instanceof MustVerifyEmail) {
+            return;
+        }
+
+        if ($record->hasVerifiedEmail()) {
+            return;
+        }
+
+        if (! method_exists($record, 'notify')) {
+            $recordClass = $record::class;
+
+            throw new LogicException("Model [{$recordClass}] does not have a [notify()] method.");
+        }
+
+        $notification = app(VerifyEmail::class);
+        $notification->url = Filament::getVerifyEmailUrl($record);
+
+        $record->notify($notification);
     }
 
     protected function sendEmailChangeVerification(Model $record, string $newEmail): void
@@ -225,21 +345,61 @@ class EditProfile extends Page
         $notification = app(VerifyEmailChange::class);
         $notification->url = Filament::getVerifyEmailChangeUrl($record, $newEmail);
 
-        $verificationSignature = Query::new($notification->url)->get('signature');
+        $verificationQuery = Query::fromUri($notification->url);
+        $verificationSignature = $verificationQuery->get('signature');
 
-        cache()->put($verificationSignature, true, ttl: now()->addHour());
+        cache()->put(
+            "filament:auth:email_change:verification:{$verificationSignature}",
+            true,
+            ttl: Carbon::createFromTimestamp((int) $verificationQuery->get('expires')),
+        );
 
-        $record->notify(app(NoticeOfEmailChangeRequest::class, [/** @phpstan-ignore-line */
+        $notice = app(NoticeOfEmailChangeRequest::class, [/** @phpstan-ignore-line */
             'blockVerificationUrl' => Filament::getBlockEmailChangeVerificationUrl($record, $newEmail, $verificationSignature),
             'newEmail' => $newEmail,
-        ]));
+        ]);
 
-        Notification::route('mail', $newEmail)
+        if ($record instanceof HasLocalePreference) {
+            $notice->locale($record->preferredLocale());
+        }
+
+        Notification::route('mail', method_exists($record, 'routeNotificationFor') ? $record->routeNotificationFor('mail', $notice) : $record->getAttributeValue('email'))
+            ->notify($notice);
+
+        $newEmailRecipient = $this->getEmailChangeVerificationRecipientWithNewEmail($record, $notification, $newEmail);
+
+        if ($record instanceof HasLocalePreference) {
+            $notification->locale($record->preferredLocale());
+        }
+
+        Notification::route('mail', $newEmailRecipient)
             ->notify($notification);
 
         $this->getEmailChangeVerificationSentNotification($newEmail)?->send();
 
         $this->data['email'] = $record->getAttributeValue('email');
+    }
+
+    /**
+     * @return string | array<string, string>
+     */
+    protected function getEmailChangeVerificationRecipientWithNewEmail(Model $record, VerifyEmailChange $notification, string $newEmail): string | array
+    {
+        if (! method_exists($record, 'routeNotificationForMail')) {
+            return $newEmail;
+        }
+
+        $recipient = $record->routeNotificationForMail($notification);
+        $currentEmail = $record->getAttributeValue('email');
+
+        if (
+            (! is_array($recipient))
+            || (! array_key_exists($currentEmail ?? '', $recipient))
+        ) {
+            return $newEmail;
+        }
+
+        return [$newEmail => $recipient[$currentEmail]];
     }
 
     protected function getSavedNotification(): ?FilamentNotification
@@ -268,6 +428,20 @@ class EditProfile extends Page
         return __('filament-panels::auth/pages/edit-profile.notifications.saved.title');
     }
 
+    protected function getRateLimitedNotification(TooManyRequestsException $exception): ?FilamentNotification
+    {
+        return FilamentNotification::make()
+            ->title(__('filament-panels::auth/pages/edit-profile.notifications.throttled.title', [
+                'seconds' => $exception->secondsUntilAvailable,
+                'minutes' => $exception->minutesUntilAvailable,
+            ]))
+            ->body(array_key_exists('body', __('filament-panels::auth/pages/edit-profile.notifications.throttled') ?: []) ? __('filament-panels::auth/pages/edit-profile.notifications.throttled.body', [
+                'seconds' => $exception->secondsUntilAvailable,
+                'minutes' => $exception->minutesUntilAvailable,
+            ]) : null)
+            ->danger();
+    }
+
     protected function getRedirectUrl(): ?string
     {
         return null;
@@ -287,6 +461,7 @@ class EditProfile extends Page
         return TextInput::make('email')
             ->label(__('filament-panels::auth/pages/edit-profile.form.email.label'))
             ->email()
+            ->notRegex('/[<>]/')
             ->required()
             ->maxLength(255)
             ->unique(ignoreRecord: true)
@@ -303,8 +478,8 @@ class EditProfile extends Page
             ->rule(Password::default())
             ->showAllValidationMessages()
             ->autocomplete('new-password')
-            ->dehydrated(fn ($state): bool => filled($state))
-            ->dehydrateStateUsing(fn ($state): string => Hash::make($state))
+            ->dehydrated(fn (#[SensitiveParameter] $state): bool => filled($state))
+            ->dehydrateStateUsing(fn (#[SensitiveParameter] $state): string => Hash::make($state))
             ->live(debounce: 500)
             ->same('passwordConfirmation');
     }
@@ -337,6 +512,7 @@ class EditProfile extends Page
             ->dehydrated(false);
     }
 
+    #[Unexposed]
     public function defaultForm(Schema $schema): Schema
     {
         return $schema
@@ -346,6 +522,7 @@ class EditProfile extends Page
             ->statePath('data');
     }
 
+    #[Unexposed]
     public function form(Schema $schema): Schema
     {
         return $schema
@@ -387,21 +564,25 @@ class EditProfile extends Page
         return false;
     }
 
+    #[Unexposed]
     public function getFormActionsAlignment(): string | Alignment
     {
         return Alignment::Start;
     }
 
+    #[Unexposed]
     public function getTitle(): string | Htmlable
     {
         return static::getLabel();
     }
 
+    #[Unexposed]
     public static function getSlug(?Panel $panel = null): string
     {
         return static::$slug ?? 'profile';
     }
 
+    #[Unexposed]
     public function hasLogo(): bool
     {
         return false;
@@ -410,6 +591,7 @@ class EditProfile extends Page
     /**
      * @deprecated Use `getCancelFormAction()` instead.
      */
+    #[Unexposed]
     public function backAction(): Action
     {
         $url = filament()->getUrl();
@@ -433,6 +615,7 @@ class EditProfile extends Page
         ];
     }
 
+    #[Unexposed]
     public function content(Schema $schema): Schema
     {
         return $schema
@@ -442,6 +625,7 @@ class EditProfile extends Page
             ]);
     }
 
+    #[Unexposed]
     public function getFormContentComponent(): Component
     {
         return Form::make([EmbeddedSchema::make('form')])
@@ -456,6 +640,7 @@ class EditProfile extends Page
             ]);
     }
 
+    #[Unexposed]
     public function getMultiFactorAuthenticationContentComponent(): ?Component
     {
         if (! Filament::hasMultiFactorAuthentication()) {

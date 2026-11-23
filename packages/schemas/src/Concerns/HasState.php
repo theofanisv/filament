@@ -5,16 +5,20 @@ namespace Filament\Schemas\Concerns;
 use Closure;
 use Filament\Infolists\Components\Entry;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Schema;
 use Filament\Support\Livewire\Partials\PartialsComponentHook;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Arr;
 use LogicException;
+use WeakMap;
 
 trait HasState
 {
     protected ?string $statePath = null;
 
     protected string $cachedAbsoluteStatePath;
+
+    protected bool $shouldLoadStateFromRelationshipsWhenHydratingPartially = true;
 
     /**
      * @var array<string, mixed> | object | null
@@ -24,9 +28,19 @@ trait HasState
     protected bool | Closure $shouldPartiallyRender = false;
 
     /**
-     * @var array<string, bool> | null
+     * @var array<string, bool>
      */
-    protected ?array $dehydratedComponentsCache = null;
+    protected array $dehydratedComponentsCache = [];
+
+    /**
+     * @var WeakMap<Component, bool> | null
+     */
+    protected ?WeakMap $cachedComponentDehydrationDecisions = null;
+
+    /**
+     * @var WeakMap<Component, array<Schema>> | null
+     */
+    protected ?WeakMap $cachedChildSchemasForStatePathSearch = null;
 
     /**
      * @param  array<string, mixed> | object | null  $state
@@ -143,14 +157,14 @@ trait HasState
     public function callBeforeStateDehydrated(array &$state = []): void
     {
         foreach ($this->getComponents(withActions: false, withHidden: true) as $component) {
-            if ($component->isHidden()) {
+            if ($component->isHiddenAndNotDehydratedWhenHidden()) {
                 continue;
             }
 
             $component->callBeforeStateDehydrated($state);
 
-            foreach ($component->getChildSchemas() as $childSchema) {
-                if ($childSchema->isHidden()) {
+            foreach ($component->getChildSchemas(withHidden: true) as $childSchema) {
+                if ($childSchema->isHiddenAndNotDehydratedWhenHidden()) {
                     continue;
                 }
 
@@ -160,39 +174,106 @@ trait HasState
     }
 
     /**
-     * @return array<string, bool>
+     * Only components on the branch of the `statePath` are visited: a
+     * component whose own `statePath` is not a prefix of it cannot contain it.
+     *
+     * @param  array<string>  $ancestorStatePaths
+     * @param  WeakMap<Component, bool>  $componentDehydrationDecisions
      */
-    protected function buildDehydratedComponentsCache(): array
+    protected function searchDehydratedComponent(string $statePath, array $ancestorStatePaths, WeakMap $componentDehydrationDecisions): bool
     {
-        $cache = [];
+        $schemaStatePath = $this->getStatePath();
 
-        foreach ($this->getComponents(withActions: false, withHidden: true) as $component) {
-            if (! $component->isDehydrated()) {
-                continue;
-            }
+        if (filled($schemaStatePath) && ($schemaStatePath !== $statePath) && (! str_starts_with($statePath, "{$schemaStatePath}."))) {
+            return false;
+        }
 
-            if ($component->hasStatePath()) {
-                $cache[$component->getStatePath()] = true;
-            }
+        $index = $this->getComponentsIndexedByStatePath();
 
-            foreach ($component->getChildSchemas(withHidden: true) as $childSchema) {
-                $cache = [
-                    ...$cache,
-                    ...$childSchema->buildDehydratedComponentsCache(),
-                ];
+        foreach ($index['withStatePath'][$statePath] ?? [] as $component) {
+            if ($componentDehydrationDecisions[$component] ??= $component->isDehydrated()) {
+                return true;
             }
         }
 
-        return $cache;
+        $branchComponents = $index['withoutStatePath'];
+
+        foreach ($ancestorStatePaths as $ancestorStatePath) {
+            array_push($branchComponents, ...($index['withStatePath'][$ancestorStatePath] ?? []));
+        }
+
+        foreach ($branchComponents as $component) {
+            if (! ($componentDehydrationDecisions[$component] ??= $component->isDehydrated())) {
+                continue;
+            }
+
+            foreach ($this->getChildSchemasForStatePathSearch($component) as $childSchema) {
+                if ($childSchema->searchDehydratedComponent($statePath, $ancestorStatePaths, $componentDehydrationDecisions)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array{withStatePath: array<string, array<Component>>, withoutStatePath: array<Component>}
+     */
+    protected function getComponentsIndexedByStatePath(): array
+    {
+        if ($this->cachedComponentsIndexedByStatePath !== null) {
+            return $this->cachedComponentsIndexedByStatePath;
+        }
+
+        $index = ['withStatePath' => [], 'withoutStatePath' => []];
+
+        foreach ($this->getComponents(withActions: false, withHidden: true) as $component) {
+            if ($component->hasStatePath()) {
+                $index['withStatePath'][$component->getStatePath()][] = $component;
+            } else {
+                $index['withoutStatePath'][] = $component;
+            }
+        }
+
+        return $this->cachedComponentsIndexedByStatePath = $index;
     }
 
     public function hasDehydratedComponent(string $statePath): bool
     {
-        if ($this->dehydratedComponentsCache === null) {
-            $this->dehydratedComponentsCache = $this->buildDehydratedComponentsCache();
+        if (array_key_exists($statePath, $this->dehydratedComponentsCache)) {
+            return $this->dehydratedComponentsCache[$statePath];
         }
 
-        return $this->dehydratedComponentsCache[$statePath] ?? false;
+        $ancestorStatePaths = [];
+        $ancestorStatePath = $statePath;
+
+        while (($separatorPosition = strrpos($ancestorStatePath, '.')) !== false) {
+            $ancestorStatePath = substr($ancestorStatePath, 0, $separatorPosition);
+            $ancestorStatePaths[] = $ancestorStatePath;
+        }
+
+        return $this->dehydratedComponentsCache[$statePath] = $this->searchDehydratedComponent(
+            $statePath,
+            $ancestorStatePaths,
+            $this->cachedComponentDehydrationDecisions ??= new WeakMap,
+        );
+    }
+
+    /**
+     * @internal Do not use this method outside the internals of Filament. It is subject to breaking changes in minor and patch releases.
+     *
+     * @return array<Schema>
+     */
+    public function getChildSchemasForStatePathSearch(Component $component): array
+    {
+        $rootContainer = $this->getParentComponent()?->getRootContainer() ?? $this;
+
+        if ($rootContainer->cachedChildSchemasForStatePathSearch === null) {
+            return $component->getChildSchemas(withHidden: true);
+        }
+
+        return $rootContainer->cachedChildSchemasForStatePathSearch[$component] ??= $component->getChildSchemas(withHidden: true);
     }
 
     /**
@@ -201,11 +282,28 @@ trait HasState
      */
     public function dehydrateState(array &$state = [], bool $isDehydrated = true): array
     {
-        foreach ($this->getComponents(withActions: false, withHidden: true) as $component) {
-            $component->dehydrateState($state, $isDehydrated);
+        $rootContainer = $this->getParentComponent()?->getRootContainer() ?? $this;
+        $isStartingDehydration = $rootContainer->cachedChildSchemasForStatePathSearch === null;
+
+        if ($isStartingDehydration) {
+            $rootContainer->cachedChildSchemasForStatePathSearch = new WeakMap;
+            $rootContainer->dehydratedComponentsCache = [];
+            $rootContainer->cachedComponentDehydrationDecisions = null;
         }
 
-        return $state;
+        try {
+            foreach ($this->getComponents(withActions: false, withHidden: true) as $component) {
+                $component->dehydrateState($state, $isDehydrated);
+            }
+
+            return $state;
+        } finally {
+            if ($isStartingDehydration) {
+                $rootContainer->cachedChildSchemasForStatePathSearch = null;
+                $rootContainer->dehydratedComponentsCache = [];
+                $rootContainer->cachedComponentDehydrationDecisions = null;
+            }
+        }
     }
 
     /**
@@ -219,8 +317,8 @@ trait HasState
                 continue;
             }
 
-            foreach ($component->getChildSchemas() as $childSchema) {
-                if ($childSchema->isHidden()) {
+            foreach ($component->getChildSchemas(withHidden: true) as $childSchema) {
+                if ($childSchema->isHiddenAndNotDehydratedWhenHidden()) {
                     continue;
                 }
 
@@ -256,8 +354,8 @@ trait HasState
                 continue;
             }
 
-            foreach ($component->getChildSchemas() as $childSchema) {
-                if ($childSchema->isHidden()) {
+            foreach ($component->getChildSchemas(withHidden: true) as $childSchema) {
+                if ($childSchema->isHiddenAndNotDehydratedWhenHidden()) {
                     continue;
                 }
 
@@ -285,9 +383,40 @@ trait HasState
     }
 
     /**
-     * @param  array<string, mixed> | null  $state
+     * Takes the raw Livewire state and prunes it to only contain keys
+     * present in the template array. This preserves the sparse structure
+     * of validated data while using clean (unmutated) values from Livewire.
+     *
+     * @param  array<string, mixed>  $source
+     * @param  array<string, mixed>  $template
+     * @return array<string, mixed>
      */
-    public function fill(?array $state = null, bool $shouldCallHydrationHooks = true, bool $shouldFillStateWithNull = true): static
+    protected function pruneStateToMatchKeys(array $source, array $template): array
+    {
+        $result = [];
+
+        foreach ($template as $key => $templateValue) {
+            if (! array_key_exists($key, $source)) {
+                $result[$key] = $templateValue;
+
+                continue;
+            }
+
+            if (is_array($templateValue) && is_array($source[$key])) {
+                $result[$key] = $this->pruneStateToMatchKeys($source[$key], $templateValue);
+            } else {
+                $result[$key] = $source[$key];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed> | null  $state
+     * @param  array<string, true>  $appliedStateCastPaths
+     */
+    public function fill(?array $state = null, bool $shouldCallHydrationHooks = true, bool $shouldFillStateWithNull = true, bool $shouldApplyStateCasts = true, array &$appliedStateCastPaths = []): static
     {
         $hydratedDefaultState = null;
 
@@ -297,7 +426,7 @@ trait HasState
             $this->rawState($state);
         }
 
-        $this->hydrateState($hydratedDefaultState, $shouldCallHydrationHooks);
+        $this->hydrateState($hydratedDefaultState, $shouldCallHydrationHooks, $shouldApplyStateCasts, $appliedStateCastPaths);
 
         if ($shouldFillStateWithNull) {
             $this->fillStateWithNull();
@@ -312,7 +441,21 @@ trait HasState
      */
     public function fillPartially(array $state, array $statePaths, bool $shouldCallHydrationHooks = true, bool $shouldFillStateWithNull = true): static
     {
-        $this->partialRawState(collect($state)->dot()->only($statePaths)->all());
+        $partialState = [];
+
+        foreach ($statePaths as $statePath) {
+            if (array_key_exists($statePath, $state)) {
+                $partialState[$statePath] = $state[$statePath];
+
+                continue;
+            }
+
+            if (Arr::has($state, $statePath)) {
+                $partialState[$statePath] = data_get($state, $statePath);
+            }
+        }
+
+        $this->partialRawState($partialState);
 
         if ($schemaStatePath = $this->getStatePath()) {
             $statePaths = array_map(
@@ -334,16 +477,36 @@ trait HasState
     }
 
     /**
-     * @param  array<string, mixed> | null  $hydratedDefaultState
+     * @internal Do not use this method outside the internals of Filament. It is subject to breaking changes in minor and patch releases.
+     *
+     * @param  array<string, mixed>  $state
+     * @param  array<string>  $statePaths
      */
-    public function hydrateState(?array &$hydratedDefaultState, bool $shouldCallHydrationHooks = true): void
+    public function fillPartiallyWithoutLoadingStateFromRelationships(array $state, array $statePaths, bool $shouldCallHydrationHooks = true, bool $shouldFillStateWithNull = true): static
+    {
+        $shouldLoadStateFromRelationships = $this->shouldLoadStateFromRelationshipsWhenHydratingPartially;
+
+        $this->shouldLoadStateFromRelationshipsWhenHydratingPartially = false;
+
+        try {
+            return $this->fillPartially($state, $statePaths, $shouldCallHydrationHooks, $shouldFillStateWithNull);
+        } finally {
+            $this->shouldLoadStateFromRelationshipsWhenHydratingPartially = $shouldLoadStateFromRelationships;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed> | null  $hydratedDefaultState
+     * @param  array<string, true>  $appliedStateCastPaths
+     */
+    public function hydrateState(?array &$hydratedDefaultState, bool $shouldCallHydrationHooks = true, bool $shouldApplyStateCasts = true, array &$appliedStateCastPaths = []): void
     {
         foreach ($this->getComponents(withActions: false, withHidden: true) as $component) {
             if ($component instanceof Entry) {
                 continue;
             }
 
-            $component->hydrateState($hydratedDefaultState, $shouldCallHydrationHooks);
+            $component->hydrateState($hydratedDefaultState, $shouldCallHydrationHooks, $shouldApplyStateCasts, $appliedStateCastPaths);
         }
     }
 
@@ -359,6 +522,15 @@ trait HasState
 
             $component->hydrateStatePartially($statePaths, $shouldCallHydrationHooks);
         }
+    }
+
+    /**
+     * @internal Do not use this method outside the internals of Filament. It is subject to breaking changes in minor and patch releases.
+     */
+    public function shouldLoadStateFromRelationshipsWhenHydratingPartially(): bool
+    {
+        return $this->shouldLoadStateFromRelationshipsWhenHydratingPartially &&
+            ($this->getParentComponent()?->getContainer()->shouldLoadStateFromRelationshipsWhenHydratingPartially() ?? true);
     }
 
     public function fillStateWithNull(): void
@@ -382,7 +554,7 @@ trait HasState
      */
     public function getConstantState(): array | object
     {
-        return $this->constantState
+        return $this->evaluate($this->constantState)
             ?? $this->getRecord(withParentComponentRecord: false)
             ?? $this->getParentComponent()?->getContainer()->getConstantState()
             ?? $this->getRecord()
@@ -403,7 +575,7 @@ trait HasState
         }
 
         if ($this->getParentComponent()?->getContainer()->getConstantState() !== null) {
-            return $this->getParentComponent()->getContainer()->getStatePath();
+            return $this->getParentComponent()->getContainer()->getConstantStatePath();
         }
 
         return $this->getParentComponent()?->getRecordConstantStatePath();
@@ -417,11 +589,47 @@ trait HasState
         return Component::withVisibilityCache(function () use ($shouldCallHooksBefore, $afterValidate): array {
             $state = $this->validate();
 
+            if ($this->isRoot() && $this->isDisabled()) {
+                value($afterValidate, []);
+
+                return [];
+            }
+
+            // `validate()` returns data that went through `prepareForValidation()`,
+            // which applies `mutateStateForValidation()` mutations. Those mutations
+            // should only affect validation rules, not the dehydrated output. Replace
+            // the mutated values with clean Livewire data, preserving the validated
+            // array's sparse key structure.
+            $statePath = $this->getStatePath();
+            $livewire = $this->getLivewire();
+
+            if (filled($statePath)) {
+                $rawState = data_get($livewire, $statePath);
+
+                if (is_array($rawState)) {
+                    $validatedFormData = data_get($state, $statePath);
+
+                    if (is_array($validatedFormData)) {
+                        data_set($state, $statePath, $this->pruneStateToMatchKeys($rawState, $validatedFormData));
+                    }
+                }
+            } else {
+                $rawState = [];
+
+                foreach (array_keys($state) as $key) {
+                    $rawState[$key] = data_get($livewire, $key);
+                }
+
+                $state = $this->pruneStateToMatchKeys($rawState, $state);
+            }
+
             if ($shouldCallHooksBefore) {
                 $this->callBeforeStateDehydrated($state);
 
-                $afterValidate || $this->saveRelationships();
-                $afterValidate || $this->loadStateFromRelationships(shouldHydrate: true);
+                if ((! $afterValidate) && (! $this->isDisabled())) {
+                    $this->saveRelationships();
+                    $this->loadStateFromRelationships(shouldHydrate: true);
+                }
             }
 
             $this->dehydrateState($state);
@@ -434,8 +642,10 @@ trait HasState
             if ($afterValidate) {
                 value($afterValidate, $state);
 
-                $shouldCallHooksBefore && $this->saveRelationships();
-                $shouldCallHooksBefore && $this->loadStateFromRelationships(shouldHydrate: true);
+                if ($shouldCallHooksBefore && (! $this->isDisabled())) {
+                    $this->saveRelationships();
+                    $this->loadStateFromRelationships(shouldHydrate: true);
+                }
             }
 
             return $state;
@@ -499,7 +709,8 @@ trait HasState
     public function getStatePath(bool $isAbsolute = true): ?string
     {
         if (! $isAbsolute) {
-            return $this->statePath;
+            // Security: Strip characters that could break out of a quoted HTML attribute or a JS string, so every downstream sink that embeds the state path raw is safe without per-sink escaping. Client-influenced repeater item keys flow in here, and legitimate state paths never contain these characters.
+            return ($this->statePath === null) ? null : preg_replace('/[<>"\'`\x00-\x1F\x7F]/', '', $this->statePath);
         }
 
         if (isset($this->cachedAbsoluteStatePath)) {
@@ -512,8 +723,8 @@ trait HasState
             $pathComponents[] = $parentComponentStatePath;
         }
 
-        if (filled($statePath = $this->statePath)) {
-            $pathComponents[] = $statePath;
+        if (filled($this->statePath)) {
+            $pathComponents[] = $this->getStatePath(isAbsolute: false);
         }
 
         return $this->cachedAbsoluteStatePath = implode('.', $pathComponents);
@@ -523,6 +734,7 @@ trait HasState
     {
         /** @phpstan-ignore unset.possiblyHookedProperty */
         unset($this->cachedAbsoluteStatePath);
+        $this->cachedComponentsIndexedByStatePath = null;
     }
 
     public function flushCachedAbsoluteStatePaths(): void

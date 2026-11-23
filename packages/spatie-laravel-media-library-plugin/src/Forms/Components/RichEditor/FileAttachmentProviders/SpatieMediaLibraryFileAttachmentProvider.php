@@ -6,22 +6,24 @@ use Closure;
 use Filament\Forms\Components\RichEditor\FileAttachmentProviders\Contracts\FileAttachmentProvider;
 use Filament\Forms\Components\RichEditor\RichContentAttribute;
 use Filament\Support\Concerns\EvaluatesClosures;
-use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use LogicException;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Collections\MediaCollection;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Throwable;
 
 class SpatieMediaLibraryFileAttachmentProvider implements FileAttachmentProvider
 {
     use EvaluatesClosures;
 
-    protected MediaCollection $media;
+    protected ?MediaCollection $media = null;
 
     protected RichContentAttribute $attribute;
 
     protected ?string $collection = null;
+
+    protected string | Closure | null $conversion = null;
 
     protected bool | Closure $shouldPreserveFilenames = false;
 
@@ -40,6 +42,13 @@ class SpatieMediaLibraryFileAttachmentProvider implements FileAttachmentProvider
     public function collection(?string $collection): static
     {
         $this->collection = $collection;
+
+        return $this;
+    }
+
+    public function conversion(string | Closure | null $conversion): static
+    {
+        $this->conversion = $conversion;
 
         return $this;
     }
@@ -92,12 +101,12 @@ class SpatieMediaLibraryFileAttachmentProvider implements FileAttachmentProvider
 
     public function getMedia(): ?MediaCollection
     {
-        if (isset($this->media)) {
+        if ($this->media) {
             return $this->media;
         }
 
-        /** @var MediaCollection $media */
-        $media = $this->getExistingModel()?->getMedia($this->getCollection())->keyBy('uuid');
+        /** @var ?MediaCollection $media */
+        $media = $this->getExistingModel()?->getMedia($this->getCollection())->keyBy(static fn (Media $media): string => strtolower($media->uuid));
 
         return $this->media = $media;
     }
@@ -106,39 +115,47 @@ class SpatieMediaLibraryFileAttachmentProvider implements FileAttachmentProvider
     {
         $media = $this->getMedia();
 
-        if (! $media) {
+        if ((! $media) || (! is_string($file))) {
             return null;
         }
+
+        $file = strtolower($file);
 
         if (! $media->has($file)) {
             return null;
         }
 
         $fileAttachment = $media->get($file);
+        $conversion = $this->getConversion();
+
+        if (blank($conversion) || (! $fileAttachment->hasGeneratedConversion($conversion))) {
+            $conversion = '';
+        }
 
         if ($this->attribute->getFileAttachmentsVisibility() === 'private') {
             try {
                 return $fileAttachment->getTemporaryUrl(
-                    now()->addMinutes(30)->endOfHour(),
+                    now()->addMinutes(config('filament.temporary_file_url_expiry_minutes', 30))->endOfHour(),
+                    $conversion,
                 );
             } catch (Throwable $exception) {
                 // This driver does not support creating temporary URLs.
             }
         }
 
-        return $fileAttachment->getUrl();
+        return $fileAttachment->getUrl($conversion);
     }
 
     public function saveUploadedFileAttachment(TemporaryUploadedFile $file): mixed
     {
-        $media = $this->getExistingModel() /** @phpstan-ignore method.notFound */
-            ->addMediaFromString($file->get())
-            ->usingFileName($this->shouldPreserveFilenames() ? $file->getClientOriginalName() : (Str::ulid() . '.' . $file->getClientOriginalExtension()))
+        $media = $this->getExistingModel()
+            ->addMediaFromString($file->get()) /** @phpstan-ignore method.notFound */
+            ->usingFileName($this->shouldPreserveFilenames() ? $file->getClientOriginalName() : $file->hashName())
             ->usingName($this->getMediaName($file) ?? pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME))
             ->withCustomProperties($this->getCustomProperties())
             ->toMediaCollection($this->getCollection(), diskName: $this->attribute->getFileAttachmentsDiskName() ?? '');
 
-        $this->getMedia()->put($media->uuid, $media);
+        $this->getMedia()->put(strtolower($media->uuid), $media);
 
         return $media->uuid;
     }
@@ -150,10 +167,11 @@ class SpatieMediaLibraryFileAttachmentProvider implements FileAttachmentProvider
     {
         $model = $this->getExistingModel();
         $collectionName = $this->getCollection();
+        $exceptIds = array_map(strtolower(...), $exceptIds);
 
         $model->clearMediaCollectionExcept(
             $collectionName,
-            $model->getMedia($collectionName)->whereIn('uuid', $exceptIds),
+            $model->getMedia($collectionName)->filter(static fn (Media $media): bool => in_array(strtolower($media->uuid), $exceptIds, strict: true)),
         );
     }
 
@@ -170,6 +188,11 @@ class SpatieMediaLibraryFileAttachmentProvider implements FileAttachmentProvider
     public function getCollection(): string
     {
         return $this->collection ?? $this->attribute->getName();
+    }
+
+    public function getConversion(): ?string
+    {
+        return $this->evaluate($this->conversion);
     }
 
     public function shouldPreserveFilenames(): bool

@@ -6,6 +6,7 @@ use Closure;
 use Filament\Support\Concerns\HasMediaFilter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use League\Flysystem\UnableToCheckFileExistence;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Spatie\MediaLibrary\HasMedia;
@@ -22,7 +23,7 @@ class SpatieMediaLibraryFileUpload extends FileUpload
 
     protected string | Closure | null $conversion = null;
 
-    protected string | Closure | null $conversionsDisk = null;
+    protected string | Closure | null $conversionsDiskName = null;
 
     protected bool | Closure $hasResponsiveImages = false;
 
@@ -51,6 +52,8 @@ class SpatieMediaLibraryFileUpload extends FileUpload
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->preventFilePathTampering(false);
 
         $this->loadStateFromRelationshipsUsing(static function (SpatieMediaLibraryFileUpload $component, HasMedia $record): void {
             /** @var Model&HasMedia $record */
@@ -85,7 +88,7 @@ class SpatieMediaLibraryFileUpload extends FileUpload
             }
 
             /** @var ?Media $media */
-            $media = $component->getRecord()->getRelationValue('media')->firstWhere('uuid', $file);
+            $media = $component->getRecord()->getRelationValue('media')->first(static fn (Media $media): bool => strtolower($media->uuid) === strtolower($file));
 
             $url = null;
 
@@ -94,7 +97,7 @@ class SpatieMediaLibraryFileUpload extends FileUpload
 
                 try {
                     $url = $media?->getTemporaryUrl(
-                        now()->addMinutes(30)->endOfHour(),
+                        now()->addMinutes(config('filament.temporary_file_url_expiry_minutes', 30))->endOfHour(),
                         (filled($conversion) && $media->hasGeneratedConversion($conversion)) ? $conversion : '',
                     );
                 } catch (Throwable $exception) {
@@ -112,7 +115,7 @@ class SpatieMediaLibraryFileUpload extends FileUpload
                 'name' => $media?->getAttributeValue('name') ?? $media?->getAttributeValue('file_name'),
                 'size' => $media?->getAttributeValue('size'),
                 'type' => $media?->getAttributeValue('mime_type'),
-                'url' => $url,
+                'url' => Str::sanitizeUrl($url),
             ];
         });
 
@@ -143,7 +146,7 @@ class SpatieMediaLibraryFileUpload extends FileUpload
                 ->addCustomHeaders([...['ContentType' => $file->getMimeType()], ...$component->getCustomHeaders()])
                 ->usingFileName($filename)
                 ->usingName($component->getMediaName($file) ?? pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME))
-                ->storingConversionsOnDisk($component->getConversionsDisk() ?? '')
+                ->storingConversionsOnDisk($component->getConversionsDiskName() ?? '')
                 ->withCustomProperties($component->getCustomProperties($file))
                 ->withManipulations($component->getManipulations())
                 ->withResponsiveImagesIf($component->hasResponsiveImages())
@@ -154,17 +157,41 @@ class SpatieMediaLibraryFileUpload extends FileUpload
         });
 
         $this->reorderUploadedFilesUsing(static function (SpatieMediaLibraryFileUpload $component, ?Model $record, array $rawState): array {
-            $uuids = array_filter(array_keys($rawState));
+            $uuids = array_map(strtolower(...), array_filter(array_keys($rawState)));
+
+            $collectionName = $component->getCollection() ?? 'default';
+
+            $recordMediaUuids = $record?->getRelationValue('media')
+                ?->where('collection_name', $collectionName)
+                ?->pluck('uuid')
+                ?->mapWithKeys(static fn (string $uuid): array => [strtolower($uuid) => $uuid])
+                ?->all() ?? [];
+
+            $uuids = array_values(array_filter(
+                $uuids,
+                static fn (string $uuid): bool => array_key_exists($uuid, $recordMediaUuids),
+            ));
+
+            if (empty($uuids)) {
+                return $rawState;
+            }
 
             $mediaClass = ($record && method_exists($record, 'getMediaModel')) ? $record->getMediaModel() : null;
             $mediaClass ??= config('media-library.media_model', Media::class);
 
-            $mappedIds = $mediaClass::query()->whereIn('uuid', $uuids)->pluck(app($mediaClass)->getKeyName(), 'uuid')->toArray();
+            $mappedIds = array_change_key_case($mediaClass::query()
+                ->whereIn('uuid', array_map(static fn (string $uuid): string => $recordMediaUuids[$uuid], $uuids))
+                ->pluck(app($mediaClass)->getKeyName(), 'uuid')
+                ->all());
+            $orderedIds = [];
 
-            $mediaClass::setNewOrder([
-                ...array_flip($uuids),
-                ...$mappedIds,
-            ]);
+            foreach (array_unique($uuids) as $uuid) {
+                if (array_key_exists($uuid, $mappedIds)) {
+                    $orderedIds[] = $mappedIds[$uuid];
+                }
+            }
+
+            $mediaClass::setNewOrder($orderedIds);
 
             return $rawState;
         });
@@ -186,7 +213,7 @@ class SpatieMediaLibraryFileUpload extends FileUpload
 
     public function conversionsDisk(string | Closure | null $disk): static
     {
-        $this->conversionsDisk = $disk;
+        $this->conversionsDiskName = $disk;
 
         return $this;
     }
@@ -243,9 +270,11 @@ class SpatieMediaLibraryFileUpload extends FileUpload
         /** @var Model&HasMedia $record */
         $record = $this->getRecord();
 
+        $uuids = array_map(strtolower(...), array_keys($this->getRawState() ?? []));
+
         $record
             ->getMedia($this->getCollection() ?? 'default')
-            ->whereNotIn('uuid', array_keys($this->getRawState() ?? []))
+            ->reject(static fn (Media $media): bool => in_array(strtolower($media->uuid), $uuids, strict: true))
             ->when($this->hasMediaFilter(), fn (Collection $media): Collection => $this->filterMedia($media))
             ->each(fn (Media $media) => $media->delete());
     }
@@ -263,9 +292,8 @@ class SpatieMediaLibraryFileUpload extends FileUpload
 
         $collection = $this->getCollection() ?? 'default';
 
-        /** @phpstan-ignore-next-line */
         $diskNameFromRegisteredConversions = $model
-            ->getRegisteredMediaCollections()
+            ->getRegisteredMediaCollections() /** @phpstan-ignore method.notFound */
             ->filter(fn (MediaCollection $mediaCollection): bool => $mediaCollection->name === $collection)
             ->first()
             ?->diskName;
@@ -303,9 +331,17 @@ class SpatieMediaLibraryFileUpload extends FileUpload
         return $this->evaluate($this->conversion);
     }
 
+    /**
+     * @deprecated Use `getConversionsDiskName()` instead.
+     */
     public function getConversionsDisk(): ?string
     {
-        return $this->evaluate($this->conversionsDisk);
+        return $this->getConversionsDiskName();
+    }
+
+    public function getConversionsDiskName(): ?string
+    {
+        return $this->evaluate($this->conversionsDiskName);
     }
 
     /**

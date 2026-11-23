@@ -124,6 +124,7 @@ class PartialsComponentHook extends ComponentHook
                 $finish = trigger('render', $this->component, $view, []);
 
                 $revertSharingComponentWithViews = Utils::shareWithViews('__livewire', $this->component);
+                $revertSharingLegacyComponentWithViews = Utils::shareWithViews('_instance', $this->component);
 
                 $viewContext = app(ViewContext::class);
 
@@ -132,6 +133,7 @@ class PartialsComponentHook extends ComponentHook
                 });
 
                 $revertSharingComponentWithViews();
+                $revertSharingLegacyComponentWithViews();
 
                 if (! str_contains($html, "wire:partial=\"{$partialName}\"")) {
                     $html = Utils::insertAttributesIntoHtmlRoot($html, [
@@ -167,15 +169,25 @@ class PartialsComponentHook extends ComponentHook
         } elseif ($this->shouldRenderMountedActionOnly()) {
             $action = $this->component->getMountedAction();
 
-            $renderAndQueuePartials(fn (): array => [
-                "action-modals.{$action->getNestingIndex()}" => $action->renderModal(),
-            ]);
+            if ($action !== null) {
+                $renderAndQueuePartials(fn (): array => [
+                    "action-modals.{$action->getNestingIndex()}" => $action->renderModal(),
+                ]);
+            }
+
         }
 
         if ($this->shouldRenderMountedActionsOnly(whenActionMounted: $isLackingPartialRendersToCoverAllCallsAndUpdates)) {
             $renderAndQueuePartials(fn (): array => [
                 'action-modals' => view('filament-actions::components.modals'),
             ]);
+        }
+
+        $discoveredChildren = store($this->component)->get('children', []);
+
+        if (! empty($discoveredChildren)) {
+            $previousChildren = store($this->component)->get('previousChildren', []);
+            store($this->component)->set('previousChildren', array_merge($previousChildren, $discoveredChildren));
         }
 
         $context->addEffect('partials', $partials);

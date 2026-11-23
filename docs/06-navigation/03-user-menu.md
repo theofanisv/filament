@@ -1,7 +1,6 @@
 ---
 title: User menu
 ---
-import AutoScreenshot from "@components/AutoScreenshot.astro"
 
 ## Introduction
 
@@ -27,7 +26,53 @@ public function panel(Panel $panel): Panel
 }
 ```
 
-<AutoScreenshot name="panels/navigation/user-menu" alt="User menu with custom menu item" version="3.x" />
+<AutoScreenshot name="panels/navigation/user-menu" alt="User menu with custom menu item" />
+
+## Grouping user menu items
+
+By default, all user menu items are rendered in a single list. If you want to separate them into distinct groups, you can pass an array of arrays to the `userMenuItems()` method. Each array is rendered as its own group, separated by a divider:
+
+```php
+use App\Filament\Pages\Billing;
+use App\Filament\Pages\Settings;
+use Filament\Actions\Action;
+use Filament\Panel;
+
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        // ...
+        ->userMenuItems([
+            [
+                Action::make('settings')
+                    ->url(fn (): string => Settings::getUrl())
+                    ->icon('heroicon-o-cog-6-tooth'),
+                Action::make('billing')
+                    ->url(fn (): string => Billing::getUrl())
+                    ->icon('heroicon-o-banknotes'),
+            ],
+            [
+                Action::make('documentation')
+                    ->url('https://filamentphp.com/docs')
+                    ->icon('heroicon-o-book-open'),
+            ],
+        ]);
+}
+```
+
+<AutoScreenshot name="panels/navigation/user-menu-grouping" alt="User menu items split into separate groups" />
+
+> [!NOTE]
+> The `logout` item is added to the last group by default. To place it yourself, register it explicitly in any group using the `logout` array key. Since its default `sort()` puts it at the end of its group, adjust the sort if you want it elsewhere within the group:
+>
+> ```php
+> ->userMenuItems([
+>     // ...
+>     [
+>         'logout' => fn (Action $action): Action => $action->sort(2),
+>     ],
+> ])
+> ```
 
 ## Moving the user menu to the sidebar
 
@@ -46,6 +91,8 @@ public function panel(Panel $panel): Panel
         ->userMenu(position: UserMenuPosition::Sidebar);
 }
 ```
+
+<AutoScreenshot name="panels/navigation/user-menu-sidebar" alt="User menu moved to the sidebar" />
 
 ## Customizing the profile link
 

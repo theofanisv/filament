@@ -138,6 +138,7 @@ Using class `Filament\Forms\View\FormsIconAlias`
 - `FormsIconAlias::COMPONENTS_BUILDER_ACTIONS_CLONE` - Trigger button of a clone action in a builder item
 - `FormsIconAlias::COMPONENTS_BUILDER_ACTIONS_COLLAPSE` - Trigger button of a collapse action in a builder item
 - `FormsIconAlias::COMPONENTS_BUILDER_ACTIONS_DELETE` - Trigger button of a delete action in a builder item
+- `FormsIconAlias::COMPONENTS_BUILDER_ACTIONS_EDIT` - Trigger button of an edit action in a builder item, when block previews are enabled
 - `FormsIconAlias::COMPONENTS_BUILDER_ACTIONS_EXPAND` - Trigger button of an expand action in a builder item
 - `FormsIconAlias::COMPONENTS_BUILDER_ACTIONS_MOVE_DOWN` - Trigger button of a move down action in a builder item
 - `FormsIconAlias::COMPONENTS_BUILDER_ACTIONS_MOVE_UP` - Trigger button of a move up action in a builder item
@@ -158,6 +159,7 @@ Using class `Filament\Forms\View\FormsIconAlias`
 - `FormsIconAlias::COMPONENTS_FILE_UPLOAD_EDITOR_ACTIONS_ZOOM_OUT` - Trigger button of a zoom out action in a file upload editor
 - `FormsIconAlias::COMPONENTS_KEY_VALUE_ACTIONS_DELETE` - Trigger button of a delete action in a key-value field item
 - `FormsIconAlias::COMPONENTS_KEY_VALUE_ACTIONS_REORDER` - Trigger button of a reorder action in a key-value field item
+- `FormsIconAlias::COMPONENTS_MODAL_TABLE_SELECT_ACTIONS_SELECT` - Trigger button of the select action in a modal table select field
 - `FormsIconAlias::COMPONENTS_REPEATER_ACTIONS_CLONE` - Trigger button of a clone action in a repeater item
 - `FormsIconAlias::COMPONENTS_REPEATER_ACTIONS_COLLAPSE` - Trigger button of a collapse action in a repeater item
 - `FormsIconAlias::COMPONENTS_REPEATER_ACTIONS_DELETE` - Trigger button of a delete action in a repeater item
@@ -169,8 +171,61 @@ Using class `Filament\Forms\View\FormsIconAlias`
 - `FormsIconAlias::COMPONENTS_RICH_EDITOR_PANELS_CUSTOM_BLOCK_DELETE_BUTTON` - Delete button for a custom block in a rich editor
 - `FormsIconAlias::COMPONENTS_RICH_EDITOR_PANELS_CUSTOM_BLOCK_EDIT_BUTTON` - Edit button for a custom block in a rich editor
 - `FormsIconAlias::COMPONENTS_RICH_EDITOR_PANELS_MERGE_TAGS_CLOSE_BUTTON` - Close button for merge tags panel in a rich editor
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_ALIGN_CENTER` - Center alignment tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_ALIGN_END` - End alignment tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_ALIGN_JUSTIFY` - Justified alignment tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_ALIGN_START` - Start alignment tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_ATTACH_FILES` - File attachment tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_BLOCKQUOTE` - Blockquote tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_BOLD` - Bold tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_BULLET_LIST` - Bulleted list tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_CLEAR_FORMATTING` - Clear formatting tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_CODE` - Inline code tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_CODE_BLOCK` - Code block tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_CUSTOM_BLOCKS` - Custom blocks tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_DETAILS` - Details tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_GRID` - Grid tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_GRID_ADD_COLUMN_AFTER` - Add column after tool in a rich editor grid floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_GRID_ADD_COLUMN_BEFORE` - Add column before tool in a rich editor grid floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_GRID_DELETE` - Delete grid tool in a rich editor grid floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_GRID_DELETE_COLUMN` - Delete column tool in a rich editor grid floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_H1` - Heading level 1 tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_H2` - Heading level 2 tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_H3` - Heading level 3 tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_H4` - Heading level 4 tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_H5` - Heading level 5 tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_H6` - Heading level 6 tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_HIGHLIGHT` - Highlight tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_HORIZONTAL_RULE` - Horizontal rule tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_ITALIC` - Italic tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_LEAD` - Lead text tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_LINK` - Link tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_MERGE_TAGS` - Merge tags tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_ORDERED_LIST` - Ordered list tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_PARAGRAPH` - Paragraph tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_REDO` - Redo tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_SMALL` - Small text tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_STRIKE` - Strikethrough tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_SUBSCRIPT` - Subscript tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_SUPERSCRIPT` - Superscript tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE` - Table tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_ADD_COLUMN_AFTER` - Add column after tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_ADD_COLUMN_BEFORE` - Add column before tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_ADD_ROW_AFTER` - Add row after tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_ADD_ROW_BEFORE` - Add row before tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_DELETE` - Delete table tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_DELETE_COLUMN` - Delete column tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_DELETE_ROW` - Delete row tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_MERGE_CELLS` - Merge cells tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_SPLIT_CELL` - Split cell tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_TOGGLE_HEADER_CELL` - Toggle header cell tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TABLE_TOGGLE_HEADER_ROW` - Toggle header row tool in a rich editor table floating toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_TEXT_COLOR` - Text color tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_UNDERLINE` - Underline tool in a rich editor toolbar
+- `FormsIconAlias::COMPONENTS_RICH_EDITOR_TOOLBAR_UNDO` - Undo tool in a rich editor toolbar
 - `FormsIconAlias::COMPONENTS_SELECT_ACTIONS_CREATE_OPTION` - Trigger button of a create option action in a select field
 - `FormsIconAlias::COMPONENTS_SELECT_ACTIONS_EDIT_OPTION` - Trigger button of an edit option action in a select field
+- `FormsIconAlias::COMPONENTS_TEXT_INPUT_ACTIONS_COPY` - Trigger button of a copy action in a text input field
 - `FormsIconAlias::COMPONENTS_TEXT_INPUT_ACTIONS_HIDE_PASSWORD` - Trigger button of a hide password action in a text input field
 - `FormsIconAlias::COMPONENTS_TEXT_INPUT_ACTIONS_SHOW_PASSWORD` - Trigger button of a show password action in a text input field
 - `FormsIconAlias::COMPONENTS_TOGGLE_BUTTONS_BOOLEAN_FALSE` - "False" option of a `boolean()` toggle buttons field
@@ -198,11 +253,26 @@ Using class `Filament\Notifications\View\NotificationsIconAlias`
 
 Using class `Filament\View\PanelsIconAlias`
 
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_DISABLE` - Trigger button of the action to disable app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_DISABLE_MODAL` - Modal of the action to disable app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_DISABLE_NOTIFICATION` - Notification sent after disabling app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_REGENERATE_RECOVERY_CODES` - Trigger button of the action to regenerate the recovery codes for app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_REGENERATE_RECOVERY_CODES_MODAL` - Modal of the action to regenerate the recovery codes for app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_REGENERATE_RECOVERY_CODES_NOTIFICATION` - Notification sent after regenerating the recovery codes for app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_SET_UP` - Trigger button of the action to set up app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_SET_UP_MODAL` - Modal of the action to set up app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_APP_ACTIONS_SET_UP_NOTIFICATION` - Notification sent after setting up app authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_EMAIL_ACTIONS_DISABLE` - Trigger button of the action to disable email authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_EMAIL_ACTIONS_DISABLE_MODAL` - Modal of the action to disable email authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_EMAIL_ACTIONS_DISABLE_NOTIFICATION` - Notification sent after disabling email authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_EMAIL_ACTIONS_SET_UP` - Trigger button of the action to set up email authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_EMAIL_ACTIONS_SET_UP_MODAL` - Modal of the action to set up email authentication
+- `PanelsIconAlias::AUTH_MULTI_FACTOR_EMAIL_ACTIONS_SET_UP_NOTIFICATION` - Notification sent after setting up email authentication
+- `PanelsIconAlias::AUTH_PASSWORD_RESET_REQUEST_ACTIONS_LOGIN` - Trigger button of the login action on the request password reset page
+- `PanelsIconAlias::AUTH_PASSWORD_RESET_REQUEST_ACTIONS_LOGIN_RTL` - Trigger button of the login action on the request password reset page (right-to-left direction)
 - `PanelsIconAlias::GLOBAL_SEARCH_FIELD` - Global search field
 - `PanelsIconAlias::PAGES_DASHBOARD_ACTIONS_FILTER` - Trigger button of the dashboard filter action
 - `PanelsIconAlias::PAGES_DASHBOARD_NAVIGATION_ITEM` - Dashboard page navigation item
-- `PanelsIconAlias::PAGES_PASSWORD_RESET_REQUEST_PASSWORD_RESET_ACTIONS_LOGIN` - Trigger button of the login action on the request password reset page
-- `PanelsIconAlias::PAGES_PASSWORD_RESET_REQUEST_PASSWORD_RESET_ACTIONS_LOGIN_RTL` - Trigger button of the login action on the request password reset page (right-to-left direction)
 - `PanelsIconAlias::RESOURCES_PAGES_EDIT_RECORD_NAVIGATION_ITEM` - Resource edit record page navigation item
 - `PanelsIconAlias::RESOURCES_PAGES_MANAGE_RELATED_RECORDS_NAVIGATION_ITEM` - Resource manage related records page navigation item
 - `PanelsIconAlias::RESOURCES_PAGES_VIEW_RECORD_NAVIGATION_ITEM` - Resource view record page navigation item
@@ -212,6 +282,7 @@ Using class `Filament\View\PanelsIconAlias`
 - `PanelsIconAlias::SIDEBAR_EXPAND_BUTTON_RTL` - Button to expand the sidebar (right-to-left direction)
 - `PanelsIconAlias::SIDEBAR_GROUP_COLLAPSE_BUTTON` - Collapse button for a sidebar group
 - `PanelsIconAlias::SIDEBAR_OPEN_DATABASE_NOTIFICATIONS_BUTTON` - Button to open the database notifications modal
+- `PanelsIconAlias::SUB_NAVIGATION_MOBILE_MENU_BUTTON` - Button to open the sub-navigation menu on mobile
 - `PanelsIconAlias::TENANT_MENU_BILLING_BUTTON` - Billing button in the tenant menu
 - `PanelsIconAlias::TENANT_MENU_PROFILE_BUTTON` - Profile button in the tenant menu
 - `PanelsIconAlias::TENANT_MENU_REGISTRATION_BUTTON` - Registration button in the tenant menu
@@ -230,11 +301,31 @@ Using class `Filament\View\PanelsIconAlias`
 - `PanelsIconAlias::WIDGETS_FILAMENT_INFO_OPEN_DOCUMENTATION_BUTTON` - Button to open the documentation from the Filament info widget
 - `PanelsIconAlias::WIDGETS_FILAMENT_INFO_OPEN_GITHUB_BUTTON` - Button to open GitHub from the Filament info widget
 
+### Query builder icon aliases
+
+Using class `Filament\QueryBuilder\View\QueryBuilderIconAlias`
+
+- `QueryBuilderIconAlias::ADD_RULE_ACTION` - Trigger button of the action to add a rule
+- `QueryBuilderIconAlias::CONSTRAINTS_BOOLEAN` - Default icon for a boolean constraint
+- `QueryBuilderIconAlias::CONSTRAINTS_DATE` - Default icon for a date constraint
+- `QueryBuilderIconAlias::CONSTRAINTS_NUMBER` - Default icon for a number constraint
+- `QueryBuilderIconAlias::CONSTRAINTS_RELATIONSHIP` - Default icon for a relationship constraint
+- `QueryBuilderIconAlias::CONSTRAINTS_SELECT` - Default icon for a select constraint
+- `QueryBuilderIconAlias::CONSTRAINTS_TEXT` - Default icon for a text constraint
+- `QueryBuilderIconAlias::OR_GROUP_ADD_GROUP_ACTION` - Trigger button of the action to add an "or" group
+- `QueryBuilderIconAlias::OR_GROUP_BLOCK` - Block that separates the rules in an "or" group
+
 ### Schema icon aliases
 
-Using class `Filament\Schemas\View\SchemaIconAlias`
+Using class `Filament\Schemas\View\SchemasIconAlias`
 
-- `SchemaIconAlias::COMPONENTS_WIZARD_COMPLETED_STEP` - Completed step in a wizard
+- `SchemasIconAlias::COMPONENTS_CALLOUT_DANGER` - Danger callout
+- `SchemasIconAlias::COMPONENTS_CALLOUT_INFO` - Info callout
+- `SchemasIconAlias::COMPONENTS_CALLOUT_SUCCESS` - Success callout
+- `SchemasIconAlias::COMPONENTS_CALLOUT_WARNING` - Warning callout
+- `SchemasIconAlias::COMPONENTS_TABS_DROPDOWN_TRIGGER_BUTTON` - Button to open the dropdown containing the tabs, when they do not fit on one line
+- `SchemasIconAlias::COMPONENTS_TABS_MORE_TABS_BUTTON` - Button to reveal the tabs that do not fit on one line
+- `SchemasIconAlias::COMPONENTS_WIZARD_COMPLETED_STEP` - Completed step in a wizard
 
 ### Tables icon aliases
 
@@ -250,12 +341,6 @@ Using class `Filament\Tables\View\TablesIconAlias`
 - `TablesIconAlias::COLUMNS_ICON_COLUMN_FALSE` - Falsy state of an icon column
 - `TablesIconAlias::COLUMNS_ICON_COLUMN_TRUE` - Truthy state of an icon column
 - `TablesIconAlias::EMPTY_STATE` - Empty state icon
-- `TablesIconAlias::FILTERS_QUERY_BUILDER_CONSTRAINTS_BOOLEAN` - Default icon for a boolean constraint in the query builder
-- `TablesIconAlias::FILTERS_QUERY_BUILDER_CONSTRAINTS_DATE` - Default icon for a date constraint in the query builder
-- `TablesIconAlias::FILTERS_QUERY_BUILDER_CONSTRAINTS_NUMBER` - Default icon for a number constraint in the query builder
-- `TablesIconAlias::FILTERS_QUERY_BUILDER_CONSTRAINTS_RELATIONSHIP` - Default icon for a relationship constraint in the query builder
-- `TablesIconAlias::FILTERS_QUERY_BUILDER_CONSTRAINTS_SELECT` - Default icon for a select constraint in the query builder
-- `TablesIconAlias::FILTERS_QUERY_BUILDER_CONSTRAINTS_TEXT` - Default icon for a text constraint in the query builder
 - `TablesIconAlias::FILTERS_REMOVE_ALL_BUTTON` - Button to remove all filters
 - `TablesIconAlias::GROUPING_COLLAPSE_BUTTON` - Button to collapse a group of records
 - `TablesIconAlias::HEADER_CELL_SORT_ASC_BUTTON` - Sort button of a column sorted in ascending order
@@ -268,7 +353,6 @@ Using class `Filament\Tables\View\TablesIconAlias`
 
 Using class `Filament\Support\View\SupportIconAlias`
 
-- `SupportIconAlias::BADGE_DELETE_BUTTON` - Button to delete a badge
 - `SupportIconAlias::BREADCRUMBS_SEPARATOR` - Separator between breadcrumbs
 - `SupportIconAlias::BREADCRUMBS_SEPARATOR_RTL` - Separator between breadcrumbs (right-to-left direction)
 - `SupportIconAlias::MODAL_CLOSE_BUTTON` - Button to close a modal
@@ -287,3 +371,4 @@ Using class `Filament\Support\View\SupportIconAlias`
 Using class `Filament\Widgets\View\WidgetsIconAlias`
 
 - `WidgetsIconAlias::CHART_WIDGET_FILTER` - Button of the filter action
+- `WidgetsIconAlias::CHART_WIDGET_EMPTY_STATE` - Empty state icon for chart widgets

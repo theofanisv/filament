@@ -2,6 +2,8 @@
 title: Viewing records
 ---
 
+<AutoScreenshot name="panels/resources/viewing" alt="Resource view page" />
+
 ## Creating a resource with a View page
 
 To create a new resource with a View page, you can use the `--view` flag:
@@ -15,22 +17,22 @@ php artisan make:filament-resource User --view
 By default, the View page will display a disabled form with the record's data. If you preferred to display the record's data in an "infolist", you can define an `infolist()` method on the resource class:
 
 ```php
-use Filament\Infolists;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Schema;
 
 public static function infolist(Schema $schema): Schema
 {
     return $schema
         ->components([
-            Infolists\Components\TextEntry::make('name'),
-            Infolists\Components\TextEntry::make('email'),
-            Infolists\Components\TextEntry::make('notes')
+            TextEntry::make('name'),
+            TextEntry::make('email'),
+            TextEntry::make('notes')
                 ->columnSpanFull(),
         ]);
 }
 ```
 
-The `components()` method is used to define the structure of your infolist. It is an array of [entries](../infolists/overview#available-entries) and [layout components](../schemas/layouts#available-layout-components), in the order they should appear in your infolist.
+The `components()` method is used to define the structure of your infolist. It is an array of [entries](../infolists/overview#defining-entries) and [layout components](../schemas/layouts#basic-layout-components), in the order they should appear in your infolist.
 
 Check out the Infolists docs for a [guide](../infolists) on how to build infolists with Filament.
 
@@ -94,6 +96,26 @@ protected function mutateFormDataBeforeFill(array $data): array
 
 Alternatively, if you're viewing records in a modal action, check out the [Actions documentation](../actions/view#customizing-data-before-filling-the-form).
 
+## Refreshing form data
+
+If an action modifies a record while you are viewing it in a disabled form, you can refresh selected data in the form using the `refreshFormData()` method:
+
+```php
+use App\Models\Post;
+use Filament\Actions\Action;
+
+Action::make('approve')
+    ->action(function (Post $record) {
+        $record->approve();
+
+        $this->refreshFormData([
+            'status',
+        ]);
+    })
+```
+
+Pass the form state paths you want to refresh. Other fields retain their state unless your customization code changes it. `refreshFormData()` uses the page's current record, so call `$this->getRecord()->refresh()` first if it was updated elsewhere. For hydration behavior and precautions when refreshing relationships or parent paths, see [refreshing form data on Edit pages](editing-records#refreshing-form-data).
+
 ## Lifecycle hooks
 
 Hooks may be used to execute code at various points within a page's lifecycle, like before a form is filled. To set up a hook, create a protected method on the View page class with the name of the hook:
@@ -116,6 +138,35 @@ class ViewUser extends ViewRecord
     }
 }
 ```
+
+### Defining lifecycle hooks in traits
+
+To define a lifecycle hook in a trait, suffix the hook name with the trait's name. This follows the `boot{TraitName}()` convention used by Eloquent and the `mount{TraitName}()` convention used by Livewire, allowing reusable traits to hook into the page lifecycle without colliding with hooks defined on the page itself:
+
+```php
+use Filament\Resources\Pages\ViewRecord;
+
+trait LoadsAuditData
+{
+    protected function afterFillLoadsAuditData(): void
+    {
+        // Runs after the form fields are populated from the database, in
+        // addition to the hook on the page.
+    }
+}
+
+class ViewUser extends ViewRecord
+{
+    use LoadsAuditData;
+
+    protected function afterFill(): void
+    {
+        // Both lifecycle hooks are called.
+    }
+}
+```
+
+The page's own hook is called first, followed by each trait hook. Hooks from traits used by other traits are also called. Trait hooks are called automatically, so you should not also call them from the page's own hook.
 
 ## Authorization
 
@@ -206,14 +257,14 @@ If `getAllRelationManagers()` isn't defined, any relation managers defined in th
 If you're using [resource sub-navigation](overview#resource-sub-navigation), you can register this page as normal in `getRecordSubNavigation()` of the resource:
 
 ```php
-use App\Filament\Resources\Customers\Pages;
+use App\Filament\Resources\Customers\Pages\ViewCustomerContact;
 use Filament\Resources\Pages\Page;
 
 public static function getRecordSubNavigation(Page $page): array
 {
     return $page->generateNavigationItems([
         // ...
-        Pages\ViewCustomerContact::class,
+        ViewCustomerContact::class,
     ]);
 }
 ```
@@ -241,7 +292,7 @@ Inside the `components()` array, you can insert any [schema component](../schema
 
 ### Using a custom Blade view
 
-For further customization opportunities, you can override the static `$view` property on the page class to a custom view in your app:
+For further customization opportunities, you can override the `$view` property on the page class to a custom view in your app:
 
 ```php
 protected string $view = 'filament.resources.users.pages.view-user';

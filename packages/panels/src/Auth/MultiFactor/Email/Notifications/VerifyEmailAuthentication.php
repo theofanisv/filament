@@ -2,16 +2,20 @@
 
 namespace Filament\Auth\MultiFactor\Email\Notifications;
 
+use Filament\Auth\Notifications\Concerns\HasIntendedMailRecipient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use SensitiveParameter;
 
 class VerifyEmailAuthentication extends Notification implements ShouldQueue
 {
+    use HasIntendedMailRecipient;
     use Queueable;
 
     public function __construct(
+        #[SensitiveParameter]
         public string $code,
         public int $codeExpiryMinutes,
     ) {}
@@ -21,6 +25,8 @@ class VerifyEmailAuthentication extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
+        $this->captureIntendedMailRecipient($notifiable);
+
         return ['mail'];
     }
 

@@ -12,9 +12,19 @@ use function Filament\Support\is_app_url;
 class ViewManager
 {
     /**
-     * @var array<string, array<string, array<Closure>>>
+     * @var array<string, string>
+     */
+    private const RENDER_HOOK_ALIASES = [
+        'panels::page.sub-navigation.mobile-menu.after' => 'panels::page.sub-navigation.module-menu.after',
+        'panels::page.sub-navigation.mobile-menu.before' => 'panels::page.sub-navigation.module-menu.before',
+    ];
+
+    /**
+     * @var array<string, array<string, array<int, Closure>>>
      */
     protected array $renderHooks = [];
+
+    protected int $renderHookIndex = 0;
 
     protected bool $hasSpaMode = false;
 
@@ -26,16 +36,32 @@ class ViewManager
     protected array $spaModeUrlExceptions = [];
 
     /**
+     * @internal
+     */
+    public static function normalizeRenderHookName(string $name): string
+    {
+        return self::RENDER_HOOK_ALIASES[$name] ?? $name;
+    }
+
+    /**
      * @param  string | array<string> | null  $scopes
      */
     public function registerRenderHook(string $name, Closure $hook, string | array | null $scopes = null): void
     {
+        $name = static::normalizeRenderHookName($name);
+
+        if ($scopes === null) {
+            $scopes = [''];
+        }
+
         if (! is_array($scopes)) {
             $scopes = [$scopes];
         }
 
+        $hookIndex = $this->renderHookIndex++;
+
         foreach ($scopes as $scopeName) {
-            $this->renderHooks[$name][$scopeName][] = $hook;
+            $this->renderHooks[$name][$scopeName][$hookIndex] = $hook;
         }
     }
 
@@ -44,11 +70,13 @@ class ViewManager
      */
     public function hasRenderHook(string $name, string | array | null $scopes = null): bool
     {
+        $name = static::normalizeRenderHookName($name);
+
         if (! isset($this->renderHooks[$name])) {
             return false;
         }
 
-        if (isset($this->renderHooks[$name][null]) && count($this->renderHooks[$name][null])) {
+        if (isset($this->renderHooks[$name]['']) && count($this->renderHooks[$name][''])) {
             return true;
         }
 
@@ -69,37 +97,24 @@ class ViewManager
      */
     public function renderHook(string $name, string | array | null $scopes = null, array $data = []): Htmlable
     {
+        $name = static::normalizeRenderHookName($name);
+
         $renderedHooks = [];
 
         $scopes = Arr::wrap($scopes);
 
-        $renderHook = function (callable $hook) use (&$renderedHooks, $scopes, $data): ?string {
-            $hookId = spl_object_id($hook);
+        $hooks = [];
 
-            if (in_array($hookId, $renderedHooks)) {
-                return null;
+        foreach (['', ...$scopes] as $scopeName) {
+            foreach ($this->renderHooks[$name][$scopeName] ?? [] as $hookIndex => $hook) {
+                if (isset($renderedHooks[$hookIndex])) {
+                    continue;
+                }
+
+                $renderedHooks[$hookIndex] = true;
+
+                $hooks[] = (string) app()->call($hook, ['data' => $data, 'scopes' => $scopes]);
             }
-
-            $renderedHooks[] = $hookId;
-
-            $result = app()->call($hook, ['data' => $data, 'scopes' => $scopes]);
-
-            return (string) $result;
-        };
-
-        $hooks = array_map(
-            $renderHook,
-            $this->renderHooks[$name][null] ?? [],
-        );
-
-        foreach ($scopes as $scopeName) {
-            $hooks = [
-                ...$hooks,
-                ...array_map(
-                    $renderHook,
-                    $this->renderHooks[$name][$scopeName] ?? [],
-                ),
-            ];
         }
 
         return new HtmlString(implode('', $hooks));

@@ -1,11 +1,12 @@
 ---
 title: Overview
 ---
-import Aside from "@components/Aside.astro"
 
 ## Introduction
 
 Resources are static classes that are used to build CRUD interfaces for your Eloquent models. They describe how administrators should be able to interact with data from your app using tables and forms.
+
+<AutoScreenshot name="panels/resources/listing" alt="A resource listing page" />
 
 ## Creating a resource
 
@@ -37,9 +38,8 @@ The classes in the `Pages` directory are used to customize the pages in the app 
 
 The classes in the `Schemas` directory are used to define the content of the [forms](../forms) and [infolists](../infolists) for your resource. The classes in the `Tables` directory are used to build the table for your resource.
 
-<Aside variant="tip">
-    Have you created a resource, but it's not appearing in the navigation menu? If you have a [model policy](#authorization), make sure you return `true` from the `viewAny()` method.
-</Aside>
+> [!TIP]
+> Have you created a resource, but it's not appearing in the navigation menu? If you have a [model policy](#authorization), make sure you return `true` from the `viewAny()` method.
 
 ### Simple (modal) resources
 
@@ -52,6 +52,10 @@ php artisan make:filament-resource Customer --simple
 Your resource will have a "Manage" page, which is a List page with modals added.
 
 Additionally, your simple resource will have no `getRelations()` method, as [relation managers](managing-relationships) are only displayed on the Edit and View pages, which are not present in simple resources. Everything else is the same.
+
+<AutoScreenshot name="panels/resources/simple-modal-create" alt="Simple (modal) resource create modal" />
+
+<AutoScreenshot name="panels/resources/simple-modal-edit" alt="Simple (modal) resource edit modal" />
 
 ### Automatically generating forms and tables
 
@@ -111,9 +115,8 @@ protected static ?string $recordTitleAttribute = 'name';
 
 This is required for features like [global search](global-search) to work.
 
-<Aside variant="tip">
-    You may specify the name of an [Eloquent accessor](https://laravel.com/docs/eloquent-mutators#defining-an-accessor) if just one column is inadequate at identifying a record.
-</Aside>
+> [!TIP]
+> You may specify the name of an [Eloquent accessor](https://laravel.com/docs/eloquent-mutators#defining-an-accessor) if just one column is inadequate at identifying a record.
 
 ## Resource forms
 
@@ -148,28 +151,27 @@ public static function configure(Schema $schema): Schema
 }
 ```
 
-The `components()` method is used to define the structure of your form. It is an array of [fields](../forms/overview#available-fields) and [layout components](../schemas/layouts#available-layout-components), in the order they should appear in your form.
+The `components()` method is used to define the structure of your form. It is an array of [fields](../forms/overview#form-fields) and [layout components](../schemas/layouts#basic-layout-components), in the order they should appear in your form.
 
 Check out the Forms docs for a [guide](../forms) on how to build forms with Filament.
 
-<Aside variant="tip">
-    If you would prefer to define the form directly in the resource class, you can do so and delete the form schema class altogether:
-
-    ```php
-    use Filament\Forms\Components\TextInput;
-    use Filament\Schemas\Schema;
-
-    public static function form(Schema $schema): Schema
-    {
-        return $schema
-            ->components([
-                TextInput::make('name')->required(),
-                TextInput::make('email')->email()->required(),
-                // ...
-            ]);
-    }
-    ```
-</Aside>
+> [!TIP]
+> If you would prefer to define the form directly in the resource class, you can do so and delete the form schema class altogether:
+>
+> ```php
+> use Filament\Forms\Components\TextInput;
+> use Filament\Schemas\Schema;
+>
+> public static function form(Schema $schema): Schema
+> {
+>     return $schema
+>         ->components([
+>             TextInput::make('name')->required(),
+>             TextInput::make('email')->email()->required(),
+>             // ...
+>         ]);
+> }
+> ```
 
 ### Hiding components based on the current operation
 
@@ -252,42 +254,41 @@ public static function configure(Table $table): Table
 
 Check out the [tables](../tables) docs to find out how to add table columns, filters, actions and more.
 
-<Aside variant="tip">
-    If you would prefer to define the table directly in the resource class, you can do so and delete the table class altogether:
-
-    ```php
-    use Filament\Actions\BulkActionGroup;
-    use Filament\Actions\DeleteBulkAction;
-    use Filament\Actions\EditAction;
-    use Filament\Tables\Columns\TextColumn;
-    use Filament\Tables\Filters\Filter;
-    use Filament\Tables\Table;
-    use Illuminate\Database\Eloquent\Builder;
-    
-    public static function table(Table $table): Table
-    {
-        return $table
-            ->columns([
-                TextColumn::make('name'),
-                TextColumn::make('email'),
-                // ...
-            ])
-            ->filters([
-                Filter::make('verified')
-                    ->query(fn (Builder $query): Builder => $query->whereNotNull('email_verified_at')),
-                // ...
-            ])
-            ->recordActions([
-                EditAction::make(),
-            ])
-            ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
-            ]);
-    }
-    ```
-</Aside>
+> [!TIP]
+> If you would prefer to define the table directly in the resource class, you can do so and delete the table class altogether:
+>
+> ```php
+> use Filament\Actions\BulkActionGroup;
+> use Filament\Actions\DeleteBulkAction;
+> use Filament\Actions\EditAction;
+> use Filament\Tables\Columns\TextColumn;
+> use Filament\Tables\Filters\Filter;
+> use Filament\Tables\Table;
+> use Illuminate\Database\Eloquent\Builder;
+>
+> public static function table(Table $table): Table
+> {
+>     return $table
+>         ->columns([
+>             TextColumn::make('name'),
+>             TextColumn::make('email'),
+>             // ...
+>         ])
+>         ->filters([
+>             Filter::make('verified')
+>                 ->query(fn (Builder $query): Builder => $query->whereNotNull('email_verified_at')),
+>             // ...
+>         ])
+>         ->recordActions([
+>             EditAction::make(),
+>         ])
+>         ->toolbarActions([
+>             BulkActionGroup::make([
+>                 DeleteBulkAction::make(),
+>             ]),
+>         ]);
+> }
+> ```
 
 ## Customizing the model label
 
@@ -339,7 +340,7 @@ protected static bool $hasTitleCaseModelLabel = false;
 
 ## Resource navigation items
 
-Filament will automatically generate a navigation menu item for your resource using the [plural label](#plural-label).
+Filament will automatically generate a navigation menu item for your resource using the [plural label](#customizing-the-plural-model-label).
 
 If you'd like to customize the navigation item label, you may use the `$navigationLabel` property:
 
@@ -355,6 +356,8 @@ public static function getNavigationLabel(): string
     return __('filament/resources/customer.navigation_label');
 }
 ```
+
+You may also [render HTML in the navigation label](../navigation/overview#rendering-html-in-navigation-item-labels) by returning an `Htmlable` object.
 
 ### Setting a resource navigation icon
 
@@ -416,7 +419,18 @@ public static function getNavigationGroup(): ?string
 
 #### Grouping resource navigation items under other items
 
-You may group navigation items as children of other items, by passing the label of the parent item as the `$navigationParentItem`:
+You may group navigation items as children of other items by setting the `$navigationParentItem` property. You may reference the parent item either by its page or resource class, or by its label:
+
+```php
+use App\Filament\Resources\Products\ProductsResource;
+use UnitEnum;
+
+protected static ?string $navigationParentItem = ProductsResource::class;
+
+protected static string | UnitEnum | null $navigationGroup = 'Shop';
+```
+
+Alternatively, you may reference the parent by its label:
 
 ```php
 use UnitEnum;
@@ -426,9 +440,18 @@ protected static ?string $navigationParentItem = 'Products';
 protected static string | UnitEnum | null $navigationGroup = 'Shop';
 ```
 
-As seen above, if the parent item has a navigation group, that navigation group must also be defined, so the correct parent item can be identified.
+You may also use the `getNavigationParentItem()` method to determine the parent dynamically:
 
-You may also use the `getNavigationParentItem()` method to set a dynamic parent item label:
+```php
+use App\Filament\Resources\Products\ProductsResource;
+
+public static function getNavigationParentItem(): ?string
+{
+    return ProductsResource::class;
+}
+```
+
+Alternatively, you may return the parent's label:
 
 ```php
 public static function getNavigationParentItem(): ?string
@@ -437,9 +460,10 @@ public static function getNavigationParentItem(): ?string
 }
 ```
 
-<Aside variant="tip">
-    If you're reaching for a third level of navigation like this, you should consider using [clusters](../navigation/clusters) instead, which are a logical grouping of resources and [custom pages](../navigation/custom-pages), which can share their own separate navigation.
-</Aside>
+The parent and child items must belong to the same navigation group. If the parent item has a navigation group, that group must also be defined on the child, otherwise the correct parent item cannot be identified. This applies whether you reference the parent by its class or by its label.
+
+> [!TIP]
+> If you're reaching for a third level of navigation like this, you should consider using [clusters](../navigation/clusters) instead, which are a logical grouping of resources and [custom pages](../navigation/custom-pages), which can share their own separate navigation.
 
 ## Generating URLs to resource pages
 
@@ -510,9 +534,9 @@ CustomerResource::getUrl(panel: 'marketing');
 
 ## Customizing the resource Eloquent query
 
-Within Filament, every query to your resource model will start with the `getEloquentQuery()` method.
+The resource's list table, record pages, and global search start their queries with the `getEloquentQuery()` method.
 
-Because of this, it's very easy to apply your own query constraints or [model scopes](https://laravel.com/docs/eloquent#query-scopes) that affect the entire resource:
+Because of this, it's very easy to apply your own query constraints or [model scopes](https://laravel.com/docs/eloquent#query-scopes) to those parts of the resource:
 
 ```php
 public static function getEloquentQuery(): Builder
@@ -582,9 +606,10 @@ public static function getRecordSubNavigation(Page $page): array
 
 Each item in the sub-navigation can be customized using the [same navigation methods as normal pages](../navigation).
 
-<Aside variant="tip">
-    If you're looking to add sub-navigation to switch *between* entire resources and [custom pages](../navigation/custom-pages), you might be looking for [clusters](../navigation/clusters), which are used to group these together. The `getRecordSubNavigation()` method is intended to construct a navigation between pages that relate to a particular record *inside* a resource.
-</Aside>
+<AutoScreenshot name="panels/resources/sub-navigation" alt="Resource with sub-navigation" />
+
+> [!TIP]
+> If you're looking to add sub-navigation to switch *between* entire resources and [custom pages](../navigation/custom-pages), you might be looking for [clusters](../navigation/clusters), which are used to group these together. The `getRecordSubNavigation()` method is intended to construct a navigation between pages that relate to a particular record *inside* a resource.
 
 ### Setting the sub-navigation position for a resource
 
@@ -595,6 +620,12 @@ use Filament\Pages\Enums\SubNavigationPosition;
 
 protected static ?SubNavigationPosition $subNavigationPosition = SubNavigationPosition::End;
 ```
+
+<AutoScreenshot name="panels/resources/sub-navigation-end" alt="Resource with end sub-navigation position" />
+
+The `SubNavigationPosition::Top` option renders the sub-navigation as tabs above the page content:
+
+<AutoScreenshot name="panels/resources/sub-navigation-top" alt="Resource with top sub-navigation position" />
 
 ## Deleting resource pages
 
@@ -616,7 +647,7 @@ Deleting a page will not delete any actions that link to that page. Any actions 
 
 ## Security
 
-## Authorization
+### Authorization
 
 For authorization, Filament will observe any [model policies](https://laravel.com/docs/authorization#creating-policies) that are registered in your app. The following methods are used:
 
@@ -627,9 +658,15 @@ For authorization, Filament will observe any [model policies](https://laravel.co
 - `delete()` is used to prevent a single record from being deleted. `deleteAny()` is used to prevent records from being bulk deleted. Filament uses the `deleteAny()` method because iterating through multiple records and checking the `delete()` policy is not very performant. When using a `DeleteBulkAction`, if you want to call the `delete()` method for each record anyway, you should use the `DeleteBulkAction::make()->authorizeIndividualRecords()` method. Any records that fail the authorization check will not be processed.
 - `forceDelete()` is used to prevent a single soft-deleted record from being force-deleted. `forceDeleteAny()` is used to prevent records from being bulk force-deleted. Filament uses the `forceDeleteAny()` method because iterating through multiple records and checking the `forceDelete()` policy is not very performant. When using a `ForceDeleteBulkAction`, if you want to call the `forceDelete()` method for each record anyway, you should use the `ForceDeleteBulkAction::make()->authorizeIndividualRecords()` method. Any records that fail the authorization check will not be processed.
 - `restore()` is used to prevent a single soft-deleted record from being restored. `restoreAny()` is used to prevent records from being bulk restored. Filament uses the `restoreAny()` method because iterating through multiple records and checking the `restore()` policy is not very performant. When using a `RestoreBulkAction`, if you want to call the `restore()` method for each record anyway, you should use the `RestoreBulkAction::make()->authorizeIndividualRecords()` method. Any records that fail the authorization check will not be processed.
-- `reorder()` is used to control [reordering records in a table](listing-records#reordering-records).
+- `reorder()` is used to control [reordering records in a table](../tables/overview#reordering-records).
 
-### Skipping authorization
+> [!WARNING]
+> By default, Filament allows an operation when its model policy or policy method is missing, unless a Gate before callback denies it. Define the required policy methods, or enable [strict authorization](../panel-configuration#strict-authorization-mode) to detect missing policies and methods. `viewAny()` controls resource access, not which records appear in its table: add query restrictions for records the user must not see. Custom actions and inline editable columns need their own authorization, even in strict mode. See the [security overview](../advanced/security#authorization) for these boundaries.
+
+> [!NOTE]
+> On every Livewire request, Filament re-queries the page's `$record` using the resource query, then repeats the page's authorization checks. For example, edit and view pages check the resource's `update()` and `view()` policies. A `ManageRelatedRecords` page checks access to the related resource or model, but does not authorize the owner record unless you add that check to the page's `canAccess()` method. Any global scopes removed by the resource query remain removed. Filament does not re-query or authorize additional model properties that you add to the page. See [Eloquent model restoration in Livewire](../advanced/security#understanding-eloquent-model-restoration-in-livewire) for more information.
+
+#### Skipping authorization
 
 If you'd like to skip authorization for a resource, you may set the `$shouldSkipAuthorization` property to `true`:
 
@@ -637,13 +674,15 @@ If you'd like to skip authorization for a resource, you may set the `$shouldSkip
 protected static bool $shouldSkipAuthorization = true;
 ```
 
+> [!CAUTION]
+> This bypasses the resource's policy checks, including in strict authorization mode. Panel authentication and tenant scoping do not replace operation-level authorization. Only skip these checks if you enforce equivalent authorization yourself.
+
 ### Protecting model attributes
 
 Filament will expose all model attributes to JavaScript, except if they are `$hidden` on your model. This is Livewire's behavior for model binding. We preserve this functionality to facilitate the dynamic addition and removal of form fields after they are initially loaded, while preserving the data they may need.
 
-<Aside variant="danger">
-    While attributes may be visible in JavaScript, only those with a form field are actually editable by the user. This is not an issue with mass assignment.
-</Aside>
+> [!CAUTION]
+> While attributes may be visible in JavaScript, only those with a form field are actually editable by the user. This is not an issue with mass assignment.
 
 To remove certain attributes from JavaScript on the Edit and View pages, you may override [the `mutateFormDataBeforeFill()` method](editing-records#customizing-data-before-filling-the-form):
 
@@ -657,3 +696,14 @@ protected function mutateFormDataBeforeFill(array $data): array
 ```
 
 In this example, we remove the `is_admin` attribute from JavaScript, as it's not being used by the form.
+
+> [!WARNING]
+> Adding a column to `$hidden` is required, not just recommended, when it contains binary data that is not valid UTF-8, such as a `geometry`, `point`, or `blob` column. Since Filament exposes model attributes to JavaScript, these values are sent to the browser as part of the Livewire request, but they cannot be serialized to JSON. This causes the page to fail to load, often with a blank screen and no error in the Laravel log.
+>
+> Adding such columns to [the `$hidden` array](https://laravel.com/docs/eloquent-serialization#hiding-attributes-from-json) on your model excludes them from its array and JSON representations, resolving the issue:
+>
+> ```php
+> protected $hidden = ['location'];
+> ```
+>
+> If you need to work with the value, expose it through an [accessor](https://laravel.com/docs/eloquent-mutators#defining-an-accessor) instead of the raw column.

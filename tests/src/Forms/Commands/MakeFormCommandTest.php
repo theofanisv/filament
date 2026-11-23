@@ -1,16 +1,43 @@
 <?php
 
+use Filament\Forms\Commands\FileGenerators\FormSchemaClassGenerator;
+use Filament\Tests\Fixtures\Models\Post;
+use Filament\Tests\Fixtures\Models\PostWithHiddenLocation;
 use Filament\Tests\TestCase;
-use Illuminate\Support\Arr;
 
 use function PHPUnit\Framework\assertFileExists;
 
-uses(TestCase::class);
+uses(TestCase::class)->group('serial');
 
 beforeEach(function (): void {
     $this->withoutMockingConsoleOutput();
-})
-    ->skip((bool) Arr::get($_SERVER, 'PARATEST'), 'File generation tests cannot be run in parallel as they would share a filesystem and have the potential to conflict with each other.');
+});
+
+it('reports binary columns that cannot be generated as schema components', function (): void {
+    $generator = app(FormSchemaClassGenerator::class, [
+        'fqn' => 'App\\Filament\\Schemas\\PostForm',
+        'modelFqn' => Post::class,
+    ]);
+
+    expect($generator->generate())
+        ->not->toContain("'location'");
+
+    expect($generator->getSkippedColumns())
+        ->toHaveKey('location');
+});
+
+it('does not report binary columns that are already `$hidden` on the model', function (): void {
+    $generator = app(FormSchemaClassGenerator::class, [
+        'fqn' => 'App\\Filament\\Schemas\\PostForm',
+        'modelFqn' => PostWithHiddenLocation::class,
+    ]);
+
+    expect($generator->generate())
+        ->not->toContain("'location'");
+
+    expect($generator->getSkippedColumns())
+        ->toBeEmpty();
+});
 
 it('can generate a form schema class', function (): void {
     $this->artisan('make:filament-form', [

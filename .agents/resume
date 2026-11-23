@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Restore the SQLite-backed preview only. Test databases are started on demand.
+amp orb services ensure

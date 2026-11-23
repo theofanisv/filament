@@ -6,6 +6,8 @@ title: Query builder
 
 The query builder allows you to define a complex set of conditions to filter the data in your table. It is able to handle unlimited nesting of conditions, which you can group together with "and" and "or" operations.
 
+<AutoScreenshot name="tables/filters/query-builder" alt="Query builder filter" />
+
 To use it, you need to define a set of "constraints" that will be used to filter the data. Filament includes some built-in constraints, that follow common data types, but you can also define your own custom constraints.
 
 You can add a query builder to any table using the `QueryBuilder` filter:
@@ -101,6 +103,8 @@ By default, the following operators are available:
 - Is filled - filters a column to not be empty
 - Is blank - filters a column to be empty
 
+Text entered into these operators is treated as literal text, so characters such as `%` and `_` do not act as SQL wildcard characters.
+
 ### Boolean constraints
 
 Boolean constraints allow you to filter boolean fields. They can be used to filter any boolean field, including via relationships.
@@ -190,6 +194,44 @@ DateConstraint::make('published_at')
     ->time()
 ```
 
+#### Filtering indexed date columns
+
+On MySQL, MariaDB, and PostgreSQL, the date-only `isAfter`, `isBefore`, `isDate`, and `isYear` operators, including their inverses, compare the column with date boundaries instead of extracting its date or year. This allows the database to use an ordinary index on the column. Date range queries are enabled by default. The `isMonth` operator still extracts the month, since it matches the same month across all years. Time-based comparisons enabled by `time()` are unchanged.
+
+Range comparisons expect valid dates in native date or datetime columns. For PostgreSQL timezone-aware columns, a UTC database connection timezone avoids ambiguous midnight boundaries. If filtering must follow a non-UTC connection timezone exactly, use date extraction as described below.
+
+> [!WARNING]
+> Range comparisons can return different results from date or year extraction for incomplete or invalid MySQL/MariaDB dates, such as `2024-00-00` or `2024-02-30`, which can exist in legacy data or databases using permissive SQL modes. PostgreSQL timezone-aware columns can also match different records around historical midnight timezone transitions when the database connection uses a non-UTC timezone.
+>
+> Normalize invalid stored dates and review your database connection timezone before relying on range comparisons. If your application needs the database's date extraction behavior for these cases, use `dateQueriesUsingRanges(false)`.
+
+SQLite and SQL Server continue to use date and year extraction, preserving their handling of stored timezone offsets. Other database connections, nonstandard search dates, and years outside the portable range also retain extraction rather than generating potentially invalid boundaries.
+
+##### Using date extraction
+
+You can disable date range queries using `dateQueriesUsingRanges(false)`. The affected operators then use Laravel's `whereDate()` and `whereYear()` methods, restoring the database's date and year extraction behavior:
+
+```php
+use Filament\QueryBuilder\Constraints\DateConstraint;
+
+DateConstraint::make('published_at')
+    ->dateQueriesUsingRanges(false)
+```
+
+This does not select or convert timezones. On PostgreSQL, date extraction from timezone-aware columns uses the database connection timezone. You may also pass a closure to `dateQueriesUsingRanges()` to determine whether to use ranges dynamically.
+
+To disable date range queries globally, call `configureUsing()` in your service provider's `boot()` method. You can enable ranges for an individual constraint using `dateQueriesUsingRanges()`:
+
+```php
+use Filament\QueryBuilder\Constraints\DateConstraint;
+
+DateConstraint::configureUsing(static function (DateConstraint $constraint): void {
+    $constraint->dateQueriesUsingRanges(false);
+});
+```
+
+Date extraction queries may require a matching expression or computed-column index instead of an ordinary column index. PostgreSQL supports expression indexes on date casts and year extraction for timestamps without timezones. A date cast of a timezone-aware timestamp depends on the connection timezone and cannot be indexed directly. A fixed-timezone expression can be indexed, but Laravel's `whereDate()` does not generate that expression automatically. If you already have an expression index for date extraction, either retain extraction with `dateQueriesUsingRanges(false)` or add an ordinary column index for range queries.
+
 ### Select constraints
 
 Select constraints allow you to filter fields using a select field. They can be used to filter any field, including via relationships.
@@ -212,6 +254,11 @@ SelectConstraint::make('creator.department') // Filter the `department` column o
         'purchasing' => 'Purchasing',
     ])
 ```
+
+> [!CAUTION]
+> `options()` controls the available filter values, but it does not restrict access to records. Users can remove the rule, and rules that fail validation are ignored.
+>
+> If you are using `options()` to hide certain values from a group of users (for example, hiding `archived` from non-admins), apply the mandatory restriction to the table's underlying query using the resource's [`getEloquentQuery()`](../../resources/overview#customizing-the-resource-eloquent-query), the table's [`modifyQueryUsing()`](../../resources/listing-records#customizing-the-table-eloquent-query), or a global scope on the model. [`modifyRelationshipQueryUsing()`](#scoping-relationships) only scopes the relationship query for that individual rule, which the user can omit. Authorization for operations on records must be handled separately.
 
 #### Searchable select constraints
 
@@ -324,6 +371,52 @@ Now, the following operators are also available:
 - Is filled - filters a column to not be empty
 - Is blank - filters a column to be empty
 
+## Limiting the size of the rule tree
+
+The set of rules a user builds is stored in the Livewire component's state and submitted with each request. To protect against a request that contains an excessively large or deeply-nested set of rules consuming too much server memory or CPU, you can limit how many rules and how deeply nested they can be.
+
+By default, no limits are applied. You can set them using the `maxRules()` and `maxNestingDepth()` methods:
+
+```php
+use Filament\Tables\Filters\QueryBuilder;
+
+QueryBuilder::make()
+    ->maxRules(100)
+    ->maxNestingDepth(10)
+    ->constraints([
+        // ...
+    ])
+```
+
+Both methods also accept a function to compute the value dynamically:
+
+```php
+use Filament\Tables\Filters\QueryBuilder;
+
+QueryBuilder::make()
+    ->maxRules(fn (): int => auth()->user()->isAdmin() ? 200 : 50)
+    ->constraints([
+        // ...
+    ])
+```
+
+The `maxRules()` limit counts individual conditions only. "OR" groups are structural containers, so they do not count towards the limit themselves — nesting is bounded separately by `maxNestingDepth()`.
+
+When a limit is set, the UI enforces it: once the maximum number of rules is reached, the "add rule" and clone buttons are disabled with a tooltip explaining why, and the "OR" grouping option is hidden once the maximum nesting depth is reached. As a safeguard against a tampered request that bypasses the UI, a submitted rule tree that still exceeds either limit is safely ignored, applying no constraints instead of filtering the table.
+
+> [!TIP]
+> Since these limits are the same for every query builder, you will usually want to apply them globally rather than repeating them on each filter. You can do this using `configureUsing()` in the `boot()` method of a service provider, so that every query builder in your app is bounded:
+>
+> ```php
+> use Filament\Tables\Filters\QueryBuilder;
+>
+> QueryBuilder::configureUsing(function (QueryBuilder $queryBuilder): void {
+>     $queryBuilder
+>         ->maxRules(100)
+>         ->maxNestingDepth(10);
+> });
+> ```
+
 ## Scoping relationships
 
 When you use a relationship constraint, you can scope the relationship to filter the related records using the `modifyRelationshipQueryUsing()` method:
@@ -362,7 +455,7 @@ TextConstraint::make('author.name')
     ])
 ```
 
-This will remove all operators, and register the `EqualsOperator`.
+This will remove all operators, and register the `IsFilledOperator`.
 
 If you'd like to add an operator to the end of the list, use `pushOperators()` instead:
 
@@ -454,7 +547,57 @@ The `label()` method is used to render the options in the operator select. Two o
 
 The `summary()` method is used in the header of the constraint when it is applied to the query, to provide an overview of the active constraint.
 
+If your operator needs input fields, extend `Operator` and return the components from `getFormSchema()`:
+
+```php
+use Filament\Forms\Components\TextInput;
+use Filament\QueryBuilder\Constraints\Operators\Operator;
+
+class CustomOperator extends Operator
+{
+    public function getFormSchema(): array
+    {
+        return [
+            TextInput::make('value')->required(),
+        ];
+    }
+}
+```
+
+When extending a built-in operator, use `parent::getFormSchema()` to retain its fields.
+
 ## Customizing the constraint picker
+
+### Grouping constraints
+
+You may group attributes under headings by using named arrays in `constraints()`:
+
+```php
+use Filament\QueryBuilder\Constraints\DateConstraint;
+use Filament\QueryBuilder\Constraints\TextConstraint;
+use Filament\Tables\Filters\QueryBuilder;
+
+QueryBuilder::make()
+    ->constraints([
+        'Content' => [
+            TextConstraint::make('title'),
+            TextConstraint::make('content'),
+        ],
+        'Publishing' => [
+            DateConstraint::make('published_at'),
+        ],
+    ])
+```
+
+Groups appear in the order they are defined. You may also include ungrouped constraints, which appear first without a heading. These groups are preserved in nested OR conditions and only organize the picker; they do not change how your query is evaluated.
+
+Use group names in `constraints()` that PHP keeps as string array keys. Integer keys (including numeric strings such as `'2026'`, which PHP converts to integers) are treated as ungrouped lists of constraints. Groups retain the order in which they are first defined across repeated calls to `constraints()`.
+
+When you configure multiple columns using `constraintPickerColumns()`, groups flow down each column before moving to the next. Groups stay together, and their heights are balanced across the columns. Otherwise, groups are stacked vertically.
+
+When you group attributes, the OR condition appears in a separate "Logic" group. If you do not group attributes, the OR condition remains ungrouped.
+
+<AutoScreenshot name="tables/filters/query-builder-grouped" alt="Query builder with grouped attributes and logic in the picker" />
 
 ### Changing the number of columns in the constraint picker
 

@@ -1,0 +1,140 @@
+<?php
+
+use Filament\Forms\Components\TableSelect\Livewire\TableSelectLivewireComponent;
+use Filament\Tests\Fixtures\Models\Post;
+use Filament\Tests\Fixtures\Models\User;
+use Filament\Tests\Fixtures\Tables\PostsTableWithSessionPersistence;
+use Filament\Tests\TestCase;
+use Illuminate\Database\Eloquent\Builder;
+
+use function Filament\Tests\livewire;
+
+uses(TestCase::class);
+
+it('returns `tableArguments` from `getTableArguments()`', function (): void {
+    $component = new TableSelectLivewireComponent;
+    $component->tableArguments = ['filter' => 'active', 'sort' => 'name'];
+
+    expect($component->getTableArguments())->toBe(['filter' => 'active', 'sort' => 'name']);
+});
+
+it('returns empty array for `getTableArguments()` by default', function (): void {
+    $component = new TableSelectLivewireComponent;
+
+    expect($component->getTableArguments())->toBe([]);
+});
+
+it('renders a blade string', function (): void {
+    $component = new TableSelectLivewireComponent;
+
+    expect($component->render())->toBe('{{ $this->table }}');
+});
+
+it('preserves native restoration for a scope-excluded `record`', function (): void {
+    $post = Post::factory()->create();
+    $post->delete();
+    $component = livewire(TableSelectLivewireComponent::class, [
+        'record' => $post,
+        'tableConfiguration' => base64_encode(PostsTableWithSessionPersistence::class),
+    ])->assertSuccessful();
+    $globalScopes = Post::getAllGlobalScopes();
+
+    try {
+        Post::addGlobalScope(
+            'exclude-table-select-record',
+            static fn (Builder $query): Builder => $query->whereKeyNot($post->getKey()),
+        );
+
+        $component
+            ->set('tableSearch', 'search')
+            ->assertSuccessful();
+
+        expect($component->instance()->record->is($post))->toBeTrue()
+            ->and($component->instance()->record->trashed())->toBeTrue();
+    } finally {
+        Post::setAllGlobalScopes($globalScopes);
+    }
+});
+
+it('preserves an unsaved relationship parent on subsequent requests', function (): void {
+    livewire(TableSelectLivewireComponent::class, [
+        'model' => User::class,
+        'record' => new User,
+        'relationshipName' => 'posts',
+        'tableConfiguration' => base64_encode(PostsTableWithSessionPersistence::class),
+    ])
+        ->set('tableSearch', 'search')
+        ->assertSuccessful();
+});
+
+describe('session persistence', function (): void {
+    it('disables session persistence on the table', function (): void {
+        $livewire = livewire(TableSelectLivewireComponent::class, [
+            'tableConfiguration' => base64_encode(PostsTableWithSessionPersistence::class),
+        ])->instance();
+
+        $table = $livewire->getTable();
+
+        expect($table->persistsFiltersInSession())->toBeFalse()
+            ->and($table->persistsSearchInSession())->toBeFalse()
+            ->and($table->persistsColumnSearchesInSession())->toBeFalse()
+            ->and($table->persistsSortInSession())->toBeFalse()
+            ->and($table->persistsGroupInSession())->toBeFalse()
+            ->and($table->persistsColumnsInSession())->toBeFalse()
+            ->and($table->persistsRecordsPerPageInSession())->toBeFalse();
+    });
+
+    it('keeps reordered columns in component state without writing to the session', function (): void {
+        $testable = livewire(TableSelectLivewireComponent::class, [
+            'tableConfiguration' => base64_encode(PostsTableWithSessionPersistence::class),
+        ]);
+
+        $reorderedTableColumns = array_reverse($testable->instance()->tableColumns);
+
+        $testable
+            ->call('applyTableColumnManager', $reorderedTableColumns, true)
+            ->set('tableRecordsPerPage', 25)
+            ->assertSet('tableColumns.0.name', 'author_id');
+
+        $livewire = $testable->instance();
+
+        expect(array_keys($livewire->getTable()->getColumns()))->toBe(['author_id', 'title'])
+            ->and(session()->has($livewire->getTablePerPageSessionKey()))->toBeFalse()
+            ->and(session()->has($livewire->getHasReorderedTableColumnsSessionKey()))->toBeFalse();
+
+        $testable
+            ->call('applyTableColumnManager', array_reverse($reorderedTableColumns), true)
+            ->assertSet('tableColumns.0.name', 'title');
+
+        expect(array_keys($testable->instance()->getTable()->getColumns()))->toBe(['title', 'author_id']);
+
+        $freshLivewire = livewire(TableSelectLivewireComponent::class, [
+            'tableConfiguration' => base64_encode(PostsTableWithSessionPersistence::class),
+        ])->instance();
+
+        expect(array_keys($freshLivewire->getTable()->getColumns()))->toBe(['title', 'author_id']);
+    });
+
+    it('does not load table state from the session', function (): void {
+        session()->put('filament.tables.' . hash('sha256', TableSelectLivewireComponent::class) . '.per_page', 25);
+        session()->put('filament.tables.' . hash('sha256', TableSelectLivewireComponent::class) . '.columns', [
+            [
+                'type' => TableSelectLivewireComponent::TABLE_COLUMN_MANAGER_COLUMN_TYPE,
+                'name' => 'title',
+                'label' => 'Title',
+                'isHidden' => false,
+                'isToggled' => false,
+                'isToggleable' => true,
+                'isToggledHiddenByDefault' => false,
+            ],
+        ]);
+
+        $livewire = livewire(TableSelectLivewireComponent::class, [
+            'tableConfiguration' => base64_encode(PostsTableWithSessionPersistence::class),
+        ])->instance();
+
+        expect($livewire->tableRecordsPerPage)->toBe(10)
+            ->and($livewire->isTableColumnToggledHidden('title'))->toBeFalse()
+            ->and(session()->get($livewire->getTablePerPageSessionKey()))->toBe(25);
+    });
+});

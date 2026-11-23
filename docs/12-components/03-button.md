@@ -2,6 +2,7 @@
 title: Button Blade component
 ---
 
+
 ## Introduction
 
 The button component is used to render a clickable button that can perform an action:
@@ -11,6 +12,8 @@ The button component is used to render a clickable button that can perform an ac
     New user
 </x-filament::button>
 ```
+
+<AutoScreenshot name="components/button/simple" alt="A simple button" />
 
 ## Using a button as an anchor link
 
@@ -24,6 +27,9 @@ By default, a button's underlying HTML tag is `<button>`. You can change it to b
     Filament
 </x-filament::button>
 ```
+
+> [!CAUTION]
+> If you are passing user-controlled data to the `href` attribute, validate its scheme using [`Str::sanitizeUrl()`](../advanced/security#validating-user-input) before rendering it. HTML escaping alone does not prevent a `javascript:` URL from executing code when clicked.
 
 ## Setting the size of a button
 
@@ -46,6 +52,8 @@ By default, the size of a button is "medium". You can make it "extra small", "sm
     New user
 </x-filament::button>
 ```
+
+<AutoScreenshot name="components/button/sizes" alt="Buttons in different sizes" />
 
 ## Changing the color of a button
 
@@ -73,6 +81,8 @@ By default, the color of a button is "primary". You can change it to be `danger`
 </x-filament::button>
 ```
 
+<AutoScreenshot name="components/button/colors" alt="Buttons in different colors" />
+
 ## Adding an icon to a button
 
 You can add an [icon](../styling/icons) to a button by using the `icon` attribute:
@@ -94,6 +104,8 @@ You can also change the icon's position to be after the text instead of before i
 </x-filament::button>
 ```
 
+<AutoScreenshot name="components/button/icon" alt="Buttons with icons" />
+
 ## Making a button outlined
 
 You can make a button use an "outlined" design using the `outlined` attribute:
@@ -103,6 +115,12 @@ You can make a button use an "outlined" design using the `outlined` attribute:
     New user
 </x-filament::button>
 ```
+
+<AutoScreenshot name="components/button/outlined" alt="Outlined buttons" />
+
+You can combine the `outlined` attribute with any [color](#changing-the-color-of-a-button):
+
+<AutoScreenshot name="components/button/outlined-colors" alt="Outlined buttons in different colors" />
 
 ## Adding a tooltip to a button
 
@@ -133,9 +151,11 @@ You can [change the color](badge#changing-the-color-of-the-badge) of the badge u
 ```blade
 <x-filament::button badge-color="danger">
     Mark notifications as read
-    
+
     <x-slot name="badge">
         3
     </x-slot>
 </x-filament::button>
 ```
+
+<AutoScreenshot name="components/button/badge" alt="Buttons with badges" />

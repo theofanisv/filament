@@ -1,15 +1,15 @@
 ---
 title: Getting started
 ---
-import Aside from "@components/Aside.astro"
 
 Once you have [installed Filament](introduction/installation#installing-the-panel-builder), you can start building your application.
 
-<Aside variant="info">
-    This guide is for the Filament panel builder. If you are looking to use the Filament UI components outside of a panel, visit the [Components](components) documentation.
-</Aside>
+> [!NOTE]
+> This guide is for the Filament panel builder. If you are looking to use the Filament UI components outside of a panel, visit the [Components](components) documentation.
 
 To start, visit `/admin` and sign in with a user account. You will be redirected to the default dashboard of the panel.
+
+<AutoScreenshot name="panels/dashboard" alt="The default Filament dashboard with widgets" />
 
 ## Resources
 
@@ -25,6 +25,8 @@ You can also choose to generate a **View** page, which is a read-only display of
 Each resource usually has an item in the sidebar, which is automatically registered as soon as you create a resource.
 
 To start your journey by creating a resource, visit the [Resources documentation](resources).
+
+<AutoScreenshot name="panels/resources/listing" alt="A resource listing page" />
 
 ## Widgets
 

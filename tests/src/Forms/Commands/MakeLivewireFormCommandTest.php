@@ -1,16 +1,16 @@
 <?php
 
+use Filament\Support\Facades\FilamentCli;
 use Filament\Tests\TestCase;
-use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\View;
 
 use function PHPUnit\Framework\assertFileExists;
 
-uses(TestCase::class);
+uses(TestCase::class)->group('serial');
 
 beforeEach(function (): void {
     $this->withoutMockingConsoleOutput();
-})
-    ->skip((bool) Arr::get($_SERVER, 'PARATEST'), 'File generation tests cannot be run in parallel as they would share a filesystem and have the potential to conflict with each other.');
+});
 
 it('can generate a Livewire form component', function (): void {
     $this->artisan('make:filament-livewire-form', [
@@ -25,6 +25,46 @@ it('can generate a Livewire form component', function (): void {
     assertFileExists($viewPath = resource_path('views/livewire/create-blog-post.blade.php'));
     expect(file_get_contents($viewPath))
         ->toMatchSnapshot();
+});
+
+it('can generate a Livewire form component in a custom namespace without a `Livewire` segment', function (): void {
+    FilamentCli::registerLivewireComponentLocation(
+        path: base_path('src/Components'),
+        namespace: 'App\\Components',
+        viewNamespace: '',
+    );
+
+    $this->mockConsoleOutput = true;
+
+    $this->artisan('make:filament-livewire-form', [
+        'name' => 'Admin/CreatePost',
+    ])
+        ->expectsQuestion('Would you like to create a form for a model?', false)
+        ->expectsQuestion('Where would you like to create the form?', 'App\\Components');
+
+    assertFileExists($path = base_path('src/Components/Admin/CreatePost.php'));
+    expect(file_get_contents($path))
+        ->toContain("return view('livewire.admin.create-post');");
+
+    assertFileExists(resource_path('views/livewire/admin/create-post.blade.php'));
+});
+
+it('can run `make:filament-livewire-form` non-interactively when a Livewire component location and an extra view namespace are registered', function (): void {
+    FilamentCli::registerLivewireComponentLocation(
+        path: base_path('src/Livewire'),
+        namespace: 'CustomNamespace\\Livewire',
+        viewNamespace: null,
+    );
+
+    View::addNamespace('custom', base_path('custom-views'));
+
+    $this->artisan('make:filament-livewire-form', [
+        'name' => 'NonInteractiveForm',
+        '--no-interaction' => true,
+    ]);
+
+    assertFileExists(app_path('Livewire/NonInteractiveForm.php'));
+    assertFileExists(resource_path('views/livewire/non-interactive-form.blade.php'));
 });
 
 it('can generate a Livewire form component for creating a model', function (): void {

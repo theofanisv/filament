@@ -14,6 +14,18 @@ return [
 
                 'label' => 'Kolumny',
 
+                'actions' => [
+
+                    'select_all' => [
+                        'label' => 'Zaznacz wszystko',
+                    ],
+
+                    'deselect_all' => [
+                        'label' => 'Odznacz wszystko',
+                    ],
+
+                ],
+
                 'form' => [
 
                     'is_enabled' => [
@@ -62,12 +74,17 @@ return [
 
         'max_rows' => [
             'title' => 'Zbyt dużo wierszy',
-            'body' => 'Nie możesz wyeksportować więcej niż 1 wiersz na raz.|Nie możesz wyeksportować więcej niż :count wierszy na raz.',
+            'body' => 'Nie możesz wyeksportować więcej niż 1 wiersz na raz.|Nie możesz wyeksportować więcej niż :count wiersze na raz.|Nie możesz wyeksportować więcej niż :count wierszy na raz.',
+        ],
+
+        'no_columns' => [
+            'title' => 'Brak wybranych kolumn',
+            'body' => 'Proszę wybrać przynajmniej jedną kolumnę do eksportu.',
         ],
 
         'started' => [
             'title' => 'Eksport rozpoczęty',
-            'body' => 'Rozpoczęto eksport i 1 wiersz zostanie przetworzony w tle.|Rozpoczęto eksport i :count wierszy zostanie przetworzonych w tle.',
+            'body' => 'Rozpoczęto eksport i 1 wiersz zostanie przetworzony w tle.|Rozpoczęto eksport i :count wiersze zostaną przetworzone w tle.|Rozpoczęto eksport i :count wierszy zostanie przetworzonych w tle.',
         ],
 
     ],

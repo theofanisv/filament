@@ -4,6 +4,12 @@ return [
 
     'builder' => [
 
+        'reordering' => [
+            'item' => 'Block',
+            'position' => ':label, Position :position von :count',
+            'moved' => ':label an Position :position von :count verschoben',
+        ],
+
         'actions' => [
 
             'clone' => [
@@ -11,6 +17,7 @@ return [
             ],
 
             'add' => [
+
                 'label' => 'Zu :label hinzufügen',
 
                 'modal' => [
@@ -30,6 +37,7 @@ return [
             ],
 
             'add_between' => [
+
                 'label' => 'Dazwischen einfügen',
 
                 'modal' => [
@@ -45,6 +53,7 @@ return [
                     ],
 
                 ],
+
             ],
 
             'delete' => [
@@ -101,9 +110,19 @@ return [
 
         ],
 
+        'block_picker' => [
+
+            'no_search_results_message' => 'Keine Blöcke entsprechen Ihrer Suche.',
+
+            'search_prompt' => 'Blöcke durchsuchen',
+
+        ],
+
     ],
 
     'checkbox_list' => [
+
+        'required_description' => 'Wählen Sie mindestens eine Option aus.',
 
         'actions' => [
 
@@ -119,9 +138,55 @@ return [
 
     ],
 
+    'color_picker' => [
+
+        'panel_label' => 'Farbauswahl',
+
+    ],
+
+    'date_time_picker' => [
+
+        'month_select' => [
+            'label' => 'Monat',
+        ],
+
+        'year_input' => [
+            'label' => 'Jahr',
+        ],
+
+        'hour_input' => [
+            'label' => 'Stunde',
+        ],
+
+        'minute_input' => [
+            'label' => 'Minute',
+        ],
+
+        'second_input' => [
+            'label' => 'Sekunde',
+        ],
+
+    ],
+
     'file_upload' => [
 
+        'placeholder' => 'Keine Dateien hochgeladen',
+
+        'actions' => [
+
+            'download' => [
+                'label' => 'Herunterladen',
+            ],
+
+            'open' => [
+                'label' => 'In neuem Tab öffnen',
+            ],
+
+        ],
+
         'editor' => [
+
+            'label' => 'Bildeditor',
 
             'actions' => [
 
@@ -259,8 +324,28 @@ return [
                 'label' => 'Zeile löschen',
             ],
 
+            'move_down' => [
+                'label' => 'Nach unten verschieben',
+            ],
+
+            'move_up' => [
+                'label' => 'Nach oben verschieben',
+            ],
+
             'reorder' => [
                 'label' => 'Zeile neu ordnen',
+            ],
+
+        ],
+
+        'columns' => [
+
+            'actions' => [
+                'label' => 'Aktionen',
+            ],
+
+            'reorder' => [
+                'label' => 'Verschieben',
             ],
 
         ],
@@ -277,9 +362,19 @@ return [
 
         ],
 
+        'reordering' => [
+            'row' => 'Zeile',
+            'position' => ':label, Position :position von :count',
+            'moved' => ':label an Position :position von :count verschoben',
+        ],
+
     ],
 
     'markdown_editor' => [
+
+        'file_attachments_accepted_file_types_message' => 'Hochgeladene Dateien müssen vom Typ :values sein.',
+
+        'file_attachments_max_size_message' => 'Hochgeladene Dateien dürfen nicht größer als :max Kilobytes sein.',
 
         'tools' => [
             'attach_files' => 'Dateien beifügen',
@@ -331,6 +426,24 @@ return [
     ],
 
     'repeater' => [
+
+        'reordering' => [
+            'item' => 'Eintrag',
+            'position' => ':label, Position :position von :count',
+            'moved' => ':label an Position :position von :count verschoben',
+        ],
+
+        'columns' => [
+
+            'actions' => [
+                'label' => 'Aktionen',
+            ],
+
+            'reorder' => [
+                'label' => 'Verschieben',
+            ],
+
+        ],
 
         'actions' => [
 
@@ -416,16 +529,12 @@ return [
 
                     ],
 
-                    'actions' => [
-
-                        'save' => [
-                            'label' => 'Speichern',
-                        ],
-
-                    ],
-
                 ],
 
+            ],
+
+            'close_panel' => [
+                'label' => 'Panel schließen',
             ],
 
             'custom_block' => [
@@ -440,6 +549,71 @@ return [
 
                         'save' => [
                             'label' => 'Speichern',
+                        ],
+
+                    ],
+
+                ],
+
+            ],
+
+            'grid' => [
+
+                'label' => 'Raster',
+
+                'modal' => [
+
+                    'heading' => 'Raster',
+
+                    'form' => [
+
+                        'preset' => [
+
+                            'label' => 'Voreinstellung',
+
+                            'placeholder' => 'Keine',
+
+                            'options' => [
+                                'two' => 'Zwei',
+                                'three' => 'Drei',
+                                'four' => 'Vier',
+                                'five' => 'Fünf',
+                                'two_start_third' => 'Zwei (Anfang Drittel)',
+                                'two_end_third' => 'Zwei (Ende Drittel)',
+                                'two_start_fourth' => 'Zwei (Anfang Viertel)',
+                                'two_end_fourth' => 'Zwei (Ende Viertel)',
+                            ],
+                        ],
+
+                        'columns' => [
+                            'label' => 'Spalten',
+                        ],
+
+                        'from_breakpoint' => [
+
+                            'label' => 'Ab Breakpoint',
+
+                            'options' => [
+                                'default' => 'Alle',
+                                'sm' => 'Klein (sm)',
+                                'md' => 'Mittel (md)',
+                                'lg' => 'Groß (lg)',
+                                'xl' => 'Extra groß (xl)',
+                                '2xl' => 'Zweifach extra groß (2xl)',
+                            ],
+
+                        ],
+
+                        'is_asymmetric' => [
+                            'label' => 'Zwei asymmetrische Spalten',
+                        ],
+
+                        'start_span' => [
+                            'label' => 'Spannweite am Anfang',
+                        ],
+
+                        'end_span' => [
+                            'label' => 'Spannweite am Ende',
                         ],
 
                     ],
@@ -472,25 +646,98 @@ return [
 
             ],
 
-        ],
+            'text_color' => [
 
-        'no_merge_tag_search_results_message' => 'Keine Ergebnisse für Merge-Tags.',
+                'label' => 'Textfarbe',
 
-        'dialogs' => [
+                'modal' => [
 
-            'link' => [
+                    'heading' => 'Textfarbe',
 
-                'actions' => [
-                    'link' => 'Verlinken',
-                    'unlink' => 'Verlinkung aufheben',
+                    'form' => [
+
+                        'color' => [
+                            'label' => 'Farbe',
+
+                            'options' => [
+                                'slate' => 'Schiefer',
+                                'gray' => 'Grau',
+                                'zinc' => 'Zink',
+                                'neutral' => 'Neutral',
+                                'stone' => 'Stein',
+                                'mauve' => 'Mauve',
+                                'olive' => 'Olive',
+                                'mist' => 'Nebel',
+                                'taupe' => 'Taupe',
+                                'red' => 'Rot',
+                                'orange' => 'Orange',
+                                'amber' => 'Bernstein',
+                                'yellow' => 'Gelb',
+                                'lime' => 'Limette',
+                                'green' => 'Grün',
+                                'emerald' => 'Smaragd',
+                                'teal' => 'Blaugrün',
+                                'cyan' => 'Cyan',
+                                'sky' => 'Himmel',
+                                'blue' => 'Blau',
+                                'indigo' => 'Indigo',
+                                'violet' => 'Violett',
+                                'purple' => 'Lila',
+                                'fuchsia' => 'Fuchsia',
+                                'pink' => 'Pink',
+                                'rose' => 'Rose',
+                            ],
+                        ],
+
+                        'custom_color' => [
+                            'label' => 'Benutzerdefinierte Farbe',
+                        ],
+
+                    ],
+
                 ],
-
-                'label' => 'URL',
-
-                'placeholder' => 'URL eingeben',
 
             ],
 
+        ],
+
+        'custom_blocks' => [
+
+            'actions' => [
+
+                'delete' => [
+                    'label' => 'Block löschen',
+                ],
+
+                'edit' => [
+                    'label' => 'Block bearbeiten',
+                ],
+
+            ],
+
+            'no_search_results_message' => 'Keine Blöcke entsprechen Ihrer Suche.',
+
+            'search_label' => 'Blöcke durchsuchen',
+
+            'search_prompt' => 'Blöcke durchsuchen',
+
+        ],
+
+        'file_attachments_accepted_file_types_message' => 'Hochgeladene Dateien müssen vom Typ :values sein.',
+
+        'file_attachments_max_size_message' => 'Hochgeladene Dateien dürfen nicht größer als :max Kilobytes sein.',
+
+        'no_merge_tag_search_results_message' => 'Keine Ergebnisse für Merge-Tags.',
+
+        'mentions' => [
+            'no_options_message' => 'Keine Optionen verfügbar.',
+            'no_search_results_message' => 'Keine Ergebnisse gefunden.',
+            'search_prompt' => 'Beginnen Sie mit der Eingabe, um zu suchen...',
+            'searching_message' => 'Sucht...',
+        ],
+
+        'toolbar' => [
+            'label' => 'Editor-Werkzeugleiste',
         ],
 
         'tools' => [
@@ -503,12 +750,18 @@ return [
             'bold' => 'Fett',
             'bullet_list' => 'Aufzählungsliste',
             'clear_formatting' => 'Formatierung löschen',
+            'code' => 'Code',
             'code_block' => 'Code Block',
             'custom_blocks' => 'Blöcke',
             'details' => 'Details',
             'h1' => 'Titel',
             'h2' => 'Überschrift',
             'h3' => 'Unterüberschrift',
+            'h4' => 'Überschrift 4',
+            'h5' => 'Überschrift 5',
+            'h6' => 'Überschrift 6',
+            'grid' => 'Raster',
+            'grid_delete' => 'Raster löschen',
             'highlight' => 'Hervorheben',
             'horizontal_rule' => 'Horizontale Linie',
             'italic' => 'Kursiv',
@@ -516,6 +769,7 @@ return [
             'link' => 'Link',
             'merge_tags' => 'Merge-Tags',
             'ordered_list' => 'Nummerierte Aufzählung',
+            'paragraph' => 'Absatz',
             'redo' => 'Wiederherstellen',
             'small' => 'Kleiner Text',
             'strike' => 'Durchgestrichen',
@@ -532,15 +786,23 @@ return [
             'table_merge_cells' => 'Zellen verbinden',
             'table_split_cell' => 'Zelle teilen',
             'table_toggle_header_row' => 'Kopfzeile umschalten',
+            'table_toggle_header_cell' => 'Kopfzelle umschalten',
+            'text_color' => 'Textfarbe',
             'underline' => 'Unterstreichen',
             'undo' => 'Rückgängig',
         ],
+
+        'uploading_file_message' => 'Datei wird hochgeladen...',
 
     ],
 
     'select' => [
 
         'actions' => [
+
+            'clear' => [
+                'label' => 'Auswahl löschen',
+            ],
 
             'create_option' => [
 
@@ -586,6 +848,10 @@ return [
 
             ],
 
+            'remove_option' => [
+                'label' => ':label entfernen',
+            ],
+
         ],
 
         'boolean' => [
@@ -593,27 +859,54 @@ return [
             'false' => 'Nein',
         ],
 
+        'error_message' => 'Die Optionen konnten nicht geladen werden. Bitte versuchen Sie es erneut.',
+
         'loading_message' => 'Lädt...',
 
         'max_items_message' => 'Es können nur :count ausgewählt werden.',
+
+        'no_options_message' => 'Keine Optionen verfügbar.',
 
         'no_search_results_message' => 'Die Suche ergab keine Treffer.',
 
         'placeholder' => 'Wählen Sie eine Option',
 
+        'required_description' => 'Wählen Sie eine Option aus.',
+
         'searching_message' => 'Sucht...',
+
+        'search_label' => 'Suchen',
 
         'search_prompt' => 'Beginnen Sie mit der Eingabe, um zu suchen...',
 
     ],
 
     'tags_input' => [
+
+        'actions' => [
+
+            'delete' => [
+                'label' => 'Löschen',
+            ],
+
+        ],
+
         'placeholder' => 'Neue Kennzeichnung',
+
+        'tag_added' => 'Hinzugefügt: :tag',
+
+        'tag_removed' => 'Entfernt: :tag',
+
     ],
 
     'text_input' => [
 
         'actions' => [
+
+            'copy' => [
+                'label' => 'Kopieren',
+                'message' => 'Kopiert',
+            ],
 
             'hide_password' => [
                 'label' => 'Passwort verbergen',
@@ -628,6 +921,8 @@ return [
     ],
 
     'toggle_buttons' => [
+
+        'required_description' => 'Wählen Sie mindestens eine Option aus.',
 
         'boolean' => [
             'true' => 'Ja',

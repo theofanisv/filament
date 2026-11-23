@@ -1,7 +1,6 @@
 ---
 title: Checkbox column
 ---
-import AutoScreenshot from "@components/AutoScreenshot.astro"
 
 ## Introduction
 
@@ -13,14 +12,16 @@ use Filament\Tables\Columns\CheckboxColumn;
 CheckboxColumn::make('is_admin')
 ```
 
-<AutoScreenshot name="tables/columns/checkbox/simple" alt="Checkbox column" version="4.x" />
+<AutoScreenshot name="tables/columns/checkbox/simple" alt="Checkbox column" />
 
 ## Lifecycle hooks
 
 Hooks may be used to execute code at various points within the checkbox's lifecycle:
 
 ```php
-CheckboxColumn::make()
+use Filament\Tables\Columns\CheckboxColumn;
+
+CheckboxColumn::make('is_admin')
     ->beforeStateUpdated(function ($record, $state) {
         // Runs before the state is saved to the database.
     })
@@ -28,3 +29,26 @@ CheckboxColumn::make()
         // Runs after the state is saved to the database.
     })
 ```
+
+## Rendering only the updated cells
+
+By default, the whole table re-renders after a checkbox column is updated. You may [re-render only the updated cells](overview#rendering-only-the-updated-cells-of-editable-columns) using `partiallyRenderAfterStateUpdated()` or `partiallyRenderColumnsAfterStateUpdated()`.
+
+## Security
+
+### Authorization
+
+By default, checkbox columns do not check model policies. Without an authorization check, users can update the column for records accessible through the table query, even if the record's `update()` policy denies access to its edit page.
+
+Use `authorize()` to check the record's `update()` policy. Denied columns are disabled, and changes are rejected on the server:
+
+```php
+use Filament\Tables\Columns\CheckboxColumn;
+
+CheckboxColumn::make('is_admin')
+    ->authorize()
+```
+
+You may pass a different ability, such as `authorize('updateAdminStatus')`, or a custom callback. See [authorizing editable columns](overview#authorizing-editable-columns) for callbacks and global configuration.
+
+Check permission for the specific attribute being changed, especially sensitive attributes such as administrator access. If the column updates a related model or pivot, authorize that operation too. Alternatively, use a resource edit page or a policy-backed `EditAction` to apply the resource's edit authorization.

@@ -28,6 +28,7 @@ trait HasQuery
     public function query(Builder | Closure | null $query): static
     {
         $this->query = $query;
+        $this->hasCachedModel = false;
 
         return $this;
     }
@@ -42,6 +43,8 @@ trait HasQuery
     public function relationship(?Closure $relationship): static
     {
         $this->getRelationshipUsing = $relationship;
+        $this->hasCachedModel = false;
+        $this->cachedHasPivotRecordKeys = null;
 
         return $this;
     }
@@ -53,23 +56,26 @@ trait HasQuery
         return $this;
     }
 
-    protected function applyQueryScopes(Builder $query): Builder
+    public function applyQueryScopes(Builder $query, bool $isResolvingRecord = false): Builder
     {
         foreach ($this->queryScopes as $scope) {
-            $query = $this->evaluate($scope, ['query' => $query]) ?? $query;
+            $query = $this->evaluate($scope, [
+                'query' => $query,
+                'isResolvingRecord' => $isResolvingRecord,
+            ]) ?? $query;
         }
 
         return $query;
     }
 
-    public function getQuery(): Builder | Relation | null
+    public function getQuery(bool $isResolvingRecord = false): Builder | Relation | null
     {
         if ($query = $this->evaluate($this->query)) {
-            return $this->applyQueryScopes($query->clone());
+            return $this->applyQueryScopes($query->clone(), $isResolvingRecord);
         }
 
         if ($query = $this->getRelationshipQuery()) {
-            return $this->applyQueryScopes($query->clone());
+            return $this->applyQueryScopes($query->clone(), $isResolvingRecord);
         }
 
         return null;
@@ -99,9 +105,18 @@ trait HasQuery
             }
 
             // https://github.com/filamentphp/filament/issues/2079
-            $query->withCasts(
-                app($relationship->getPivotClass())->getCasts(),
-            );
+            $pivot = app($relationship->getPivotClass());
+            $pivotCasts = $pivot->getCasts();
+
+            if ($this->allowsDuplicates()) {
+                if (array_key_exists($pivot->getKeyName(), $pivotCasts)) {
+                    $pivotCasts['filament_pivot_key'] = $pivotCasts[$pivot->getKeyName()];
+                }
+
+                unset($pivotCasts[$query->getModel()->getKeyName()]);
+            }
+
+            $query->withCasts($pivotCasts);
         }
 
         return $query;
@@ -115,16 +130,16 @@ trait HasQuery
         $columns = [
             $relationship->getTable() . '.*',
             $query->getModel()->getTable() . '.*',
+            ...invade($relationship)->aliasedPivotColumns(),
         ];
 
-        if (! $this->allowsDuplicates()) {
-            $columns = [
-                ...invade($relationship)->aliasedPivotColumns(),
-                ...$columns,
-            ];
-        }
+        $baseQuery = $query instanceof Relation ? $query->getQuery()->getQuery() : $query->getQuery();
+        $baseQuery->columns = array_values(array_filter(
+            $baseQuery->columns ?? [],
+            fn ($column): bool => ! in_array($column, $columns, true),
+        ));
 
-        $query->select($columns);
+        $query->addSelect($columns);
 
         return $query;
     }
@@ -134,7 +149,15 @@ trait HasQuery
         return $this->evaluate($this->getRelationshipUsing);
     }
 
+    /**
+     * @deprecated Use `getInverseRelationshipName()` instead.
+     */
     public function getInverseRelationship(): ?string
+    {
+        return $this->getInverseRelationshipName();
+    }
+
+    public function getInverseRelationshipName(): ?string
     {
         $relationship = $this->getRelationship();
 
@@ -159,6 +182,6 @@ trait HasQuery
 
     public function getInverseRelationshipFor(Model $record): Relation | Builder
     {
-        return $record->{$this->getInverseRelationship()}();
+        return $record->{$this->getInverseRelationshipName()}();
     }
 }

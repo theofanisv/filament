@@ -2,7 +2,10 @@
 
 namespace Filament\Resources\Concerns;
 
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Schemas\Schema;
+use Filament\Support\Components\Attributes\Unexposed;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Auth\Access\Response;
@@ -30,36 +33,43 @@ trait InteractsWithRelationshipTable
 
     protected static ?string $relationshipTitle = null;
 
+    #[Unexposed]
     public static function getRelatedResource(): ?string
     {
         return static::$relatedResource;
     }
 
+    #[Unexposed]
     public static function checkPolicyExistence(bool $condition = true): void
     {
         static::$shouldCheckPolicyExistence = $condition;
     }
 
+    #[Unexposed]
     public static function skipAuthorization(bool $condition = true): void
     {
         static::$shouldSkipAuthorization = $condition;
     }
 
+    #[Unexposed]
     public static function shouldCheckPolicyExistence(): bool
     {
         return static::$shouldCheckPolicyExistence;
     }
 
+    #[Unexposed]
     public static function shouldSkipAuthorization(): bool
     {
         return static::$shouldSkipAuthorization;
     }
 
+    #[Unexposed]
     public function getRelationship(): Relation | Builder
     {
         return $this->getOwnerRecord()->{static::getRelationshipName()}();
     }
 
+    #[Unexposed]
     public static function getRelationshipName(): string
     {
         if (isset(static::$relationship)) {
@@ -69,11 +79,17 @@ trait InteractsWithRelationshipTable
         return static::getRelatedResource()::getParentResourceRegistration()->getRelationshipName();
     }
 
+    #[Unexposed]
     public function defaultForm(Schema $schema): Schema
     {
-        return $schema->columns(2);
+        if (! $schema->hasCustomColumns()) {
+            $schema->columns(2);
+        }
+
+        return $schema;
     }
 
+    #[Unexposed]
     public function form(Schema $schema): Schema
     {
         if (static::getRelatedResource()) {
@@ -83,11 +99,17 @@ trait InteractsWithRelationshipTable
         return $schema;
     }
 
+    #[Unexposed]
     public function defaultInfolist(Schema $schema): Schema
     {
-        return $schema->columns(2);
+        if (! $schema->hasCustomColumns()) {
+            $schema->columns(2);
+        }
+
+        return $schema;
     }
 
+    #[Unexposed]
     public function infolist(Schema $schema): Schema
     {
         if (static::getRelatedResource()) {
@@ -111,7 +133,44 @@ trait InteractsWithRelationshipTable
                         continue;
                     }
 
+                    if ($actionGroup = $action->getRootGroup()) {
+                        $actionName = $action->getName();
+                        $actionGroup = $actionGroup->getClone()->record($record);
+
+                        $findActionInGroup = function (ActionGroup $actionGroup) use (&$findActionInGroup, $actionName): ?Action {
+                            foreach ($actionGroup->getActions() as $groupedAction) {
+                                if ($groupedAction instanceof Action) {
+                                    if ($groupedAction->getName() === $actionName) {
+                                        return $groupedAction;
+                                    }
+
+                                    continue;
+                                }
+
+                                if ($nestedAction = $findActionInGroup($groupedAction)) {
+                                    return $nestedAction;
+                                }
+                            }
+
+                            return null;
+                        };
+
+                        $action = $findActionInGroup($actionGroup);
+
+                        assert($action instanceof Action);
+                    } else {
+                        $action = clone $action;
+                    }
+
                     $action->record($record);
+
+                    $actionGroup = $action->getGroup();
+
+                    while ($actionGroup) {
+                        $actionGroup->record($record);
+
+                        $actionGroup = $actionGroup->getGroup();
+                    }
 
                     if ($action->isHidden()) {
                         continue;
@@ -125,8 +184,10 @@ trait InteractsWithRelationshipTable
                 }
 
                 return null;
-            })
-            ->recordUrl(function (Model $record, Table $table): ?string {
+            });
+
+        if (! $table->hasCustomRecordUrl()) {
+            $table->recordUrl(function (Model $record, Table $table): ?string {
                 foreach (['view', 'edit'] as $action) {
                     $action = $table->getAction($action);
 
@@ -134,7 +195,44 @@ trait InteractsWithRelationshipTable
                         continue;
                     }
 
+                    if ($actionGroup = $action->getRootGroup()) {
+                        $actionName = $action->getName();
+                        $actionGroup = $actionGroup->getClone()->record($record);
+
+                        $findActionInGroup = function (ActionGroup $actionGroup) use (&$findActionInGroup, $actionName): ?Action {
+                            foreach ($actionGroup->getActions() as $groupedAction) {
+                                if ($groupedAction instanceof Action) {
+                                    if ($groupedAction->getName() === $actionName) {
+                                        return $groupedAction;
+                                    }
+
+                                    continue;
+                                }
+
+                                if ($nestedAction = $findActionInGroup($groupedAction)) {
+                                    return $nestedAction;
+                                }
+                            }
+
+                            return null;
+                        };
+
+                        $action = $findActionInGroup($actionGroup);
+
+                        assert($action instanceof Action);
+                    } else {
+                        $action = clone $action;
+                    }
+
                     $action->record($record);
+
+                    $actionGroup = $action->getGroup();
+
+                    while ($actionGroup) {
+                        $actionGroup->record($record);
+
+                        $actionGroup = $actionGroup->getGroup();
+                    }
 
                     if ($action->isHidden()) {
                         continue;
@@ -150,14 +248,18 @@ trait InteractsWithRelationshipTable
                 }
 
                 return null;
-            })
-            ->authorizeReorder(fn (): bool => $this->canReorder());
+            });
+        }
+
+        $table->authorizeReorder(fn (): bool => $this->canReorder());
 
         if ($relatedResource = static::getRelatedResource()) {
             $table->modelLabel($relatedResource::getModelLabel());
             $table->pluralModelLabel($relatedResource::getPluralModelLabel());
 
             $relatedResource::configureTable($table);
+
+            $table->markRecordTitleAsInherited();
         }
 
         return $table;
@@ -343,6 +445,7 @@ trait InteractsWithRelationshipTable
         return $this->getViewAuthorizationResponse($record)->allowed();
     }
 
+    #[Unexposed]
     public function getAuthorizationResponse(string $action, ?Model $record = null): Response
     {
         if (static::shouldSkipAuthorization()) {
@@ -368,6 +471,7 @@ trait InteractsWithRelationshipTable
         return $this->getAuthorizationResponse($action, $record)->allowed();
     }
 
+    #[Unexposed]
     public static function getRelationshipTitle(): string
     {
         if (filled(static::$relationshipTitle)) {

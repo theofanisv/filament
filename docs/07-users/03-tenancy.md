@@ -1,7 +1,6 @@
 ---
 title: Multi-tenancy
 ---
-import Aside from "@components/Aside.astro"
 
 ## Introduction
 
@@ -9,9 +8,8 @@ Multi-tenancy is a concept where a single instance of an application serves mult
 
 Multi-tenancy is a very sensitive topic. It's important to understand the security implications of multi-tenancy and how to properly implement it. If implemented partially or incorrectly, data belonging to one tenant may be exposed to another tenant. Filament provides a set of tools to help you implement multi-tenancy in your application, but it is up to you to understand how to use them.
 
-<Aside variant="warning">
-    Filament does not provide any guarantees about the security of your application. It is your responsibility to ensure that your application is secure. Please see the [security](#tenancy-security) section for more information.
-</Aside>
+> [!WARNING]
+> Filament does not provide any guarantees about the security of your application. It is your responsibility to ensure that your application is secure. Please see the [security](#tenancy-security) section for more information.
 
 ## Simple one-to-many tenancy
 
@@ -109,6 +107,8 @@ class User extends Authenticatable implements FilamentUser, HasTenants
 
 In this example, users belong to many teams, so there is a `teams()` relationship. The `getTenants()` method returns the teams that the user belongs to. Filament uses this to list the tenants that the user has access to.
 
+<AutoScreenshot name="panels/tenancy" alt="A panel with multi-tenancy and a tenant switcher" />
+
 For security, you also need to implement the `canAccessTenant()` method of the `HasTenants` interface to prevent users from accessing the data of other tenants by guessing their tenant ID and putting it into the URL.
 
 You'll also want users to be able to [register new teams](#adding-a-tenant-registration-page).
@@ -172,6 +172,8 @@ public function panel(Panel $panel): Panel
 }
 ```
 
+<AutoScreenshot name="panels/tenancy/registration" alt="Tenant registration page" />
+
 ### Customizing the tenant registration page
 
 You can override any method you want on the base registration page class to make it act as you want. Even the `$view` property can be overridden to use a custom view of your choice.
@@ -222,6 +224,8 @@ public function panel(Panel $panel): Panel
         ->tenantProfile(EditTeamProfile::class);
 }
 ```
+
+<AutoScreenshot name="panels/tenancy/profile" alt="Tenant profile page" />
 
 ### Customizing the tenant profile page
 
@@ -299,7 +303,7 @@ If you're using the `requiresTenantSubscription()` configuration method, then yo
 
 ### Writing a custom billing integration
 
-Billing integrations are quite simple to write. You just need a class that implements the `Filament\Billing\Providers\Contracts\Provider` interface. This interface has two methods.
+Billing integrations are quite simple to write. You just need a class that implements the `Filament\Billing\Providers\Contracts\BillingProvider` interface. This interface has two methods.
 
 `getRouteAction()` is used to get the route action that should be run when the user visits the billing page. This could be a callback function, or the name of a controller, or a Livewire component - anything that works when using `Route::get()` in Laravel normally. For example, you could put in a simple redirect to your own billing page using a callback function.
 
@@ -309,12 +313,13 @@ Here's an example billing provider that uses a callback function for the route a
 
 ```php
 use App\Http\Middleware\RedirectIfUserNotSubscribed;
+use Closure;
 use Filament\Billing\Providers\Contracts\BillingProvider;
 use Illuminate\Http\RedirectResponse;
 
 class ExampleBillingProvider implements BillingProvider
 {
-    public function getRouteAction(): string
+    public function getRouteAction(): Closure
     {
         return function (): RedirectResponse {
             return redirect('https://billing.example.com');
@@ -366,6 +371,52 @@ public function panel(Panel $panel): Panel
         ]);
 }
 ```
+
+### Grouping tenant menu items
+
+By default, all tenant menu items are rendered in a single list. If you want to separate them into distinct groups, you can pass an array of arrays to the `tenantMenuItems()` method. Each array is rendered as its own group, separated by a divider:
+
+```php
+use App\Filament\Pages\Members;
+use App\Filament\Pages\Settings;
+use Filament\Actions\Action;
+use Filament\Panel;
+
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        // ...
+        ->tenantMenuItems([
+            [
+                Action::make('settings')
+                    ->url(fn (): string => Settings::getUrl())
+                    ->icon('heroicon-m-cog-8-tooth'),
+                Action::make('members')
+                    ->url(fn (): string => Members::getUrl())
+                    ->icon('heroicon-m-user-group'),
+            ],
+            [
+                Action::make('documentation')
+                    ->url('https://filamentphp.com/docs')
+                    ->icon('heroicon-m-book-open'),
+            ],
+        ]);
+}
+```
+
+<AutoScreenshot name="tenancy/tenant-menu-grouping" alt="Tenant menu items split into separate groups" />
+
+> [!NOTE]
+> The `register` item is added to the last group by default. To place it yourself, register it explicitly in any group using the `register` array key. Since its default `sort()` puts it at the end of its group, adjust the sort if you want it elsewhere within the group:
+>
+> ```php
+> ->tenantMenuItems([
+>     // ...
+>     [
+>         'register' => fn (Action $action): Action => $action->sort(2),
+>     ],
+> ])
+> ```
 
 ### Allowing the tenants to be searched
 
@@ -424,10 +475,10 @@ public function panel(Panel $panel): Panel
 
 ### Customizing the billing link
 
-To customize the billing link in the tenant menu, register a new item with the `profile` array key, and pass a function that [customizes the action](../actions) object:
+To customize the billing link in the tenant menu, register a new item with the `billing` array key, and pass a function that [customizes the action](../actions) object:
 
 ```php
-use Filament\Actions\Action
+use Filament\Actions\Action;
 use Filament\Panel;
 
 public function panel(Panel $panel): Panel
@@ -465,6 +516,23 @@ Action::make('lockSession')
     ->url(fn (): string => route('lock-session'))
     ->postToUrl()
 ```
+
+### Disabling the tenant switcher
+
+By default, users can switch between tenants using the tenant menu. If you want to keep the tenant menu visible but prevent users from switching tenants, you can use the `tenantSwitcher()` method in the [configuration](../panel-configuration):
+
+```php
+use Filament\Panel;
+
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        // ...
+        ->tenantSwitcher(false);
+}
+```
+
+This keeps the tenant menu visible, showing the current tenant name and any custom menu items, but hides the list of other tenants. This is useful when you want to display tenant information without allowing switching, or when switching should be controlled through other means.
 
 ### Hiding the tenant menu
 
@@ -585,13 +653,14 @@ By default, Filament will use the `name` attribute of the tenant to display its 
 namespace App\Models;
 
 use Filament\Models\Contracts\HasName;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 
 class Team extends Model implements HasName
 {
     // ...
 
-    public function getFilamentName(): string
+    public function getFilamentName(): string | Htmlable
     {
         return "{$this->name} {$this->subscription_plan}";
     }
@@ -599,6 +668,22 @@ class Team extends Model implements HasName
 ```
 
 The `getFilamentName()` method is used to retrieve the name of the current user.
+
+### Rendering HTML in tenant names
+
+You may return an `Htmlable` object, such as an `HtmlString`, from `getFilamentName()` to render HTML in the tenant name:
+
+```php
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\HtmlString;
+
+public function getFilamentName(): string | Htmlable
+{
+    return new HtmlString(e($this->name) . ' <strong>' . e($this->subscription_plan) . '</strong>');
+}
+```
+
+Filament's `getTenantName()` method returns either a string or an `Htmlable` object. Strings are rendered as text, including in tenant menu tooltips. Only `Htmlable` names are rendered as trusted HTML, so you must escape dynamic content using `e()` before including it in an `HtmlString`.
 
 ## Setting the current tenant label
 
@@ -745,9 +830,8 @@ public function panel(Panel $panel): Panel
 
 In this example, the `domain` attribute should contain a valid domain host, like `example.com` or `subdomain.example.com`.
 
-<Aside variant="info">
-    When using a parameter for the entire domain (`tenantDomain('{tenant:domain}')`), Filament will register a [global route parameter pattern](https://laravel.com/docs/routing#parameters-global-constraints) for all `tenant` parameters in the application to be `[a-z0-9.\-]+`. This is because Laravel does not allow the `.` character in route parameters by default. This might conflict with other panels using tenancy, or other parts of your application that use a `tenant` route parameter.
-</Aside>
+> [!NOTE]
+> When using a parameter for the entire domain (`tenantDomain('{tenant:domain}')`), Filament will register a [global route parameter pattern](https://laravel.com/docs/routing#parameters-global-constraints) for all `tenant` parameters in the application to be `[a-z0-9.\-]+`. This is because Laravel does not allow the `.` character in route parameters by default. This might conflict with other panels using tenancy, or other parts of your application that use a `tenant` route parameter.
 
 ## Disabling tenancy for a resource
 
@@ -777,20 +861,30 @@ protected static bool $isScopedToTenant = true;
 
 It's important to understand the security implications of multi-tenancy and how to properly implement it. If implemented partially or incorrectly, data belonging to one tenant may be exposed to another tenant. Filament provides a set of tools to help you implement multi-tenancy in your application, but it is up to you to understand how to use them. Filament does not provide any guarantees about the security of your application. It is your responsibility to ensure that your application is secure.
 
-Below is a list of features that Filament provides to help you implement multi-tenancy in your application:
+### Scoping queries to the current tenant
 
-- Automatic global scoping of Eloquent model queries for [tenant-aware](#disabling-tenancy-for-a-resource) resources that belong to the panel with tenancy enabled. The query used to fetch records for a resource is automatically scoped to the current tenant. This query is used to render the resource's list table, and is also used to resolve records from the current URL when editing or viewing a record. This means that if a user attempts to view a record that does not belong to the current tenant, they will receive a 404 error.
-    - A [tenant-aware](#disabling-tenancy-for-a-resource) resource has to exist in the panel with tenancy enabled for the resource's model to have the global scope applied. If you want to scope the queries for a model that does not have a corresponding resource, you must [use middleware to apply additional global scopes](#using-tenant-aware-middleware-to-apply-additional-global-scopes) for that model.
-    - The global scopes are applied after the tenant has been identified from the request. This happens during the middleware stack of panel requests. If you make a query before the tenant has been identified, such as from early middleware in the stack or in a service provider, the query will not be scoped to the current tenant. To guarantee that middleware runs after the current tenant is identified, you should register it as [tenant middleware](#applying-middleware-to-tenant-aware-routes).
-    - As per the point above, queries made outside the panel with tenancy enabled do not have access to the current tenant, so are not scoped. If in doubt, please check if your queries are properly scoped or not before deploying your application.
-    - If you need to disable the tenancy global scope for a specific query, you can use the `withoutGlobalScope(filament()->getTenancyScopeName())` method on the query.
-    - If any of your queries disable all global scopes, the tenancy global scope will be disabled as well. You should be careful when using this method, as it can lead to data leakage. If you need to disable all global scopes except the tenancy global scope, you can use the `withoutGlobalScopes()` method passing an array of the global scopes you want to disable.
+Filament applies a tenant global scope to models with a [tenant-aware resource](#disabling-tenancy-for-a-resource) registered in the current panel. This scopes Eloquent queries that retain the scope, including the resource's list table and record URL binding. A record outside the current tenant returns a 404 response when accessed through that scoped binding.
 
-- Automatic association of newly created Eloquent models with the current tenant. When a new record is created for a [tenant-aware](#disabling-tenancy-for-a-resource) resource, the tenant is automatically associated with the record. This means that the record will belong to the current tenant, as the foreign key column is automatically set to the tenant's ID. This is done by Filament registering an event listener for the `creating` and `created` events on the resource's Eloquent model.
-    - A [tenant-aware](#disabling-tenancy-for-a-resource) resource has to exist in the panel with tenancy enabled for the resource's model to have the automatic association to happen. If you want automatic association for a model that does not have a corresponding resource, you must [register a listener for the `creating` event](https://laravel.com/docs/eloquent#events) for that model, and associate the `filament()->getTenant()` with it.
-    - The events run after the tenant has been identified from the request. This happens during the middleware stack of panel requests. If you create a model before the tenant has been identified, such as from early middleware in the stack or in a service provider, it will not be associated with the current tenant. To guarantee that middleware runs after the current tenant is identified, you should register it as [tenant middleware](#applying-middleware-to-tenant-aware-routes).
-    - As per the point above, models created outside the panel with tenancy enabled do not have access to the current tenant, so are not associated. If in doubt, please check if your models are properly associated or not before deploying your application.
-    - If you need to disable the automatic association for a particular model, you can [mute the events](https://laravel.com/docs/eloquent#muting-events) temporarily while you create it. If any of your code currently does this or removes event listeners permanently, you should check this is not affecting the tenancy feature.
+The scope applies only while the matching panel is current and a tenant has been identified. Queries made outside the tenant-aware panel or before tenant identification, such as in a service provider or early middleware, need their own tenant constraints. Register [tenant middleware](#applying-middleware-to-tenant-aware-routes) when your middleware needs the current tenant, and make it persistent if its restrictions must apply on subsequent Livewire requests. Models without a tenant-aware resource also need [additional global scopes](#using-tenant-aware-middleware-to-apply-additional-global-scopes). Queries made through Laravel's query builder rather than Eloquent do not apply model global scopes.
+
+Tenant scoping is not record authorization. Implement `canAccessTenant()` to control which tenants a user may access, and policies or explicit authorization checks to restrict what they can do within a tenant. A table query does not automatically filter each row through its `view()` policy. Add query restrictions for records that should not be listed or included in widget aggregates.
+
+> [!WARNING]
+> `withoutGlobalScopes()` also removes tenant isolation. To remove other scopes while retaining tenancy, pass only those scopes to `withoutGlobalScopes([...])`. Use `withoutGlobalScope(filament()->getTenancyScopeName())` only when you intentionally need access across tenants, and authorize that access separately.
+
+### Protecting models between Livewire requests
+
+> [!WARNING]
+> On each Livewire request to a resource page, Filament re-resolves its record through the resource binding query, including tenant scoping unless that query removes it. This protection does not extend to records passed into relation managers, widgets, or modal table selects: their model properties use Livewire's native restoration, which does not apply global scopes by default. Filament also does not re-query a tenant registration page's `$tenant`, model properties that you add, or models nested inside other public state. Enforce tenant and ownership restrictions and authorize those models before using them. See [Eloquent model restoration in Livewire](../advanced/security#understanding-eloquent-model-restoration-in-livewire) for the complete boundary.
+
+### Associating new records with the current tenant
+
+Filament associates newly created models with the current tenant when they have a tenant-aware resource in the current panel and a supported ownership relationship. Like query scoping, this requires the tenant to have been identified. A `BelongsTo` relationship is associated before the record is inserted; a `BelongsToMany` relationship is attached after creation. Automatic association does not apply to through relationships such as `BelongsToThrough`, `HasOneThrough`, or `HasManyThrough`. Set up the related records that determine tenancy yourself in those cases.
+
+Associate the tenant yourself when creating models without a tenant-aware resource or creating records outside that panel context, using [model events](https://laravel.com/docs/eloquent#events) or your application's save logic. Do not assume the tenant relationship is already populated in your own creation callbacks, especially for relationships associated after creation.
+
+> [!WARNING]
+> Automatic association depends on Eloquent model events. If you [mute events](https://laravel.com/docs/eloquent#muting-events) or remove their listeners, you must set the tenant relationship yourself. Check both query scoping and record association before deploying your application.
 
 ### `unique` and `exists` validation
 

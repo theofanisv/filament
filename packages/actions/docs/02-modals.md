@@ -1,9 +1,6 @@
 ---
 title: Modals
 ---
-import Aside from "@components/Aside.astro"
-import AutoScreenshot from "@components/AutoScreenshot.astro"
-import UtilityInjection from "@components/UtilityInjection.astro"
 
 ## Introduction
 
@@ -22,11 +19,10 @@ Action::make('delete')
     ->requiresConfirmation()
 ```
 
-<AutoScreenshot name="actions/modal/confirmation" alt="Confirmation modal" version="4.x" />
+<AutoScreenshot name="actions/modal/confirmation" alt="Confirmation modal" />
 
-<Aside variant="warning">
-    The confirmation modal is not available when a `url()` is set instead of an `action()`. Instead, you should redirect to the URL within the `action()` closure.
-</Aside>
+> [!WARNING]
+> The confirmation modal is not available when a `url()` is set instead of an `action()`. Instead, you should redirect to the URL within the `action()` closure.
 
 ## Controlling modal content
 
@@ -46,7 +42,26 @@ Action::make('delete')
     ->modalSubmitActionLabel('Yes, delete it')
 ```
 
-<AutoScreenshot name="actions/modal/confirmation-custom-text" alt="Confirmation modal with custom text" version="4.x" />
+<AutoScreenshot name="actions/modal/confirmation-custom-text" alt="Confirmation modal with custom text" />
+
+#### Adding an eyebrow above the modal heading
+
+You may add an eyebrow, a short line of text displayed above the modal heading, using the `modalEyebrow()` method. This is useful when the heading names a specific record and the eyebrow names the operation being performed on it:
+
+```php
+use App\Models\Post;
+use Filament\Actions\EditAction;
+
+EditAction::make()
+    ->modalEyebrow('Edit post')
+    ->modalHeading(static fn (Post $record): string => $record->title)
+```
+
+<UtilityInjection set="actions">The `modalEyebrow()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+The eyebrow requires a heading and is not included in the modal's accessible name.
+
+<AutoScreenshot name="actions/modal/eyebrow" alt="An edit post form with an eyebrow above the post title" />
 
 ### Rendering a schema in a modal
 
@@ -58,6 +73,7 @@ use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 
 Action::make('viewUser')
@@ -85,7 +101,9 @@ Action::make('viewUser')
     ])
 ```
 
-<UtilityInjection set="actions" version="4.x">As well as allowing a static value, the `schema()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">As well as allowing a static value, the `schema()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="actions/modal/schema" alt="Modal with schema layout" />
 
 #### Rendering a form in a modal
 
@@ -110,7 +128,7 @@ Action::make('updateAuthor')
     })
 ```
 
-<AutoScreenshot name="actions/modal/form" alt="Modal with form" version="4.x" />
+<AutoScreenshot name="actions/modal/form" alt="Modal with form" />
 
 ##### Filling the form with existing data
 
@@ -138,11 +156,11 @@ Action::make('updateAuthor')
     })
 ```
 
-<UtilityInjection set="actions" version="4.x">The `fillForm()` method also accepts a function to dynamically calculate the data to fill the form with. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `fillForm()` method also accepts a function to dynamically calculate the data to fill the form with. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ##### Disabling all form fields
 
-You may wish to disable all form fields in the modal, ensuring the user cannot edit them. You may do so using the `disabledForm()` method:
+You may wish to disable all form fields in the modal, ensuring the user cannot edit them. You may do so using the `disabledSchema()` method:
 
 ```php
 use App\Models\Post;
@@ -155,11 +173,15 @@ Action::make('approvePost')
         TextInput::make('title'),
         Textarea::make('content'),
     ])
-    ->disabledForm()
+    ->disabledSchema()
     ->action(function (Post $record): void {
         $record->approve();
     })
 ```
+
+The form is still validated when submitted, but its fields are not passed to the action's `$data` and its relationships are not automatically saved, even if fields use `saved()` or `dehydrated()`. The action itself still runs. Read any values it needs from the `$record`, as in the example above.
+
+<AutoScreenshot name="actions/modal/disabled-form" alt="Modal with disabled form fields" />
 
 #### Rendering a wizard in a modal
 
@@ -202,7 +224,7 @@ Action::make('create')
     ])
 ```
 
-<AutoScreenshot name="actions/modal/wizard" alt="Modal with wizard" version="4.x" />
+<AutoScreenshot name="actions/modal/wizard" alt="Modal with wizard" />
 
 ### Adding an icon inside the modal
 
@@ -218,9 +240,9 @@ Action::make('delete')
     ->modalIcon('heroicon-o-trash')
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalIcon()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalIcon()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
-<AutoScreenshot name="actions/modal/icon" alt="Confirmation modal with icon" version="4.x" />
+<AutoScreenshot name="actions/modal/icon" alt="Confirmation modal with icon" />
 
 By default, the icon will inherit the color of the action button. You may customize the color of the icon using the `modalIconColor()` method:
 
@@ -236,7 +258,9 @@ Action::make('delete')
     ->modalIconColor('warning')
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalIconColor()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalIconColor()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="actions/modal/icon-color" alt="Confirmation modal with custom icon color" />
 
 ### Customizing the alignment of modal content
 
@@ -256,7 +280,9 @@ Action::make('updateAuthor')
     ->modalAlignment(Alignment::Center)
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalAlignment()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalAlignment()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="actions/modal/alignment" alt="Modal with centered content alignment" />
 
 ### Making the modal header sticky
 
@@ -292,6 +318,8 @@ Action::make('updateAuthor')
     ->stickyModalFooter()
 ```
 
+<AutoScreenshot name="actions/modal/sticky-header" alt="Modal with sticky header and footer" />
+
 ### Custom modal content
 
 You may define custom content to be rendered inside your modal, which you can specify by passing a Blade view into the `modalContent()` method:
@@ -305,7 +333,7 @@ Action::make('advance')
     ->modalContent(view('filament.pages.actions.advance'))
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalContent()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalContent()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 #### Passing data to the custom modal content
 
@@ -336,7 +364,7 @@ Action::make('advance')
     ->modalContentFooter(view('filament.pages.actions.advance'))
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalContentFooter()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalContentFooter()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 #### Adding an action to custom modal content
 
@@ -385,9 +413,32 @@ Action::make('updateAuthor')
     ->slideOver()
 ```
 
-<AutoScreenshot name="actions/modal/slide-over" alt="Slide over with form" version="4.x" />
+<AutoScreenshot name="actions/modal/slide-over" alt="Slide over with form" />
 
 Instead of opening in the center of the screen, the modal content will now slide in from the right and consume the entire height of the browser.
+
+### Changing the slide-over position
+
+By default, slide-overs enter from the end of the screen (the right side in left-to-right languages, the left side in right-to-left languages). You may change this to the start of the screen by passing `SlideOverPosition::Start` to the `slideOverPosition()` method:
+
+```php
+use Filament\Actions\Action;
+use Filament\Support\Enums\SlideOverPosition;
+
+Action::make('updateAuthor')
+    ->schema([
+        // ...
+    ])
+    ->action(function (array $data): void {
+        // ...
+    })
+    ->slideOver()
+    ->slideOverPosition(SlideOverPosition::Start)
+```
+
+<AutoScreenshot name="actions/modal/slide-over-start" alt="Slide over from the start of the screen" />
+
+This is useful when the action trigger sits near the start of the viewport — for example, a record action at the beginning of a table row — so the slide-over opens adjacent to its trigger instead of across the screen.
 
 ## Changing the modal width
 
@@ -407,7 +458,9 @@ Action::make('updateAuthor')
     ->modalWidth(Width::FiveExtraLarge)
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalWidth()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalWidth()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="actions/modal/wide" alt="Modal with custom width" />
 
 ## Executing code when the modal opens
 
@@ -445,9 +498,8 @@ Action::make('help')
 
 The [methods available to customize trigger buttons](overview) will work to modify the `$action` instance inside the closure.
 
-<Aside variant="tip">
-    To customize the button labels in your modal, the `modalSubmitActionLabel()` and `modalCancelActionLabel()` methods can be used instead of passing a function to `modalSubmitAction()` and `modalCancelAction()`, if you don't require any further customizations.
-</Aside>
+> [!TIP]
+> To customize the button labels in your modal, the `modalSubmitActionLabel()` and `modalCancelActionLabel()` methods can be used instead of passing a function to `modalSubmitAction()` and `modalCancelAction()`, if you don't require any further customizations.
 
 ### Removing a default modal footer action button
 
@@ -478,7 +530,9 @@ Action::make('create')
     ])
 ```
 
-<UtilityInjection set="actions" version="4.x">The `extraModalFooterActions()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `extraModalFooterActions()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="actions/modal/extra-footer-actions" alt="Modal with extra footer action buttons" />
 
 `$action->makeModalSubmitAction()` returns an action instance that can be customized using the [methods available to customize trigger buttons](overview).
 
@@ -575,7 +629,7 @@ In this example, if the `fourth` action is run, the `second` action is canceled,
 
 ## Accessing information about parent actions from a child
 
-You can access the instances of parent actions and their raw data and arguments by injecting the `$mountedActions` array in a function used by your nested action. For example, to get the top-most parent action currently active on the page, you can use `$mountedActions[0]`. From there, you can get the raw data for that action by calling `$mountedActions[0]->getRawData()`. Please be aware that raw data is not validated since the action has not been submitted yet:
+You can access the parent action instance by injecting `$parentAction` into the `action()` or `mountUsing()` function of your nested action. From there, you can get the raw data for that action by calling `getRawData()`. Please be aware that raw data is not validated since the action has not been submitted yet:
 
 ```php
 use Filament\Actions\Action;
@@ -591,17 +645,17 @@ Action::make('first')
     ->extraModalFooterActions([
         Action::make('second')
             ->requiresConfirmation()
-            ->action(function (array $mountedActions) {
-                dd($mountedActions[0]->getRawData());
-            
+            ->action(function (Action $parentAction) {
+                dd($parentAction->getRawData());
+
                 // ...
             }),
     ])
 ```
 
-You can do similar with the current arguments for a parent action, with the `$mountedActions[0]->getArguments()` method.
+You can do similar with the current arguments for a parent action, with the `$parentAction->getArguments()` method.
 
-Even if you have multiple layers of nesting, the `$mountedActions` array will contain every action that is currently active, so you can access information about them:
+If you need to access an action other than the direct parent, you can inject the `$mountedActions` array, which contains every action that is currently active:
 
 ```php
 use Filament\Actions\Action;
@@ -650,6 +704,86 @@ Action::make('first')
     ])
 ```
 
+### Validating the data of a parent action
+
+`getRawData()` returns the current unvalidated data. When a nested action relies on that data being valid, use `getValidatedData()` instead, which validates it with the rules of the action it belongs to and returns the result:
+
+```php
+use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
+
+Action::make('first')
+    ->schema([
+        TextInput::make('foo')
+            ->required(),
+    ])
+    ->action(function () {
+        // ...
+    })
+    ->extraModalFooterActions([
+        Action::make('second')
+            ->action(function (Action $parentAction) {
+                $data = $parentAction->getValidatedData();
+
+                // ...
+            }),
+    ])
+```
+
+If the parent action's schema is invalid, a `ValidationException` is thrown. When the nested action has no modal of its own, the parent action's modal reports the errors as it would for any other failed validation. When it does have a modal, call `getValidatedData()` from `mountUsing()` so that the errors are reported before the nested action's modal opens:
+
+```php
+use Filament\Actions\Action;
+use Filament\Schemas\Schema;
+
+Action::make('second')
+    ->schema([
+        // ...
+    ])
+    ->mountUsing(function (Action $parentAction, Schema $schema) {
+        $data = $parentAction->getValidatedData();
+
+        // ...
+
+        $schema->fill();
+    })
+```
+
+> [!WARNING]
+> `getValidatedData()` validates the data without submitting the parent action. It skips `beforeStateDehydrated()` hooks, so a newly uploaded file can remain a `TemporaryUploadedFile` instead of a stored path. It also skips `mutateDataUsing()`, `beforeFormValidated()`, and `afterFormValidated()`.
+
+### Filling in the data of a parent action
+
+Use `fillData()` to update fields in a mounted parent action's schema. It accepts nested arrays or dot-notation keys, ignores keys that do not belong to schema fields, and leaves validation until the parent action is submitted:
+
+```php
+use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
+
+Action::make('createInvoice')
+    ->schema([
+        TextInput::make('title')
+            ->required(),
+        TextInput::make('reference')
+            ->required(),
+    ])
+    ->action(function (array $data) {
+        // `$data['reference']` is filled in.
+    })
+    ->extraModalFooterActions([
+        Action::make('generateReference')
+            ->schema([
+                TextInput::make('prefix')
+                    ->required(),
+            ])
+            ->action(function (array $data, Action $parentAction) {
+                $parentAction->fillData([
+                    'reference' => "{$data['prefix']}-123",
+                ]);
+            }),
+    ])
+```
+
 ## Closing the modal
 
 ### Closing the modal by clicking away
@@ -669,7 +803,7 @@ Action::make('updateAuthor')
     ->closeModalByClickingAway(false)
 ```
 
-<UtilityInjection set="actions" version="4.x">The `closeModalByClickingAway()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `closeModalByClickingAway()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 If you'd like to change the behavior for all modals in the application, you can do so by calling `ModalComponent::closedByClickingAway()` inside a service provider or middleware:
 
@@ -696,7 +830,7 @@ Action::make('updateAuthor')
     ->closeModalByEscaping(false)
 ```
 
-<UtilityInjection set="actions" version="4.x">The `closeModalByEscaping()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `closeModalByEscaping()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 If you'd like to change the behavior for all modals in the application, you can do so by calling `ModalComponent::closedByEscaping()` inside a service provider or middleware:
 
@@ -705,6 +839,26 @@ use Filament\Support\View\Components\ModalComponent;
 
 ModalComponent::closedByEscaping(false);
 ```
+
+### Disabling the unsaved changes alert
+
+When [unsaved changes alerts](../panel-configuration#unsaved-changes-alerts) are enabled for a panel, users are warned before leaving the page while an action modal is open. If a specific action's modal cannot contain unsaved changes, you can disable the warning for it using the `unsavedChangesAlert(false)` method:
+
+```php
+use Filament\Actions\Action;
+use Filament\Infolists\Components\TextEntry;
+
+Action::make('viewAuthor')
+    ->schema([
+        TextEntry::make('name'),
+        TextEntry::make('email'),
+    ])
+    ->unsavedChangesAlert(false)
+```
+
+<UtilityInjection set="actions">The `unsavedChangesAlert()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+By default, actions with a [disabled schema](#disabling-all-form-fields), such as `ViewAction`, do not trigger the alert, since their modals do not accept user input.
 
 ### Hiding the modal close button
 
@@ -723,7 +877,7 @@ Action::make('updateAuthor')
     ->modalCloseButton(false)
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalCloseButton()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalCloseButton()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 If you'd like to hide the close button for all modals in the application, you can do so by calling `ModalComponent::closeButton(false)` inside a service provider or middleware:
 
@@ -732,6 +886,32 @@ use Filament\Support\View\Components\ModalComponent;
 
 ModalComponent::closeButton(false);
 ```
+
+<AutoScreenshot name="actions/modal/no-close-button" alt="Modal without a close button" />
+
+## Making the modal click-through
+
+By default, a modal blocks interaction with the rest of the page while it is open. If you want the user to be able to keep interacting with the page behind the modal, you can make it "click-through" using the `modalClickThrough()` method:
+
+```php
+use Filament\Actions\Action;
+
+Action::make('updateAuthor')
+    ->schema([
+        // ...
+    ])
+    ->action(function (array $data): void {
+        // ...
+    })
+    ->modalClickThrough()
+```
+
+When a modal is click-through, its backdrop is removed, clicks outside the modal window pass through to the page beneath, and the page remains scrollable. The modal can still be closed using its close button or by pressing the escape key.
+
+> [!NOTE]
+> A click-through modal cannot be closed by clicking away, as that would be incompatible with interacting with the page behind it. Enabling `modalClickThrough()` therefore disables closing by clicking away automatically.
+
+<UtilityInjection set="actions">The `modalClickThrough()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Preventing the modal from autofocusing
 
@@ -750,7 +930,7 @@ Action::make('updateAuthor')
     ->modalAutofocus(false)
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalAutofocus()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalAutofocus()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 If you'd like to disable autofocus for all modals in the application, you can do so by calling `ModalComponent::autofocus(false)` inside a service provider or middleware:
 
@@ -758,6 +938,79 @@ If you'd like to disable autofocus for all modals in the application, you can do
 use Filament\Support\View\Components\ModalComponent;
 
 ModalComponent::autofocus(false);
+```
+
+## Overlaying child action modals on top of parent action modals
+
+By default, when a child action opens its modal, the parent action's modal is temporarily closed and then reopened after the child action is dismissed. If you'd like the child action's modal to instead appear on top of the parent action's modal (keeping the parent visible underneath), you can use the `overlayParentActions()` method on the child action:
+
+```php
+use Filament\Actions\Action;
+use Filament\Forms\Components\Repeater;
+
+Action::make('editItems')
+    ->slideOver()
+    ->schema([
+        Repeater::make('items')
+            ->schema([
+                // ...
+            ])
+            ->deleteAction(
+                fn (Action $action) => $action
+                    ->requiresConfirmation()
+                    ->overlayParentActions(),
+            ),
+    ])
+    ->action(function () {
+        // ...
+    })
+```
+
+In this example, when the user clicks the delete button on a repeater item, the confirmation dialog appears on top of the slide-over instead of the slide-over closing first. This creates a smoother experience, especially for actions inside slide-overs or complex forms where closing and reopening the parent would be disorienting.
+
+<AutoScreenshot name="actions/modal/overlaying-child" alt="Child confirmation modal overlaying a parent slide-over" />
+
+## Canceling parent actions when a modal is closed
+
+The `cancelParentActions()` method above only cancels parent actions when the child action is run. If the user closes the child's modal instead — by pressing Escape, clicking the backdrop, or using the close button — by default only that modal is closed, leaving any parent actions still mounted. To also cancel parent actions when the modal is closed, allowing the user to abandon a multi-step flow entirely rather than closing one modal at a time, use the `cancelParentActionsOnClose()` method:
+
+```php
+use Filament\Actions\Action;
+
+Action::make('createPost')
+    ->schema([
+        // ...
+    ])
+    ->extraModalFooterActions([
+        Action::make('saveAsDraft')
+            ->schema([
+                // ...
+            ])
+            ->cancelParentActionsOnClose()
+            ->action(function (): void {
+                // ...
+            }),
+    ])
+    ->action(function (array $data): void {
+        // ...
+    })
+```
+
+Now, closing the `saveAsDraft` modal will also cancel the `createPost` action and close its modal.
+
+Like `cancelParentActions()`, you can pass the name of a parent action to cancel back to a specific parent, including its children, rather than all of them:
+
+```php
+use Filament\Actions\Action;
+
+Action::make('editPostMetadata')
+    ->schema([
+        // ...
+    ])
+    ->cancelParentActionsOnClose('createPost')
+    ->action(function (): void {
+        // ...
+    })
 ```
 
 ## Optimizing modal configuration methods
@@ -788,7 +1041,7 @@ Action::make('create')
     ->modalContent(view('filament.pages.actions.create'))
 ```
 
-<UtilityInjection set="actions" version="4.x">The `modalHidden()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">The `modalHidden()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Adding extra attributes to the modal window
 
@@ -801,8 +1054,24 @@ Action::make('updateAuthor')
     ->extraModalWindowAttributes(['class' => 'update-author-modal'])
 ```
 
-<UtilityInjection set="actions" version="4.x">As well as allowing a static value, the `extraModalWindowAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="actions">As well as allowing a static value, the `extraModalWindowAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
-<Aside variant="tip">
-    By default, calling `extraModalWindowAttributes()` multiple times will overwrite the previous attributes. If you wish to merge the attributes instead, you can pass `merge: true` to the method.
-</Aside>
+> [!TIP]
+> By default, calling `extraModalWindowAttributes()` multiple times will overwrite the previous attributes. If you wish to merge the attributes instead, you can pass `merge: true` to the method.
+
+
+## Adding extra attributes to the modal overlay
+
+You can pass extra HTML attributes to the modal overlay via the `extraModalOverlayAttributes()`. The attributes should be represented by an array, where the key is the attribute name and the value is the attribute value:
+
+```php
+use Filament\Actions\Action;
+
+Action::make('updateAuthor')
+    ->extraModalOverlayAttributes(['class' => 'update-author-overlay'])
+```
+
+<UtilityInjection set="actions">As well as allowing a static value, the `extraModalOverlayAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+> [!TIP]
+> By default, calling `extraModalOverlayAttributes()` multiple times will overwrite the previous attributes. If you wish to merge the attributes instead, you can pass <code>merge: true</code> to the method.

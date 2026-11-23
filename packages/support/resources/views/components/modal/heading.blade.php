@@ -1,5 +1,16 @@
-<h2
+{{-- @deprecated Use the `heading` slot of `<x-filament::modal>` instead. --}}
+
+@props([
+    'level' => 2,
+])
+
+@php
+    $level = max(1, (int) $level);
+    $headingTag = ($level > 6) ? 'p' : "h{$level}";
+@endphp
+
+<{{ $headingTag }}
     {{ $attributes->class(['fi-modal-heading']) }}
 >
     {{ $slot }}
-</h2>
+</{{ $headingTag }}>

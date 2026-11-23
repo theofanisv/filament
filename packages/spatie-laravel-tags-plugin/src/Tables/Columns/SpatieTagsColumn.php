@@ -32,7 +32,7 @@ class SpatieTagsColumn extends TextColumn
             $state = parent::getState();
 
             if ($state && (! $state instanceof Collection) && (! is_array($state))) {
-                return $state;
+                return Arr::wrap($state);
             }
 
             $record = $this->getRecord();
@@ -44,6 +44,7 @@ class SpatieTagsColumn extends TextColumn
             $records = Arr::wrap($record);
 
             $state = [];
+            $relatedRecords = [];
 
             foreach ($records as $record) {
                 /** @var Model $record */
@@ -59,13 +60,17 @@ class SpatieTagsColumn extends TextColumn
                     $tags = $record->tagsWithType($type);
                 }
 
-                $state = [
-                    ...$state,
-                    ...$tags->pluck('name')->all(),
-                ];
+                foreach ($tags as $tag) {
+                    $state[] = $tag->getAttributeValue('name');
+                    $relatedRecords[] = $tag;
+                }
             }
 
-            return array_unique($state);
+            $state = array_unique($state);
+
+            $this->cacheRelatedRecords(array_intersect_key($relatedRecords, $state));
+
+            return $state;
         });
     }
 

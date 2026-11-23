@@ -1,16 +1,15 @@
 <?php
 
+use Filament\Support\Facades\FilamentCli;
 use Filament\Tests\TestCase;
-use Illuminate\Support\Arr;
 
 use function PHPUnit\Framework\assertFileExists;
 
-uses(TestCase::class);
+uses(TestCase::class)->group('serial');
 
 beforeEach(function (): void {
     $this->withoutMockingConsoleOutput();
-})
-    ->skip((bool) Arr::get($_SERVER, 'PARATEST'), 'File generation tests cannot be run in parallel as they would share a filesystem and have the potential to conflict with each other.');
+});
 
 it('can generate a Livewire table component', function (): void {
     $this->artisan('make:filament-livewire-table', [
@@ -30,9 +29,33 @@ it('can generate a Livewire table component', function (): void {
     assertFileExists($viewPath = resource_path('views/livewire/list-blog-posts.blade.php'));
     expect(file_get_contents($viewPath));
     if (config('database.default') === 'testing') {
-        expect(file_get_contents($path))
+        expect(file_get_contents($viewPath))
             ->toMatchSnapshot();
     }
+});
+
+it('can generate a Livewire table component in a custom namespace without a `Livewire` segment', function (): void {
+    FilamentCli::registerLivewireComponentLocation(
+        path: base_path('src/Components'),
+        namespace: 'App\\Components',
+        viewNamespace: '',
+    );
+
+    $this->mockConsoleOutput = true;
+
+    $this->artisan('make:filament-livewire-table', [
+        'name' => 'Admin/ListPosts',
+        'model' => 'Post',
+        '--model-namespace' => 'Filament\\Tests\\Fixtures\\Models',
+    ])
+        ->expectsQuestion('Should the table columns be generated from the current database columns?', false)
+        ->expectsQuestion('Where would you like to create the table?', 'App\\Components');
+
+    assertFileExists($path = base_path('src/Components/Admin/ListPosts.php'));
+    expect(file_get_contents($path))
+        ->toContain("return view('livewire.admin.list-posts');");
+
+    assertFileExists(resource_path('views/livewire/admin/list-posts.blade.php'));
 });
 
 it('can generate a Livewire table component with a model', function (): void {
@@ -53,7 +76,7 @@ it('can generate a Livewire table component with a model', function (): void {
     assertFileExists($viewPath = resource_path('views/livewire/list-posts.blade.php'));
     expect(file_get_contents($viewPath));
     if (config('database.default') === 'testing') {
-        expect(file_get_contents($path))
+        expect(file_get_contents($viewPath))
             ->toMatchSnapshot();
     }
 });
@@ -77,7 +100,7 @@ it('can generate a Livewire table component with generated columns', function ()
     assertFileExists($viewPath = resource_path('views/livewire/list-posts-with-columns.blade.php'));
     expect(file_get_contents($viewPath));
     if (config('database.default') === 'testing') {
-        expect(file_get_contents($path))
+        expect(file_get_contents($viewPath))
             ->toMatchSnapshot();
     }
 });
@@ -100,7 +123,7 @@ it('can generate a Livewire table component in a nested directory', function ():
     assertFileExists($viewPath = resource_path('views/livewire/blog/list-posts.blade.php'));
     expect(file_get_contents($viewPath));
     if (config('database.default') === 'testing') {
-        expect(file_get_contents($path))
+        expect(file_get_contents($viewPath))
             ->toMatchSnapshot();
     }
 });
@@ -123,7 +146,7 @@ it('can generate a Livewire table component for a model in a nested directory', 
     assertFileExists($viewPath = resource_path('views/livewire/blog/list-categories.blade.php'));
     expect(file_get_contents($viewPath));
     if (config('database.default') === 'testing') {
-        expect(file_get_contents($path))
+        expect(file_get_contents($viewPath))
             ->toMatchSnapshot();
     }
 });

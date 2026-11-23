@@ -23,6 +23,7 @@ import Link from '@tiptap/extension-link'
 import { BulletList, ListItem, OrderedList } from '@tiptap/extension-list'
 import LocalFiles from './extension-local-files.js'
 import MergeTag from './extension-merge-tag.js'
+import Mention from './extension-mention.js'
 import Paragraph from '@tiptap/extension-paragraph'
 import Placeholder from '@tiptap/extension-placeholder'
 import Small from './extension-small.js'
@@ -38,25 +39,34 @@ import Underline from '@tiptap/extension-underline'
 import getMergeTagSuggestion from './merge-tag-suggestion.js'
 
 export default async ({
+    $wire,
     acceptedFileTypes,
     acceptedFileTypesValidationMessage,
     canAttachFiles,
     customExtensionUrls,
     deleteCustomBlockButtonIconHtml,
+    deleteCustomBlockButtonLabel,
     editCustomBlockButtonIconHtml,
+    editCustomBlockButtonLabel,
     editCustomBlockUsing,
+    getCustomBlockPreviewsUsing,
+    getFileAttachmentUrlUsing,
+    getMentionLabelsUsing,
+    getMentionSearchResultsUsing,
+    hasResizableImages,
+    hasMinimalCustomBlockControls = false,
     insertCustomBlockUsing,
-    linkProtocols,
     key,
+    linkProtocols,
     maxFileSize,
     maxFileSizeValidationMessage,
+    mentions,
     mergeTags,
     noMergeTagSearchResultsMessage,
     placeholder,
     statePath,
     textColors,
     uploadingFileMessage,
-    $wire,
 }) => {
     const extensions = [
         Blockquote,
@@ -66,15 +76,21 @@ export default async ({
         CodeBlock,
         CustomBlock.configure({
             deleteCustomBlockButtonIconHtml,
+            deleteCustomBlockButtonLabel,
             editCustomBlockButtonIconHtml,
+            editCustomBlockButtonLabel,
             editCustomBlockUsing,
+            getCustomBlockPreviewsUsing,
+            hasMinimalCustomBlockControls,
             insertCustomBlockUsing,
         }),
         Details,
         DetailsSummary,
         DetailsContent,
         Document,
-        Dropcursor,
+        Dropcursor.configure({
+            class: 'fi-not-prose',
+        }),
         Gapcursor,
         Grid,
         GridColumn,
@@ -85,10 +101,19 @@ export default async ({
         Italic,
         Image.configure({
             inline: true,
+            resize: {
+                enabled: hasResizableImages,
+                alwaysPreserveAspectRatio: true,
+                allowBase64: true,
+            },
         }),
         Lead,
         Link.configure({
             autolink: true,
+            HTMLAttributes: {
+                target: null,
+                rel: null,
+            },
             openOnClick: false,
             protocols: linkProtocols,
         }),
@@ -100,6 +125,7 @@ export default async ({
                       acceptedTypesValidationMessage:
                           acceptedFileTypesValidationMessage,
                       get$WireUsing: () => $wire,
+                      getFileAttachmentUrlUsing,
                       key,
                       maxSize: maxFileSize,
                       maxSizeValidationMessage: maxFileSizeValidationMessage,
@@ -120,10 +146,21 @@ export default async ({
                   }),
               ]
             : []),
+        ...(mentions.length
+            ? [
+                  Mention.configure({
+                      HTMLAttributes: { class: 'fi-fo-rich-editor-mention' },
+                      suggestions: mentions,
+                      getMentionSearchResultsUsing,
+                      getMentionLabelsUsing,
+                  }),
+              ]
+            : []),
         OrderedList,
         Paragraph,
         Placeholder.configure({
             placeholder,
+            showOnlyWhenEditable: false,
         }),
         TextColor.configure({
             textColors,

@@ -2,6 +2,7 @@
 title: Modal Blade component
 ---
 
+
 ## Introduction
 
 The modal component is able to open a dialog window or slide-over with any content:
@@ -17,6 +18,8 @@ The modal component is able to open a dialog window or slide-over with any conte
     {{-- Modal content --}}
 </x-filament::modal>
 ```
+
+<AutoScreenshot name="components/modal/simple" alt="A modal with heading, description and footer actions" />
 
 ## Controlling a modal from JavaScript
 
@@ -36,7 +39,7 @@ $this->dispatch('open-modal', id: 'edit-user');
 
 Or from Alpine.js:
 
-```php
+```js
 $dispatch('open-modal', { id: 'edit-user' })
 ```
 
@@ -72,6 +75,30 @@ You can add a description, below the heading, to a modal by using the `descripti
 </x-filament::modal>
 ```
 
+<AutoScreenshot name="components/modal/heading" alt="A modal with heading and description" />
+
+## Adding an eyebrow to a modal
+
+You can add an eyebrow, a short line of text displayed above the heading, to a modal by using the `eyebrow` slot:
+
+```blade
+<x-filament::modal>
+    <x-slot name="eyebrow">
+        Publish post
+    </x-slot>
+
+    <x-slot name="heading">
+        Getting started with Filament
+    </x-slot>
+
+    {{-- Modal content --}}
+</x-filament::modal>
+```
+
+The eyebrow requires a heading and is not rendered when you use a custom `header` slot. The modal's accessible name comes from the heading, not the eyebrow.
+
+<AutoScreenshot name="components/modal/eyebrow" alt="A publish confirmation modal with an eyebrow above the post title" />
+
 ## Adding an icon to a modal
 
 You can add an [icon](../styling/icons) to a modal by using the `icon` attribute:
@@ -101,6 +128,8 @@ By default, the color of an icon is "primary". You can change it to be `danger`,
 </x-filament::modal>
 ```
 
+<AutoScreenshot name="components/modal/icon" alt="A modal with a danger icon" />
+
 ## Adding a footer to a modal
 
 You can add a footer to a modal by using the `footer` slot:
@@ -120,12 +149,14 @@ Alternatively, you can add actions into the footer by using the `footerActions` 
 ```blade
 <x-filament::modal>
     {{-- Modal content --}}
-    
+
     <x-slot name="footerActions">
         {{-- Modal footer actions --}}
     </x-slot>
 </x-filament::modal>
 ```
+
+<AutoScreenshot name="components/modal/footer" alt="A modal with a custom footer" />
 
 ## Changing the modal's alignment
 
@@ -137,6 +168,8 @@ By default, modal content will be aligned to the start, or centered if the modal
 </x-filament::modal>
 ```
 
+<AutoScreenshot name="components/modal/alignment" alt="A modal with center-aligned content" />
+
 ## Using a slide-over instead of a modal
 
 You can open a "slide-over" dialog instead of a modal by using the `slide-over` attribute:
@@ -146,6 +179,8 @@ You can open a "slide-over" dialog instead of a modal by using the `slide-over` 
     {{-- Slide-over content --}}
 </x-filament::modal>
 ```
+
+<AutoScreenshot name="components/modal/slide-over" alt="A slide-over modal" />
 
 ## Making the modal header sticky
 
@@ -161,6 +196,8 @@ The header of a modal scrolls out of view with the modal content when it overflo
 </x-filament::modal>
 ```
 
+<AutoScreenshot name="components/modal/sticky-header" alt="A modal with a sticky header" />
+
 ## Making the modal footer sticky
 
 The footer of a modal is rendered inline after the content by default. Slide-overs, however, have a sticky footer that always shows when scrolling the content. You may enable this for a modal too using the `sticky-footer` attribute:
@@ -168,12 +205,14 @@ The footer of a modal is rendered inline after the content by default. Slide-ove
 ```blade
 <x-filament::modal sticky-footer>
     {{-- Modal content --}}
-    
+
     <x-slot name="footer">
         {{-- Modal footer content --}}
     </x-slot>
 </x-filament::modal>
 ```
+
+<AutoScreenshot name="components/modal/sticky-footer" alt="A modal with a sticky footer" />
 
 ## Changing the modal width
 
@@ -184,6 +223,8 @@ You can change the width of the modal by using the `width` attribute. Options co
     {{-- Modal content --}}
 </x-filament::modal>
 ```
+
+<AutoScreenshot name="components/modal/width" alt="A modal with a custom width" />
 
 ## Closing the modal by clicking away
 
@@ -243,4 +284,3 @@ By default, the trigger button will open the modal even if it is disabled, since
     {{-- Modal content --}}
 </x-filament::modal>
 ```
-

@@ -22,11 +22,14 @@ use Filament\Navigation\MenuItem;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
 use Filament\Pages\Enums\SubNavigationPosition;
+use Filament\Pages\PageConfiguration;
+use Filament\Resources\ResourceConfiguration;
 use Filament\Support\Assets\Theme;
 use Filament\Support\Enums\Width;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentView;
 use Filament\Widgets\Widget;
+use Filament\Widgets\WidgetConfiguration;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Contracts\Auth\Guard;
@@ -39,6 +42,8 @@ use Illuminate\Support\Facades\Event;
 use Livewire\Component;
 use LogicException;
 
+use function Filament\Support\encode_key_segments;
+
 class FilamentManager
 {
     protected ?string $currentDomain = null;
@@ -50,6 +55,10 @@ class FilamentManager
     protected bool $isCurrentPanelBooted = false;
 
     protected ?Model $tenant = null;
+
+    protected ?string $currentResourceConfigurationKey = null;
+
+    protected ?string $currentPageConfigurationKey = null;
 
     public function auth(): Guard
     {
@@ -182,19 +191,52 @@ class FilamentManager
         return $this->getCurrentOrDefaultPanel()->getSerifFontFamily();
     }
 
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
     public function getFontHtml(): Htmlable
     {
         return $this->getCurrentOrDefaultPanel()->getFontHtml();
     }
 
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
     public function getMonoFontHtml(): Htmlable
     {
         return $this->getCurrentOrDefaultPanel()->getMonoFontHtml();
     }
 
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
     public function getSerifFontHtml(): Htmlable
     {
         return $this->getCurrentOrDefaultPanel()->getSerifFontHtml();
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    public function getFontPreloadHtml(): Htmlable
+    {
+        return $this->getCurrentOrDefaultPanel()->getFontPreloadHtml();
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    public function getMonoFontPreloadHtml(): Htmlable
+    {
+        return $this->getCurrentOrDefaultPanel()->getMonoFontPreloadHtml();
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    public function getSerifFontPreloadHtml(): Htmlable
+    {
+        return $this->getCurrentOrDefaultPanel()->getSerifFontPreloadHtml();
     }
 
     public function getFontProvider(): string
@@ -302,7 +344,9 @@ class FilamentManager
     public function getNameForDefaultAvatar(Model | Authenticatable $record): string
     {
         if ($this->getTenantModel() === $record::class) {
-            return $this->getTenantName($record);
+            $name = $this->getTenantName($record);
+
+            return ($name instanceof Htmlable) ? html_entity_decode(strip_tags($name->toHtml()), ENT_QUOTES | ENT_HTML5, 'UTF-8') : $name;
         }
 
         return $this->getUserName($record);
@@ -465,6 +509,11 @@ class FilamentManager
         return $this->getCurrentOrDefaultPanel()->getTenantMenuItems();
     }
 
+    public function hasTenantSwitcher(): bool
+    {
+        return $this->getCurrentOrDefaultPanel()->hasTenantSwitcher();
+    }
+
     public function isTenantMenuSearchable(): ?bool
     {
         return $this->getCurrentOrDefaultPanel()->isTenantMenuSearchable();
@@ -478,7 +527,7 @@ class FilamentManager
         return $this->getCurrentOrDefaultPanel()->getTenantModel();
     }
 
-    public function getTenantName(Model $tenant): string
+    public function getTenantName(Model $tenant): string | Htmlable
     {
         if ($tenant instanceof HasName) {
             return $tenant->getFilamentName();
@@ -588,10 +637,27 @@ class FilamentManager
     public function getUserName(Model | Authenticatable $user): string
     {
         if ($user instanceof HasName) {
-            return $user->getFilamentName();
+            $name = $user->getFilamentName();
+
+            return ($name instanceof Htmlable) ? html_entity_decode(strip_tags($name->toHtml()), ENT_QUOTES | ENT_HTML5, 'UTF-8') : $name;
         }
 
         return $user->getAttributeValue('name');
+    }
+
+    public function getUserScopedAuthIdentifier(?Authenticatable $user = null): string
+    {
+        $user ??= $this->auth()->user();
+
+        if (! $user) {
+            throw new LogicException('A user must be authenticated to generate a scoped identifier.');
+        }
+
+        $guard = $this->getAuthGuard();
+        $userClass = $user::class;
+        $authIdentifier = (string) $user->getAuthIdentifier();
+
+        return hash('sha256', encode_key_segments($guard, $userClass, $authIdentifier));
     }
 
     /**
@@ -638,7 +704,7 @@ class FilamentManager
     }
 
     /**
-     * @return array<class-string<Widget>>
+     * @return array<class-string<Widget> | WidgetConfiguration>
      */
     public function getWidgets(): array
     {
@@ -665,9 +731,22 @@ class FilamentManager
         return $this->getCurrentOrDefaultPanel()->hasDarkMode();
     }
 
+    /**
+     * @deprecated Use `isDarkModeForced()` instead.
+     */
     public function hasDarkModeForced(): bool
     {
-        return $this->getCurrentOrDefaultPanel()->hasDarkModeForced();
+        return $this->isDarkModeForced();
+    }
+
+    public function isDarkModeForced(): bool
+    {
+        return $this->getCurrentOrDefaultPanel()->isDarkModeForced();
+    }
+
+    public function hasThemeSwitcher(): bool
+    {
+        return $this->getCurrentOrDefaultPanel()->hasThemeSwitcher();
     }
 
     public function hasDatabaseNotifications(): bool
@@ -775,6 +854,14 @@ class FilamentManager
         return $this->getCurrentOrDefaultPanel()->getDatabaseNotificationsPosition();
     }
 
+    /**
+     * @return class-string<Component>
+     */
+    public function getDatabaseNotificationsLivewireComponent(): string
+    {
+        return $this->getCurrentOrDefaultPanel()->getDatabaseNotificationsLivewireComponent();
+    }
+
     public function hasTopNavigation(): bool
     {
         return $this->getCurrentOrDefaultPanel()->hasTopNavigation();
@@ -838,7 +925,15 @@ class FilamentManager
         Event::listen(ServingFilament::class, $callback);
     }
 
+    /**
+     * @deprecated Use `setCurrentDomain()` instead.
+     */
     public function currentDomain(?string $domain): void
+    {
+        $this->setCurrentDomain($domain);
+    }
+
+    public function setCurrentDomain(?string $domain): void
     {
         $this->currentDomain = $domain;
     }
@@ -864,6 +959,70 @@ class FilamentManager
         if ($tenant && (! $isQuiet)) {
             event(new TenantSet($tenant, $this->auth()->user()));
         }
+    }
+
+    public function setCurrentResourceConfigurationKey(?string $key): void
+    {
+        $this->currentResourceConfigurationKey = $key;
+    }
+
+    public function getCurrentResourceConfigurationKey(): ?string
+    {
+        return $this->currentResourceConfigurationKey;
+    }
+
+    /**
+     * @param  class-string  $resourceClass
+     */
+    public function getResourceConfiguration(string $resourceClass): ?ResourceConfiguration
+    {
+        $key = $this->currentResourceConfigurationKey;
+
+        if ($key === null) {
+            return null;
+        }
+
+        return $this->getCurrentOrDefaultPanel()->getResourceConfiguration($resourceClass, $key);
+    }
+
+    public function setCurrentPageConfigurationKey(?string $key): void
+    {
+        $this->currentPageConfigurationKey = $key;
+    }
+
+    public function getCurrentPageConfigurationKey(): ?string
+    {
+        return $this->currentPageConfigurationKey;
+    }
+
+    /**
+     * @param  class-string  $pageClass
+     */
+    public function getPageConfiguration(string $pageClass): ?PageConfiguration
+    {
+        $key = $this->currentPageConfigurationKey;
+
+        if ($key === null) {
+            return null;
+        }
+
+        return $this->getCurrentOrDefaultPanel()->getPageConfiguration($pageClass, $key);
+    }
+
+    /**
+     * @param  class-string  $resourceClass
+     */
+    public function forResourceConfiguration(string $resourceClass, string $key): void
+    {
+        $this->setCurrentResourceConfigurationKey($key);
+    }
+
+    /**
+     * @param  class-string  $pageClass
+     */
+    public function forPageConfiguration(string $pageClass, string $key): void
+    {
+        $this->setCurrentPageConfigurationKey($key);
     }
 
     /**
@@ -1035,7 +1194,7 @@ class FilamentManager
         }
 
         if (app()->runningInConsole()) {
-            throw new LogicException('The current domain is not set, but multiple domains are registered for the panel. Please use [Filament::currentDomain(\'example.com\')] to set the current domain to ensure that panel URLs are generated correctly.');
+            throw new LogicException('The current domain is not set, but multiple domains are registered for the panel. Please use [Filament::setCurrentDomain(\'example.com\')] to set the current domain to ensure that panel URLs are generated correctly.');
         }
 
         return request()->getHost();
@@ -1070,7 +1229,7 @@ class FilamentManager
     }
 
     /**
-     * @return array<array{ title: string | Closure, body: string | Closure | null }>
+     * @return array<array{ title: ?string, body: ?string, isHidden: bool, isDisabled: bool }>
      */
     public function getErrorNotifications(): array
     {

@@ -2,6 +2,7 @@
 title: Link Blade component
 ---
 
+
 ## Introduction
 
 The link component is used to render a clickable link that can perform an action:
@@ -11,6 +12,11 @@ The link component is used to render a clickable link that can perform an action
     New user
 </x-filament::link>
 ```
+
+<AutoScreenshot name="components/link/simple" alt="A simple link" />
+
+> [!CAUTION]
+> If you are passing user-controlled data to the `href` attribute, validate its scheme using [`Str::sanitizeUrl()`](../advanced/security#validating-user-input) before rendering it. HTML escaping alone does not prevent a `javascript:` URL from executing code when clicked.
 
 ## Using a link as a button
 
@@ -27,9 +33,13 @@ By default, a link's underlying HTML tag is `<a>`. You can change it to be a `<b
 
 ## Setting the size of a link
 
-By default, the size of a link is "medium". You can make it "small", "large", "extra large" or "extra extra large" by using the `size` attribute:
+By default, the size of a link is `md` (medium). The built-in sizes are `xs`, `sm`, `md`, `lg`, and `xl`, which you can select using the `size` attribute. In the default theme, `md`, `lg`, and `xl` use the same text size:
 
 ```blade
+<x-filament::link size="xs">
+    New user
+</x-filament::link>
+
 <x-filament::link size="sm">
     New user
 </x-filament::link>
@@ -41,15 +51,13 @@ By default, the size of a link is "medium". You can make it "small", "large", "e
 <x-filament::link size="xl">
     New user
 </x-filament::link>
-
-<x-filament::link size="2xl">
-    New user
-</x-filament::link>
 ```
+
+<AutoScreenshot name="components/link/sizes" alt="Links in different sizes" />
 
 ## Setting the font weight of a link
 
-By default, the font weight of links is `semibold`. You can make it `thin`, `extralight`, `light`, `normal`, `medium`, `bold`, `extrabold` or `black` by using the `weight` attribute:
+By default, the font weight of links is `medium`. You can make it `thin`, `extralight`, `light`, `normal`, `semibold`, `bold`, `extrabold` or `black` by using the `weight` attribute:
 
 ```blade
 <x-filament::link weight="thin">
@@ -93,6 +101,8 @@ Alternatively, you can pass in a custom CSS class to define the weight:
 </x-filament::link>
 ```
 
+<AutoScreenshot name="components/link/weights" alt="Links in different font weights" />
+
 ## Changing the color of a link
 
 By default, the color of a link is "primary". You can change it to be `danger`, `gray`, `info`, `success` or `warning` by using the `color` attribute:
@@ -119,6 +129,8 @@ By default, the color of a link is "primary". You can change it to be `danger`, 
 </x-filament::link>
 ```
 
+<AutoScreenshot name="components/link/colors" alt="Links in different colors" />
+
 ## Adding an icon to a link
 
 You can add an [icon](../styling/icons) to a link by using the `icon` attribute:
@@ -139,6 +151,8 @@ You can also change the icon's position to be after the text instead of before i
     New user
 </x-filament::link>
 ```
+
+<AutoScreenshot name="components/link/icon" alt="Links with icons" />
 
 ## Adding a tooltip to a link
 
@@ -175,3 +189,5 @@ You can [change the color](badge#changing-the-color-of-the-badge) of the badge u
     </x-slot>
 </x-filament::link>
 ```
+
+<AutoScreenshot name="components/link/badge" alt="Links with badges" />

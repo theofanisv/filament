@@ -1,94 +1,163 @@
-const breakpoint = 1024
-
 export default () => ({
-    isOpen: window.Alpine.$persist(true).as('isOpen'),
-    isOpenDesktop: window.Alpine.$persist(true).as('isOpenDesktop'),
+    isMobile: false,
 
-    collapsedGroups: window.Alpine.$persist(null).as('collapsedGroups'),
+    desktopMediaQuery: null,
+
+    desktopMediaQueryListener: null,
+
+    isOpen: window.Alpine.$persist(true).as('filament:sidebar:open'),
+    isOpenDesktop: window.Alpine.$persist(true).as(
+        'filament:sidebar:desktop_open',
+    ),
+
+    collapsedGroups: window.Alpine.$persist(null).as(
+        'filament:sidebar:collapsed_groups',
+    ),
+
+    scrollTop: 0,
+
+    previouslyFocusedElement: null,
+
+    get isOpenMobile() {
+        return this.isMobile && this.isOpen
+    },
 
     init() {
-        this.resizeObserver = null
+        this.setUpMediaQuery()
 
-        this.setUpResizeObserver()
+        document.addEventListener('livewire:navigate', () => {
+            const nav = document.querySelector(
+                '.fi-main-sidebar .fi-sidebar-nav',
+            )
+
+            if (nav) {
+                this.scrollTop = nav.scrollTop
+            }
+        })
+
+        document.addEventListener('livewire:navigating', () => {
+            if (this.isMobile) {
+                this.close()
+            }
+        })
 
         document.addEventListener('livewire:navigated', () => {
-            this.setUpResizeObserver()
+            this.setUpMediaQuery()
+
+            requestAnimationFrame(() => {
+                const nav = document.querySelector(
+                    '.fi-main-sidebar .fi-sidebar-nav',
+                )
+
+                if (nav && this.scrollTop) {
+                    nav.scrollTop = this.scrollTop
+                }
+            })
         })
     },
 
-    setUpResizeObserver() {
-        if (this.resizeObserver) {
-            this.resizeObserver.disconnect()
-        }
+    setUpMediaQuery() {
+        this.desktopMediaQuery?.removeEventListener(
+            'change',
+            this.desktopMediaQueryListener,
+        )
 
-        let previousWidth = window.innerWidth
+        const breakpoint = window
+            .getComputedStyle(document.documentElement)
+            .getPropertyValue('--breakpoint-lg')
+            .trim()
 
-        this.resizeObserver = new ResizeObserver(() => {
-            const currentWidth = window.innerWidth
-            const wasDesktop = previousWidth >= breakpoint
-            const isMobile = currentWidth < breakpoint
-            const isDesktop = currentWidth >= breakpoint
+        this.desktopMediaQuery = window.matchMedia(`(min-width: ${breakpoint})`)
+        this.isMobile = !this.desktopMediaQuery.matches
 
-            // Resize desktop to mobile
-            if (wasDesktop && isMobile) {
+        this.desktopMediaQueryListener = ({ matches }) => {
+            this.isMobile = !matches
+
+            if (this.isMobile) {
                 this.isOpenDesktop = this.isOpen
 
                 if (this.isOpen) {
                     this.close()
                 }
-            }
-            // Resize mobile to desktop
-            else if (!wasDesktop && isDesktop) {
+            } else {
+                this.previouslyFocusedElement = null
                 this.isOpen = this.isOpenDesktop
             }
+        }
 
-            previousWidth = currentWidth
-        })
+        this.desktopMediaQuery.addEventListener(
+            'change',
+            this.desktopMediaQueryListener,
+        )
 
-        this.resizeObserver.observe(document.body)
-
-        if (window.innerWidth < breakpoint) {
+        if (this.isMobile) {
             if (this.isOpen) {
                 this.isOpenDesktop = true
                 this.close()
             }
         } else {
-            this.isOpenDesktop = this.isOpen
+            this.isOpen = this.isOpenDesktop
         }
     },
 
     groupIsCollapsed(group) {
-        return this.collapsedGroups.includes(group)
+        return (this.collapsedGroups ?? []).includes(group)
     },
 
     collapseGroup(group) {
-        if (this.collapsedGroups.includes(group)) {
+        const collapsedGroups = this.collapsedGroups ?? []
+
+        if (collapsedGroups.includes(group)) {
             return
         }
 
-        this.collapsedGroups = this.collapsedGroups.concat(group)
+        this.collapsedGroups = collapsedGroups.concat(group)
     },
 
     toggleCollapsedGroup(group) {
-        this.collapsedGroups = this.collapsedGroups.includes(group)
-            ? this.collapsedGroups.filter(
+        const collapsedGroups = this.collapsedGroups ?? []
+
+        this.collapsedGroups = collapsedGroups.includes(group)
+            ? collapsedGroups.filter(
                   (collapsedGroup) => collapsedGroup !== group,
               )
-            : this.collapsedGroups.concat(group)
+            : collapsedGroups.concat(group)
     },
 
     close() {
         this.isOpen = false
 
-        if (window.innerWidth >= breakpoint) {
+        const previouslyFocusedElement = this.previouslyFocusedElement
+
+        this.previouslyFocusedElement = null
+
+        if (previouslyFocusedElement) {
+            window.Alpine.nextTick(() => {
+                requestAnimationFrame(() => {
+                    if (
+                        this.isMobile &&
+                        !this.isOpen &&
+                        previouslyFocusedElement.isConnected
+                    ) {
+                        previouslyFocusedElement.focus({ preventScroll: true })
+                    }
+                })
+            })
+        }
+
+        if (!this.isMobile) {
             this.isOpenDesktop = false
         }
     },
 
-    open() {
+    open(trigger = document.activeElement) {
+        if (this.isMobile && !this.isOpen) {
+            this.previouslyFocusedElement = trigger
+        }
+
         this.isOpen = true
 
-        if (window.innerWidth >= breakpoint) {
+        if (!this.isMobile) {
             this.isOpenDesktop = true
         }
     },

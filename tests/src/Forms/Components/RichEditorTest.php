@@ -1,364 +1,3467 @@
 <?php
 
+use Filament\Forms\Components\MarkdownEditor;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
+use Filament\Forms\Components\RichEditor\MentionProvider;
+use Filament\Forms\Components\RichEditor\Plugins\Contracts\HasFileAttachmentProvider;
+use Filament\Forms\Components\RichEditor\RichContentCustomBlock;
+use Filament\Forms\Components\RichEditor\RichContentRenderer;
+use Filament\Forms\Components\RichEditor\RichEditorTool;
+use Filament\Forms\Components\RichEditor\StateCasts\RichEditorStateCast;
+use Filament\Forms\Components\RichEditor\ToolbarButtonGroup;
+use Filament\Forms\View\FormsIconAlias;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Schema;
+use Filament\Tests\Fixtures\Forms\RichEditor\MinimalControlsCalloutBlock;
+use Filament\Tests\Fixtures\Forms\RichEditor\PluginWithFileAttachmentProvider;
 use Filament\Tests\Fixtures\Livewire\Livewire;
+use Filament\Tests\Fixtures\Models\Post;
+use Filament\Tests\Fixtures\Models\PostWithRichContent;
+use Filament\Tests\Fixtures\Models\User;
+use Filament\Tests\Fixtures\Models\UserWithJsonAccessor;
+use Filament\Tests\Fixtures\RichEditor\TestRichContentPlugin;
+use Filament\Tests\Fixtures\RichEditor\TestRichContentPluginWithoutToolbarButtons;
 use Filament\Tests\TestCase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+
+use function Filament\Tests\livewire;
 
 uses(TestCase::class);
 
-test('fields can be required', function (): void {
-    $errors = [];
+beforeEach(function (): void {
+    Artisan::call('filament:assets');
+});
 
-    try {
-        Schema::make(Livewire::make())
+describe('configuration and state', function (): void {
+    test('fields can be `required()`', function (): void {
+        $errors = [];
+
+        try {
+            Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    $field = (new RichEditor('content'))
+                        ->required(),
+                ])
+                ->fill([
+                    'content' => '',
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $errors = $exception->validator->errors()->get($field->getStatePath());
+        }
+
+        expect($errors)
+            ->toContain('The content field is required.');
+    });
+
+    describe('toolbar buttons', function (): void {
+        it('uses `FormsIconAlias` constants for all built-in tools', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->getComponents()[0];
+
+            $iconAliases = array_values(array_filter(
+                (new ReflectionClass(FormsIconAlias::class))->getConstants(),
+                static fn (string $name): bool => str_starts_with($name, 'COMPONENTS_RICH_EDITOR_TOOLBAR_'),
+                ARRAY_FILTER_USE_KEY,
+            ));
+            $toolIconAliases = array_values(array_map(
+                static fn (RichEditorTool $tool): ?string => $tool->getIconAlias(),
+                $richEditor->getTools(),
+            ));
+
+            expect($toolIconAliases)->toEqualCanonicalizing($iconAliases);
+        });
+
+        it('can get default toolbar buttons using `getDefaultToolbarButtons()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->getComponents()[0];
+
+            $defaultButtons = $richEditor->getDefaultToolbarButtons();
+
+            expect($defaultButtons)
+                ->toBeArray()
+                ->toHaveCount(6)
+                ->and($defaultButtons[0])->toEqual(['bold', 'italic', 'underline', 'strike', 'subscript', 'superscript', 'link'])
+                ->and($defaultButtons[1])->toEqual(['h2', 'h3'])
+                ->and($defaultButtons[2])->toEqual(['alignStart', 'alignCenter', 'alignEnd'])
+                ->and($defaultButtons[3])->toEqual(['blockquote', 'codeBlock', 'bulletList', 'orderedList'])
+                ->and($defaultButtons[4])->toEqual(['table', 'attachFiles'])
+                ->and($defaultButtons[5])->toEqual(['undo', 'redo']);
+        });
+
+        it('can get default floating toolbars using `getDefaultFloatingToolbars()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->getComponents()[0];
+
+            expect($richEditor->getDefaultFloatingToolbars())
+                ->toHaveKey('grid', [
+                    'gridAddColumnBefore', 'gridAddColumnAfter', 'gridDeleteColumn',
+                    'gridDelete',
+                ])
+                ->toHaveKey('table');
+        });
+
+        it('can overwrite toolbar buttons array using `toolbarButtons()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons([
+                            ['bold', 'italic'],
+                            ['undo', 'redo'],
+                        ]),
+                ])
+                ->getComponents()[0];
+
+            $buttons = $richEditor->getToolbarButtons();
+
+            expect($buttons)
+                ->toBeArray()
+                ->toHaveCount(2)
+                ->and($buttons[0])->toEqual(['bold', 'italic'])
+                ->and($buttons[1])->toEqual(['undo', 'redo']);
+        });
+
+        it('can overwrite toolbar buttons with closure using `toolbarButtons()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons(fn () => [
+                            ['bold', 'italic'],
+                        ]),
+                ])
+                ->getComponents()[0];
+
+            $buttons = $richEditor->getToolbarButtons();
+
+            expect($buttons)
+                ->toBeArray()
+                ->toHaveCount(1)
+                ->and($buttons[0])->toEqual(['bold', 'italic']);
+        });
+
+        it('can disable specific toolbar buttons using `disableToolbarButtons()`', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->disableToolbarButtons(['bold', 'italic', 'attachFiles']);
+
+            $buttons = $richEditor->getToolbarButtons();
+
+            $flatButtons = array_merge(...$buttons);
+
+            expect($flatButtons)
+                ->not->toContain('bold')
+                ->not->toContain('italic')
+                ->not->toContain('attachFiles')
+                ->toContain('underline')
+                ->toContain('strike')
+                ->toContain('undo');
+        });
+
+        it('can enable additional toolbar buttons using `enableToolbarButtons()`', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->enableToolbarButtons(['h1', 'textColor']);
+
+            $buttons = $richEditor->getToolbarButtons();
+
+            $flatButtons = array_merge(...$buttons);
+
+            expect($flatButtons)
+                ->toContain('bold')
+                ->toContain('italic')
+                ->toContain('h1')
+                ->toContain('textColor');
+        });
+
+        it('can disable all toolbar buttons using `disableAllToolbarButtons()`', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->disableAllToolbarButtons();
+
+            $buttons = $richEditor->getToolbarButtons();
+
+            expect($buttons)->toBeArray()->toBeEmpty();
+        });
+
+        it('can conditionally disable all toolbar buttons using `disableAllToolbarButtons()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->disableAllToolbarButtons(false),
+                ])
+                ->getComponents()[0];
+
+            $buttons = $richEditor->getToolbarButtons();
+
+            expect($buttons)->toBeArray()->not->toBeEmpty();
+        });
+
+        it('can check if toolbar button exists using `hasToolbarButton()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->getComponents()[0];
+
+            expect($richEditor->hasToolbarButton('bold'))->toBeTrue()
+                ->and($richEditor->hasToolbarButton('italic'))->toBeTrue()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeTrue()
+                ->and($richEditor->hasToolbarButton('nonexistent'))->toBeFalse();
+        });
+
+        it('can check if toolbar button exists with array using `hasToolbarButton()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->getComponents()[0];
+
+            expect($richEditor->hasToolbarButton(['bold', 'italic']))->toBeTrue()
+                ->and($richEditor->hasToolbarButton(['nonexistent1', 'nonexistent2']))->toBeFalse()
+                ->and($richEditor->hasToolbarButton(['bold', 'nonexistent']))->toBeTrue(); // At least one exists
+        });
+
+        it('can check if custom toolbar buttons are set using `hasCustomToolbarButtons()`', function (): void {
+            $richEditor = RichEditor::make('content');
+
+            expect($richEditor->hasCustomToolbarButtons())->toBeFalse();
+
+            $richEditor->toolbarButtons([['bold', 'italic']]);
+
+            expect($richEditor->hasCustomToolbarButtons())->toBeTrue();
+        });
+
+        test('toolbar buttons are properly grouped by `getToolbarButtons()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons([
+                            ['bold', 'italic'],
+                            'underline',
+                            'strike',
+                        ]),
+                ])
+                ->getComponents()[0];
+
+            $buttons = $richEditor->getToolbarButtons();
+
+            // The `getToolbarButtons()` method groups consecutive non-array buttons together.
+            // When an array is encountered, it becomes its own group, and any preceding
+            // non-array buttons are grouped into their own group at the end.
+            expect($buttons)
+                ->toBeArray()
+                ->toHaveCount(2)
+                ->and($buttons[0])->toEqual(['bold', 'italic'])
+                ->and($buttons[1])->toEqual(['underline', 'strike']);
+        });
+
+        test('blank button groups are filtered out by `getToolbarButtons()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons([
+                            ['bold', 'italic'],
+                            [],
+                            ['undo', 'redo'],
+                        ]),
+                ])
+                ->getComponents()[0];
+
+            $buttons = $richEditor->getToolbarButtons();
+
+            expect($buttons)
+                ->toBeArray()
+                ->toHaveCount(2)
+                ->and($buttons[0])->toEqual(['bold', 'italic'])
+                ->and($buttons[1])->toEqual(['undo', 'redo']);
+        });
+
+        it('cannot use `disableToolbarButtons()` when using closure', function (): void {
+            $richEditor = RichEditor::make('content')
+                ->toolbarButtons(fn () => [['bold', 'italic']]);
+
+            expect(fn () => $richEditor->disableToolbarButtons(['bold']))
+                ->toThrow(LogicException::class, 'You cannot use the `disableToolbarButtons()` method when the toolbar buttons are dynamically returned from a function.');
+        });
+
+        it('cannot use `enableToolbarButtons()` when using closure', function (): void {
+            $richEditor = RichEditor::make('content')
+                ->toolbarButtons(fn () => [['bold', 'italic']]);
+
+            expect(fn () => $richEditor->enableToolbarButtons(['underline']))
+                ->toThrow(LogicException::class, 'You cannot use the `enableToolbarButtons()` method when the toolbar buttons are dynamically returned from a function.');
+        });
+
+        it('can disable grouped toolbar buttons using `disableToolbarButtons()`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons([
+                            [ToolbarButtonGroup::make('Heading', ['h1', 'h2'])],
+                            ['undo', 'redo'],
+                        ]),
+                ])
+                ->getComponents()[0];
+
+            $richEditor->disableToolbarButtons(['h1']);
+
+            $headingButtonGroup = $richEditor->getToolbarButtons()[0][0];
+
+            expect($headingButtonGroup)->toBeInstanceOf(ToolbarButtonGroup::class);
+
+            expect($headingButtonGroup->getButtons())->toEqual(['h2'])
+                ->and($richEditor->hasToolbarButton('h1'))->toBeFalse()
+                ->and($richEditor->hasToolbarButton('h2'))->toBeTrue();
+        });
+
+    });
+
+    describe('file attachments', function (): void {
+        it('does not persist attachments through `saveUploadedFileAttachmentAndGetUrl()` when the editor is disabled', function (string $editorClass, bool $isSchemaDisabled, bool $isChildSchemaDisabled, bool $isParentDisabled, bool $isFieldDisabled): void {
+            Storage::fake('tmp-for-tests');
+            Storage::fake('public');
+
+            $uploadedFile = UploadedFile::fake()->image('attachment.jpg');
+            $temporaryFileName = TemporaryUploadedFile::generateHashNameWithOriginalNameEmbedded($uploadedFile);
+            Storage::disk('tmp-for-tests')->put("livewire-tmp/{$temporaryFileName}", $uploadedFile->getContent());
+            $temporaryFile = TemporaryUploadedFile::createFromLivewire($temporaryFileName);
+
+            $editor = $editorClass::make('content')
+                ->fileAttachmentsDisk('public')
+                ->disabled($isFieldDisabled)
+                ->saved()
+                ->saveUploadedFileAttachmentUsing(static fn (TemporaryUploadedFile $file): string => $file->storeAs('attachments', 'attachment.jpg', 'public'))
+                ->getFileAttachmentUrlUsing(static fn (): string => 'https://example.test/attachment.jpg');
+
+            $schema = Schema::make($livewire = Livewire::make())
+                ->statePath('data')
+                ->disabled($isSchemaDisabled)
+                ->components([
+                    Group::make()
+                        ->disabled($isParentDisabled)
+                        ->schema(Schema::make()->disabled($isChildSchemaDisabled)->components([$editor])),
+                ])
+                ->fill();
+
+            data_set($livewire, 'componentFileAttachments.data.content', $temporaryFile);
+
+            $shouldStore = (! $isSchemaDisabled) && (! $isChildSchemaDisabled) && (! $isParentDisabled) && (! $isFieldDisabled);
+
+            expect($editor->saveUploadedFileAttachmentAndGetUrl())->toBe($shouldStore ? 'https://example.test/attachment.jpg' : null);
+
+            if ($shouldStore) {
+                expect(Storage::disk('public')->get('attachments/attachment.jpg'))->toBe($uploadedFile->getContent());
+            } else {
+                Storage::disk('public')->assertMissing('attachments/attachment.jpg');
+            }
+        })->with([
+            'rich editor' => RichEditor::class,
+            'markdown editor' => MarkdownEditor::class,
+        ])->with([
+            'enabled' => [false, false, false, false],
+            'disabled top-level schema' => [true, false, false, false],
+            'disabled child schema' => [false, true, false, false],
+            'disabled parent layout' => [false, false, true, false],
+            'disabled editor' => [false, false, false, true],
+        ]);
+
+        it('stores the server-detected `mimetype`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->fileAttachmentsDirectory('attachments')
+                        ->fileAttachmentsDisk('public')
+                        ->fileAttachmentsVisibility('private'),
+                ])
+                ->getComponents()[0];
+
+            $file = Mockery::mock(TemporaryUploadedFile::class);
+            $file->shouldReceive('getMimeType')->andReturn('image/png');
+            $file->shouldReceive('store')
+                ->with('attachments', [
+                    'disk' => 'public',
+                    'mimetype' => 'image/png',
+                ])
+                ->andReturn('attachments/image.png');
+
+            expect($richEditor->saveUploadedFileAttachment($file))->toBe('attachments/image.png');
+        });
+
+        test('`hasFileAttachments()` returns `true` by default', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->getComponents()[0];
+
+            expect($richEditor->hasFileAttachments())->toBeTrue()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeTrue();
+        });
+
+        test('`hasFileAttachments()` returns `false` when `attachFiles` button is removed using `disableToolbarButtons()`', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->disableToolbarButtons(['attachFiles']);
+
+            expect($richEditor->hasFileAttachments())->toBeFalse()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
+        });
+
+        test('`hasFileAttachments()` returns `true` when `attachFiles` is in custom toolbar buttons', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons([
+                            ['bold', 'italic'],
+                            ['attachFiles'],
+                        ]),
+                ])
+                ->getComponents()[0];
+
+            expect($richEditor->hasFileAttachments())->toBeTrue()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeTrue();
+        });
+
+        test('`hasFileAttachments()` returns `false` with custom toolbar buttons without `attachFiles`', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons([
+                            ['bold', 'italic'],
+                            ['undo', 'redo'],
+                        ]),
+                ])
+                ->getComponents()[0];
+
+            expect($richEditor->hasFileAttachments())->toBeFalse()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
+        });
+
+        test('`fileAttachments()` method takes precedence over `disableToolbarButtons()`', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->disableToolbarButtons(['bold']);
+            $richEditor->fileAttachments(false);
+
+            expect($richEditor->hasFileAttachments())->toBeFalse()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
+
+            $buttons = $richEditor->getToolbarButtons();
+            $flatButtons = array_merge(...$buttons);
+
+            expect($flatButtons)->not->toContain('attachFiles');
+        });
+
+        test('`fileAttachments(false)` works when called before `disableToolbarButtons()`', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->fileAttachments(false);
+            $richEditor->disableToolbarButtons(['bold']);
+
+            expect($richEditor->hasFileAttachments())->toBeFalse()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
+
+            $buttons = $richEditor->getToolbarButtons();
+            $flatButtons = array_merge(...$buttons);
+
+            expect($flatButtons)->not->toContain('attachFiles');
+        });
+
+        test('`disableToolbarButtons()` with `attachFiles` also makes `hasFileAttachments()` return false', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->disableToolbarButtons(['attachFiles']);
+
+            expect($richEditor->hasFileAttachments())->toBeFalse()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
+        });
+
+        test('`fileAttachments(true)` does not force `attachFiles` button to appear when using `disableToolbarButtons()`', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->disableToolbarButtons(['attachFiles']);
+            $richEditor->fileAttachments(true);
+
+            // File attachments are enabled (drag/drop works), but the toolbar button remains hidden
+            expect($richEditor->hasFileAttachments())->toBeTrue()
+                ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
+        });
+
+    });
+
+    describe('plugins', function (): void {
+        test('plugin implementing `HasToolbarButtons` can enable toolbar buttons', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->plugins([new TestRichContentPlugin(enabledButtons: ['highlight'])]),
+                ])
+                ->getComponents()[0];
+
+            $flatButtons = array_merge(...$richEditor->getToolbarButtons());
+
+            expect($flatButtons)
+                ->toContain('highlight')
+                ->toContain('bold');
+        });
+
+        test('plugin implementing `HasToolbarButtons` does not duplicate toolbar buttons already returned by `toolbarButtons()`', function (): void {
+            $buttons = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons([
+                            ['bold', 'highlight'],
+                            ['undo', 'redo'],
+                        ])
+                        ->plugins([new TestRichContentPlugin(enabledButtons: ['highlight'])]),
+                ])
+                ->getComponents()[0]
+                ->getToolbarButtons();
+
+            $flatButtons = array_merge(...$buttons);
+            $highlightButtons = array_values(array_filter($flatButtons, fn (mixed $button): bool => $button === 'highlight'));
+
+            expect($buttons)
+                ->toHaveCount(2)
+                ->and($buttons[0])->toEqual(['bold', 'highlight'])
+                ->and($buttons[1])->toEqual(['undo', 'redo'])
+                ->and($highlightButtons)->toHaveCount(1);
+        });
+
+        test('plugin implementing `HasToolbarButtons` does not duplicate toolbar buttons already returned by `ToolbarButtonGroup` in `toolbarButtons()`', function (): void {
+            $buttons = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->toolbarButtons([
+                            ['bold', 'italic'],
+                            [ToolbarButtonGroup::make('Formatting', ['highlight', 'underline'])],
+                            ['undo', 'redo'],
+                        ])
+                        ->plugins([new TestRichContentPlugin(enabledButtons: ['highlight'])]),
+                ])
+                ->getComponents()[0]
+                ->getToolbarButtons();
+
+            $highlightButtonGroup = $buttons[1][0];
+
+            expect($buttons)->toHaveCount(3)
+                ->and($highlightButtonGroup)->toBeInstanceOf(ToolbarButtonGroup::class)
+                ->and($highlightButtonGroup->getButtons())->toEqual(['highlight', 'underline'])
+                ->and($buttons[2])->toEqual(['undo', 'redo']);
+        });
+
+        test('plugin implementing `HasToolbarButtons` does not duplicate toolbar buttons already enabled by user `enableToolbarButtons()`', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->plugins([new TestRichContentPlugin(enabledButtons: ['highlight'])]),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->enableToolbarButtons(['highlight']);
+
+            $flatButtons = array_merge(...$richEditor->getToolbarButtons());
+            $highlightButtons = array_values(array_filter($flatButtons, fn (mixed $button): bool => $button === 'highlight'));
+
+            expect($highlightButtons)
+                ->toHaveCount(1);
+        });
+
+        test('plugin implementing `HasToolbarButtons` can disable toolbar buttons', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->plugins([new TestRichContentPlugin(disabledButtons: ['bold', 'italic'])]),
+                ])
+                ->getComponents()[0];
+
+            $flatButtons = array_merge(...$richEditor->getToolbarButtons());
+
+            expect($flatButtons)
+                ->not->toContain('bold')
+                ->not->toContain('italic')
+                ->toContain('underline')
+                ->toContain('undo');
+        });
+
+        test('user `disableToolbarButtons()` overrides plugin-enabled toolbar buttons', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->plugins([new TestRichContentPlugin(enabledButtons: ['highlight'])]),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->disableToolbarButtons(['highlight']);
+
+            $flatButtons = array_merge(...$richEditor->getToolbarButtons());
+
+            expect($flatButtons)
+                ->not->toContain('highlight')
+                ->toContain('bold');
+        });
+
+        test('user `enableToolbarButtons()` overrides plugin-disabled toolbar buttons', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->plugins([new TestRichContentPlugin(disabledButtons: ['bold'])]),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+            $richEditor->enableToolbarButtons(['bold']);
+
+            $flatButtons = array_merge(...$richEditor->getToolbarButtons());
+
+            expect($flatButtons)
+                ->toContain('bold');
+        });
+
+        test('plugin without `HasToolbarButtons` does not affect toolbar buttons', function (): void {
+            $richEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->plugins([new TestRichContentPluginWithoutToolbarButtons]),
+                ])
+                ->getComponents()[0];
+
+            $defaultRichEditor = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->getComponents()[0];
+
+            expect($richEditor->getToolbarButtons())
+                ->toEqual($defaultRichEditor->getToolbarButtons());
+        });
+
+        test('rich content attribute resolves file attachment provider from plugin implementing `HasFileAttachmentProvider` without calling `fileAttachmentProvider()`', function (): void {
+            $record = new PostWithRichContent;
+
+            $contentAttribute = $record->getRichContentAttribute('content');
+
+            $pluginWithProvider = $contentAttribute->getPlugins()[0];
+
+            expect($pluginWithProvider)
+                ->toBeInstanceOf(HasFileAttachmentProvider::class);
+
+            $expectedProvider = $pluginWithProvider->getFileAttachmentProvider();
+
+            expect($contentAttribute->getFileAttachmentProvider())
+                ->toBe($expectedProvider);
+        });
+
+        test('`RichEditor` receives the file attachment provider resolved by the rich content attribute plugin', function (): void {
+            $record = new PostWithRichContent;
+
+            $contentAttribute = $record->getRichContentAttribute('content');
+
+            $expectedProvider = $contentAttribute->getPlugins()[0]->getFileAttachmentProvider();
+
+            $schema = Schema::make(Livewire::make())
+                ->model($record)
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ]);
+
+            $richEditor = $schema->getComponents()[0];
+
+            expect($richEditor->getContentAttribute())
+                ->not->toBeNull()
+                ->getFileAttachmentProvider()->toBe($expectedProvider);
+
+            expect($richEditor->getFileAttachmentProvider())
+                ->toBe($expectedProvider);
+        });
+
+        test('`RichContentRenderer` resolves file attachment provider from plugin implementing `HasFileAttachmentProvider`', function (): void {
+            $plugin = PluginWithFileAttachmentProvider::make();
+
+            $renderer = RichContentRenderer::make()
+                ->plugins([$plugin]);
+
+            expect($renderer->getFileAttachmentProvider())
+                ->toBe($plugin->getFileAttachmentProvider());
+        });
+
+    });
+
+    describe('link HTML attributes', function (): void {
+        test('links without explicit HTML attributes do not gain them during HTML round-trip', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->fill([
+                    'content' => '<p><a href="https://example.com">Link</a></p>',
+                ]);
+
+            expect($schema->getState()['content'])
+                ->toContain('href="https://example.com"')
+                ->not->toContain('target=')
+                ->not->toContain('rel=');
+        });
+
+        test('links with explicit HTML attributes preserve them during HTML round-trip', function (): void {
+            $schema = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->fill([
+                    'content' => '<p><a href="https://example.com" target="_blank" rel="noopener noreferrer">Link</a></p>',
+                ]);
+
+            expect($schema->getState()['content'])
+                ->toContain('href="https://example.com"')
+                ->toContain('target="_blank"')
+                ->toContain('rel="noopener noreferrer"');
+        });
+    });
+
+    it('can set `mergeTags()`', function (): void {
+        $editor = RichEditor::make('content')
+            ->mergeTags(['{{name}}', '{{email}}']);
+
+        expect($editor->getMergeTags())->toHaveKeys(['{{name}}', '{{email}}']);
+    });
+
+    it('can set `linkProtocols()`', function (): void {
+        $editor = RichEditor::make('content')
+            ->linkProtocols(['https', 'mailto']);
+
+        expect($editor->getLinkProtocols())->toBe(['https', 'mailto']);
+    });
+
+    it('returns default link protocols before the editor is attached to a schema', function (): void {
+        expect(RichEditor::make('content')->getLinkProtocols())->toBe([
+            'http',
+            'https',
+            'ftp',
+            'ftps',
+            'mailto',
+            'tel',
+            'callto',
+            'sms',
+            'cid',
+            'xmpp',
+        ]);
+    });
+
+    it('inherits `linkProtocols()` from the rich content attribute', function (): void {
+        $record = new PostWithRichContent;
+        $record->getRichContentAttribute('content')
+            ->linkProtocols(['https', 'mailto']);
+
+        $editor = Schema::make(Livewire::make())
+            ->model($record)
+            ->components([
+                RichEditor::make('content'),
+            ])
+            ->getComponents()[0];
+
+        expect($editor->getLinkProtocols())->toBe(['https', 'mailto']);
+    });
+
+    it('can override rich content attribute `linkProtocols()`', function (): void {
+        $record = new PostWithRichContent;
+        $record->getRichContentAttribute('content')
+            ->linkProtocols(['https', 'mailto']);
+
+        $editor = Schema::make(Livewire::make())
+            ->model($record)
+            ->components([
+                RichEditor::make('content')
+                    ->linkProtocols(['tel']),
+            ])
+            ->getComponents()[0];
+
+        expect($editor->getLinkProtocols())->toBe(['tel']);
+    });
+
+    it('can set `textColors()`', function (): void {
+        $editor = RichEditor::make('content')
+            ->textColors(['red' => '#ff0000', 'blue' => '#0000ff']);
+
+        $colors = $editor->getTextColors();
+
+        expect($colors)->toHaveKeys(['red', 'blue']);
+    });
+
+    it('can set `resizableImages()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        expect($editor->hasResizableImages())->toBeFalse();
+
+        $editor->resizableImages();
+
+        expect($editor->hasResizableImages())->toBeTrue();
+    });
+
+    it('returns `10rem` for `getMinHeight()` and `null` for `getMaxHeight()` by default', function (): void {
+        $editor = RichEditor::make('content');
+
+        expect($editor->getMinHeight())->toBe('10rem')
+            ->and($editor->getMaxHeight())->toBeNull();
+    });
+
+    it('can set `minHeight()` and `maxHeight()`', function (): void {
+        $editor = RichEditor::make('content')
+            ->minHeight('20rem')
+            ->maxHeight('40rem');
+
+        expect($editor->getMinHeight())->toBe('20rem')
+            ->and($editor->getMaxHeight())->toBe('40rem');
+    });
+
+    it('can set `minHeight()` and `maxHeight()` with a `Closure`', function (): void {
+        $editor = RichEditor::make('content')
+            ->minHeight(static fn (): string => '15rem')
+            ->maxHeight(static fn (): string => '50rem');
+
+        expect($editor->getMinHeight())->toBe('15rem')
+            ->and($editor->getMaxHeight())->toBe('50rem');
+    });
+
+    it('can clear `minHeight()` and `maxHeight()` with `null`', function (): void {
+        $editor = RichEditor::make('content')
+            ->minHeight('20rem')
+            ->maxHeight('40rem')
+            ->minHeight(null)
+            ->maxHeight(null);
+
+        expect($editor->getMinHeight())->toBeNull()
+            ->and($editor->getMaxHeight())->toBeNull();
+    });
+
+    it('renders the `--min-height` and `--max-height` custom properties when set', function (): void {
+        $html = Schema::make(Livewire::make())
             ->statePath('data')
             ->components([
-                $field = (new RichEditor('content'))
-                    ->required(),
+                RichEditor::make('content')
+                    ->minHeight('20rem')
+                    ->maxHeight('40rem'),
             ])
-            ->fill([
-                'content' => '',
+            ->getComponents()[0]
+            ->toHtml();
+
+        expect($html)->toContain('--min-height: 20rem')
+            ->and($html)->toContain('--max-height: 40rem');
+    });
+
+    it('makes disabled content using `maxHeight()` a keyboard-focusable named region', function (): void {
+        $html = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->disabled()
+                    ->maxHeight('12rem'),
             ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $errors = $exception->validator->errors()->get($field->getStatePath());
+            ->getComponents()[0]
+            ->toHtml();
+
+        expect($html)->toContain('--min-height: 10rem')
+            ->and($html)->toContain('--max-height: 12rem')
+            ->and($html)->toContain('role="region"')
+            ->and($html)->toContain('tabindex="0"');
+    });
+
+    it('can set `activePanel()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        expect($editor->getActivePanel())->toBeNull();
+
+        $editor->activePanel('merge-tags');
+
+        expect($editor->getActivePanel())->toBe('merge-tags');
+    });
+
+    it('can set `uploadingFileMessage()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        expect($editor->getUploadingFileMessage())->toBeString();
+        expect($editor->getUploadingFileMessage())->not->toBeEmpty();
+
+        $editor->uploadingFileMessage('Uploading file...');
+
+        expect($editor->getUploadingFileMessage())->toBe('Uploading file...');
+    });
+
+    it('returns fluent `$this` from `customBlocks()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        $result = $editor->customBlocks(['App\\CustomBlock']);
+
+        expect($result)->toBe($editor);
+    });
+
+    it('can set `floatingToolbars()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        $result = $editor->floatingToolbars(['text' => ['bold', 'italic']]);
+
+        expect($result)->toBe($editor);
+    });
+
+    it('can set `noMergeTagSearchResultsMessage()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        expect($editor->getNoMergeTagSearchResultsMessage())->toBeString();
+
+        $editor->noMergeTagSearchResultsMessage('No tags found');
+
+        expect($editor->getNoMergeTagSearchResultsMessage())->toBe('No tags found');
+    });
+
+    it('returns `false` for `hasMentions()` by default', function (): void {
+        $editor = RichEditor::make('content');
+
+        expect($editor->hasMentions())->toBeFalse();
+    });
+
+    describe('mention options', function (): void {
+        // JavaScript objects order integer-like keys in ascending numeric order, so mention
+        // items must be sent as an ordered list of `id` and `label` pairs instead of an
+        // object keyed by ID, otherwise the order of the items is silently discarded.
+
+        it('preserves the declared order of `items()` in `getMentionsForJs()`', function (): void {
+            $mentions = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->mentions([
+                            MentionProvider::make('@')
+                                ->items([30 => 'Alice', 10 => 'Bob', 20 => 'Carol']),
+                        ]),
+                ])
+                ->getComponents()[0]
+                ->getMentionsForJs();
+
+            expect($mentions[0]['items'])->toBe([
+                ['id' => '30', 'label' => 'Alice'],
+                ['id' => '10', 'label' => 'Bob'],
+                ['id' => '20', 'label' => 'Carol'],
+            ]);
+        });
+
+        it('preserves sequential IDs from `items()` in `getMentionsForJs()`', function (): void {
+            $mentions = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->mentions([
+                            MentionProvider::make('@')
+                                ->items([0 => 'Alice', 1 => 'Bob']),
+                        ]),
+                ])
+                ->getComponents()[0]
+                ->getMentionsForJs();
+
+            // Without the `id` and `label` pairs, sequential IDs serialise to a JSON array of
+            // bare labels, and the inserted mention takes its label as its `id`.
+            expect($mentions[0]['items'])->toBe([
+                ['id' => '0', 'label' => 'Alice'],
+                ['id' => '1', 'label' => 'Bob'],
+            ]);
+        });
+
+        it('preserves result order in `getMentionSearchResultsForJs()`', function (): void {
+            $results = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content')
+                        ->mentions([
+                            MentionProvider::make('@')
+                                ->getSearchResultsUsing(static fn (string $search): array => [
+                                    3 => 'Alice',
+                                    1 => 'Carol',
+                                    2 => 'Bob',
+                                ]),
+                        ]),
+                ])
+                ->getComponents()[0]
+                ->getMentionSearchResultsForJs('a');
+
+            expect($results)->toBe([
+                ['id' => '3', 'label' => 'Alice'],
+                ['id' => '1', 'label' => 'Carol'],
+                ['id' => '2', 'label' => 'Bob'],
+            ]);
+        });
+
+        it('returns an empty array from `getMentionSearchResultsForJs()` when no mention providers are configured', function (): void {
+            $results = Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    RichEditor::make('content'),
+                ])
+                ->getComponents()[0]
+                ->getMentionSearchResultsForJs('a');
+
+            expect($results)->toBe([]);
+        });
+    });
+
+    it('returns fluent `$this` from `tools()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        $result = $editor->tools(['bold', 'italic']);
+
+        expect($result)->toBe($editor);
+    });
+
+    it('can set `mergeTags()` with a `Closure`', function (): void {
+        $editor = RichEditor::make('content')
+            ->mergeTags(static fn (): array => ['{{name}}', '{{email}}']);
+
+        expect($editor->getMergeTags())->toHaveKeys(['{{name}}', '{{email}}']);
+    });
+
+    it('can set `linkProtocols()` with a `Closure`', function (): void {
+        $editor = RichEditor::make('content')
+            ->linkProtocols(static fn (): array => ['https', 'tel']);
+
+        expect($editor->getLinkProtocols())->toBe(['https', 'tel']);
+    });
+
+    it('can set `activePanel()` with a `Closure`', function (): void {
+        $editor = RichEditor::make('content')
+            ->activePanel(static fn (): string => 'custom-panel');
+
+        expect($editor->getActivePanel())->toBe('custom-panel');
+    });
+
+    it('can clear `activePanel()` with `null`', function (): void {
+        $editor = RichEditor::make('content')
+            ->activePanel('merge-tags')
+            ->activePanel(null);
+
+        expect($editor->getActivePanel())->toBeNull();
+    });
+
+    it('keeps optional custom block and sticky features disabled by default and evaluates their conditions', function (string $setter, string $getter): void {
+        $editor = RichEditor::make('content');
+
+        expect($editor->{$getter}())->toBeFalse();
+
+        $editor->{$setter}();
+
+        expect($editor->{$getter}())->toBeTrue();
+
+        $editor->{$setter}(static fn (): bool => false);
+
+        expect($editor->{$getter}())->toBeFalse();
+
+        $editor->{$setter}(false);
+
+        expect($editor->{$getter}())->toBeFalse();
+    })->with([
+        '`customBlocksGrid()`' => ['customBlocksGrid', 'hasCustomBlocksGrid'],
+        '`searchableCustomBlocks()`' => ['searchableCustomBlocks', 'hasSearchableCustomBlocks'],
+        '`stickyToolbar()`' => ['stickyToolbar', 'hasStickyToolbar'],
+        '`stickyPanels()`' => ['stickyPanels', 'hasStickyPanels'],
+    ]);
+
+    it('can evaluate and clear `stickyOffset()` without enabling sticky controls', function (): void {
+        $editor = RichEditor::make('content');
+
+        expect($editor->getStickyOffset())->toBeNull();
+
+        $editor->stickyOffset(static fn (): string => '5rem');
+
+        expect($editor->getStickyOffset())->toBe('5rem')
+            ->and($editor->hasStickyToolbar())->toBeFalse()
+            ->and($editor->hasStickyPanels())->toBeFalse();
+
+        $editor->stickyOffset(null);
+
+        expect($editor->getStickyOffset())->toBeNull();
+    });
+
+    it('returns fluent `$this` from `customTextColors()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        $result = $editor->customTextColors();
+
+        expect($result)->toBe($editor);
+    });
+
+    it('returns fluent `$this` from `plugins()`', function (): void {
+        $editor = RichEditor::make('content');
+
+        $result = $editor->plugins([]);
+
+        expect($result)->toBe($editor);
+    });
+
+    describe('JSON mode', function (): void {
+        it('can set `json()`', function (): void {
+            $editor = RichEditor::make('content')->json();
+
+            expect($editor->isJson())->toBeTrue();
+        });
+
+        it('can set `json()` with a `Closure`', function (): void {
+            $editor = RichEditor::make('content')
+                ->json(static fn (): bool => true);
+
+            expect($editor->isJson())->toBeTrue();
+        });
+
+        it('can set `json()` to `false`', function (): void {
+            $editor = RichEditor::make('content')
+                ->json()
+                ->json(false);
+
+            expect($editor->isJson())->toBeFalse();
+        });
+    });
+
+    describe('custom text colors', function (): void {
+        it('can set `customTextColors()`', function (): void {
+            $editor = RichEditor::make('content')->customTextColors();
+
+            expect($editor->hasCustomTextColors())->toBeTrue();
+        });
+
+        it('can set `customTextColors()` with a `Closure`', function (): void {
+            $editor = RichEditor::make('content')
+                ->customTextColors(static fn (): bool => true);
+
+            expect($editor->hasCustomTextColors())->toBeTrue();
+        });
+
+        it('can set `customTextColors()` to `false`', function (): void {
+            $editor = RichEditor::make('content')
+                ->customTextColors()
+                ->customTextColors(false);
+
+            expect($editor->hasCustomTextColors())->toBeFalse();
+        });
+    });
+
+    describe('`Closure` support for collections', function (): void {
+        it('can set `customBlocks()` with a `Closure`', function (): void {
+            $editor = RichEditor::make('content')
+                ->customBlocks(static fn (): array => []);
+
+            expect($editor->getCustomBlocks())->toBe([]);
+        });
+
+        it('can set `resizableImages()` with a `Closure`', function (): void {
+            $editor = RichEditor::make('content')
+                ->resizableImages(static fn (): bool => true);
+
+            expect($editor->hasResizableImages())->toBeTrue();
+        });
+
+        it('can set `uploadingFileMessage()` with a `Closure`', function (): void {
+            $editor = RichEditor::make('content')
+                ->uploadingFileMessage(static fn (): string => 'Uploading...');
+
+            expect($editor->getUploadingFileMessage())->toBe('Uploading...');
+        });
+    });
+});
+
+describe('rendering', function (): void {
+    it('can render', function (): void {
+        livewire(RenderRichEditor::class)
+            ->assertSuccessful();
+    });
+
+    it('escapes `minHeight()`, `maxHeight()`, and `stickyOffset()` in styles', function (): void {
+        $minHeight = '8rem" data-audit-injected="<min>&value';
+        $maxHeight = '12rem" data-audit-injected="<max>&value';
+        $stickyOffset = '2rem" data-audit-injected="<offset>&value';
+        $html = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->minHeight($minHeight)
+                    ->maxHeight($maxHeight)
+                    ->stickyOffset($stickyOffset),
+            ])
+            ->getComponents()[0]
+            ->toHtml();
+        $document = new DOMDocument;
+        $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        expect($xpath->query('//*[@data-audit-injected]')->length)->toBe(0)
+            ->and($xpath->query('//*[@style]')->item(0)->getAttribute('style'))
+            ->toBe("--min-height: {$minHeight}; --max-height: {$maxHeight}; --rich-editor-sticky-offset: {$stickyOffset};");
+    });
+
+    it('can render with custom `toolbarButtons()`', function (): void {
+        livewire(RenderRichEditorWithToolbarButtons::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `toolbarButtons()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureToolbarButtons::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `disableToolbarButtons()`', function (): void {
+        livewire(RenderRichEditorWithDisabledToolbarButtons::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `enableToolbarButtons()`', function (): void {
+        livewire(RenderRichEditorWithEnabledToolbarButtons::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `disableAllToolbarButtons()`', function (): void {
+        livewire(RenderRichEditorWithNoToolbarButtons::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `disableAllToolbarButtons(false)`', function (): void {
+        livewire(RenderRichEditorWithAllToolbarButtons::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `mergeTags()`', function (): void {
+        livewire(RenderRichEditorWithMergeTags::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `mergeTags()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureMergeTags::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `linkProtocols()`', function (): void {
+        livewire(RenderRichEditorWithLinkProtocols::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `linkProtocols()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureLinkProtocols::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `textColors()`', function (): void {
+        livewire(RenderRichEditorWithTextColors::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `resizableImages()`', function (): void {
+        livewire(RenderRichEditorWithResizableImages::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `resizableImages()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureResizableImages::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `activePanel()`', function (): void {
+        livewire(RenderRichEditorWithActivePanel::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `activePanel()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureActivePanel::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `activePanel(null)`', function (): void {
+        livewire(RenderRichEditorWithNullActivePanel::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `uploadingFileMessage()`', function (): void {
+        livewire(RenderRichEditorWithUploadingFileMessage::class)
+            ->assertSuccessful()
+            ->assertSeeHtml('Uploading file...');
+    });
+
+    it('can render with `uploadingFileMessage()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureUploadingFileMessage::class)
+            ->assertSuccessful()
+            ->assertSeeHtml('Uploading...');
+    });
+
+    it('can render with `json()`', function (): void {
+        livewire(RenderRichEditorWithJson::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `json()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureJson::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `json(false)`', function (): void {
+        livewire(RenderRichEditorWithJsonFalse::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `customTextColors()`', function (): void {
+        livewire(RenderRichEditorWithCustomTextColors::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `customTextColors()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureCustomTextColors::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `customTextColors(false)`', function (): void {
+        livewire(RenderRichEditorWithCustomTextColorsFalse::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `customBlocks()` set via `Closure`', function (): void {
+        livewire(RenderRichEditorWithClosureCustomBlocks::class)
+            ->assertSuccessful();
+    });
+
+    it('can render custom blocks inherited from the model without evaluating renderer data', function (): void {
+        livewire(RenderRichEditorWithModelCustomBlocks::class)
+            ->assertSuccessful()
+            ->assertSee('Block A')
+            ->assertSee('Block B')
+            ->assertSee('Block C')
+            ->assertSee('Marketing');
+    });
+
+    it('can render with `minimalCustomBlockControls()`', function (): void {
+        livewire(RenderRichEditorWithMinimalCustomBlockControls::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `noMergeTagSearchResultsMessage()`', function (): void {
+        livewire(RenderRichEditorWithNoMergeTagSearchResultsMessage::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with `fileAttachments(false)`', function (): void {
+        livewire(RenderRichEditorWithNoFileAttachments::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with plugin enabling toolbar buttons', function (): void {
+        livewire(RenderRichEditorWithPluginEnabledButtons::class)
+            ->assertSuccessful();
+    });
+
+    it('can render with plugin disabling toolbar buttons', function (): void {
+        livewire(RenderRichEditorWithPluginDisabledButtons::class)
+            ->assertSuccessful();
+    });
+});
+
+describe('minimal custom block controls', function (): void {
+    it('keeps `minimalCustomBlockControls()` opt-in and evaluates and resets its condition', function (): void {
+        $richEditor = RichEditor::make('content')
+            ->container(Schema::make(Livewire::make())->statePath('data'));
+
+        expect($richEditor->hasMinimalCustomBlockControls())->toBeFalse();
+
+        $richEditor->minimalCustomBlockControls();
+
+        expect($richEditor->hasMinimalCustomBlockControls())->toBeTrue();
+
+        $richEditor->minimalCustomBlockControls(static fn (): bool => false);
+
+        expect($richEditor->hasMinimalCustomBlockControls())->toBeFalse();
+
+        $richEditor->minimalCustomBlockControls(static fn (): bool => true);
+
+        expect($richEditor->hasMinimalCustomBlockControls())->toBeTrue();
+
+        $richEditor->minimalCustomBlockControls(false);
+
+        expect($richEditor->hasMinimalCustomBlockControls())->toBeFalse();
+    });
+
+    it('can edit, delete and undo custom blocks with `minimalCustomBlockControls()`', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $page = visit('/rich-editor-minimal-controls-browser-test');
+
+        $minimalEditor = '[data-testid="minimal-controls-editor"]';
+        $customBlock = '[data-testid="rich-editor-custom-block"]';
+        $firstCallout = ':nth-match(' . $minimalEditor . ' ' . $customBlock . '[data-id="callout"], 1)';
+        $secondCallout = ':nth-match(' . $minimalEditor . ' ' . $customBlock . '[data-id="callout"], 2)';
+        $editButton = ' [data-testid="rich-editor-custom-block-edit-button"]';
+        $deleteButton = ' [data-testid="rich-editor-custom-block-delete-button"]';
+
+        $page
+            ->assertVisible($minimalEditor . ' ' . $customBlock . '[data-id="divider"]' . $deleteButton)
+            ->assertNotPresent('[data-testid="disabled-controls-editor"] [data-testid$="-button"]')
+            ->click($minimalEditor . ' .tiptap p >> text=Closing paragraph.')
+            ->click($firstCallout . $deleteButton)
+            ->assertCount($minimalEditor . ' ' . $customBlock . '[data-id="callout"]', 1)
+            ->assertPresent('[data-testid="minimal-controls-editor"] [data-testid="rich-editor-content"]:focus')
+            ->keys(':focus', 'ControlOrMeta+z')
+            ->assertCount($minimalEditor . ' ' . $customBlock . '[data-id="callout"]', 2)
+            ->assertSeeIn($minimalEditor, 'First callout.')
+            ->assertSeeIn($minimalEditor, 'Second callout.')
+            ->click($secondCallout . $editButton)
+            ->assertVisible('[data-testid="minimal-controls-edit-modal"]')
+            ->fill('[data-testid="minimal-controls-message-input"]', 'Updated second callout.')
+            ->click('[data-testid="minimal-controls-edit-modal"] button[type="submit"]')
+            ->assertSeeIn($minimalEditor, 'Updated second callout.')
+            ->assertNoAccessibilityIssues();
+
+        visit('/rich-editor-minimal-controls-browser-test')
+            ->on()->mobile()
+            ->inDarkMode()
+            ->assertVisible($firstCallout . $editButton)
+            ->assertNoAccessibilityIssues();
+    });
+});
+
+describe('custom blocks', function (): void {
+    it('returns an empty array when no custom blocks are registered', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content'),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCustomBlocks())->toBe([]);
+    });
+
+    it('can register custom blocks using `customBlocks()`', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                        RichEditorTestBlockB::class,
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCustomBlocks())->toBe([
+            RichEditorTestBlockA::class,
+            RichEditorTestBlockB::class,
+        ]);
+    });
+
+    it('resolves class-keyed custom blocks in `getCustomBlocks()`', function (string $dataType, bool $isRegisteredOnModel): void {
+        $data = match ($dataType) {
+            'array' => ['categoryUrl' => '/categories/marketing'],
+            'numeric array' => [RichEditorTestBlockC::class],
+            'closure' => static function (): array {
+                throw new RuntimeException('Renderer data must not be evaluated by the editor.');
+            },
+        };
+
+        $blocks = [
+            RichEditorTestBlockA::class => $data,
+            RichEditorTestBlockB::class,
+            'Marketing' => [RichEditorTestBlockC::class => ['categoryUrl' => '/categories/other']],
+        ];
+
+        $record = new PostWithRichContent;
+        $record->registerRichContent('content')->customBlocks($blocks);
+
+        $richEditor = Schema::make(Livewire::make())
+            ->model($record)
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks($isRegisteredOnModel ? null : $blocks),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCustomBlocks())->toBe([
+            RichEditorTestBlockA::class,
+            RichEditorTestBlockB::class,
+            RichEditorTestBlockC::class,
+        ]);
+
+        expect($richEditor->getCustomBlock('block-a'))->toBe(RichEditorTestBlockA::class);
+    })->with(['array', 'numeric array', 'closure'])->with([
+        'model registration' => true,
+        'field registration' => false,
+    ]);
+
+    it('uses field `customBlocks()` instead of model registrations unless `null`', function (?array $fieldBlocks, array $expectedBlocks): void {
+        $record = new PostWithRichContent;
+        $record->registerRichContent('content')->customBlocks([RichEditorTestBlockA::class]);
+
+        $richEditor = Schema::make(Livewire::make())
+            ->model($record)
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')->customBlocks($fieldBlocks),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCustomBlocks())->toBe($expectedBlocks)
+            ->and($richEditor->getGroupedCustomBlocks()->toArray())
+            ->toBe($expectedBlocks ? ['' => $expectedBlocks] : []);
+    })->with([
+        'overriding inherited blocks' => [[RichEditorTestBlockB::class], [RichEditorTestBlockB::class]],
+        'disabling inherited blocks' => [[], []],
+        'falling back to inherited blocks' => [null, [RichEditorTestBlockA::class]],
+    ]);
+
+    it('can register custom blocks using a `Closure`', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks(static fn (): array => [
+                        RichEditorTestBlockA::class,
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCustomBlocks())->toBe([
+            RichEditorTestBlockA::class,
+        ]);
+    });
+
+    it('flattens grouped blocks in `getCustomBlocks()`', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                        'Group' => [
+                            RichEditorTestBlockB::class,
+                            RichEditorTestBlockC::class,
+                        ],
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCustomBlocks())->toBe([
+            RichEditorTestBlockA::class,
+            RichEditorTestBlockB::class,
+            RichEditorTestBlockC::class,
+        ]);
+    });
+
+    it('returns a keyed array from `getCachedCustomBlocks()`', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                        RichEditorTestBlockB::class,
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCachedCustomBlocks())->toBe([
+            'block-a' => RichEditorTestBlockA::class,
+            'block-b' => RichEditorTestBlockB::class,
+        ]);
+    });
+
+    it('returns an empty array from `getCachedCustomBlocks()` when no blocks are registered', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content'),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCachedCustomBlocks())->toBeEmpty();
+    });
+
+    it('can retrieve a custom block by ID using `getCustomBlock()`', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                        RichEditorTestBlockB::class,
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCustomBlock('block-a'))->toBe(RichEditorTestBlockA::class);
+        expect($richEditor->getCustomBlock('block-b'))->toBe(RichEditorTestBlockB::class);
+    });
+
+    it('returns `null` from `getCustomBlock()` for an unknown ID', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getCustomBlock('nonexistent'))->toBeNull();
+    });
+
+    it('returns trusted custom block previews from `getCustomBlockPreviewsForJs()`', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([MinimalControlsCalloutBlock::class]),
+            ])
+            ->getComponents()[0];
+
+        $previews = $richEditor->getCustomBlockPreviewsForJs([
+            [
+                'id' => 'callout',
+                'config' => ['message' => 'Copied callout.'],
+                'key' => 0,
+            ],
+            [
+                'id' => 'unknown',
+                'config' => [],
+                'key' => 1,
+            ],
+        ]);
+
+        expect($previews)->toHaveCount(1);
+        expect($previews[0]['key'])->toBe(0);
+        expect($previews[0]['label'])->toBe('Callout');
+        expect(base64_decode($previews[0]['preview']))->toBe('<p>Copied callout.</p>');
+        expect($previews[0]['shouldApplyProseStylingToPreview'])->toBeFalse();
+    });
+
+    it('includes `customBlocks` toolbar button when blocks are registered', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        $flatButtons = array_merge(...$richEditor->getToolbarButtons());
+
+        expect($flatButtons)->toContain('customBlocks');
+    });
+
+    it('does not include `customBlocks` toolbar button when no blocks are registered', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content'),
+            ])
+            ->getComponents()[0];
+
+        $flatButtons = array_merge(...$richEditor->getToolbarButtons());
+
+        expect($flatButtons)->not->toContain('customBlocks');
+    });
+});
+
+describe('custom block grouping', function (): void {
+    it('keeps class-keyed custom blocks ungrouped in `getGroupedCustomBlocks()`', function (string $dataType, bool $isRegisteredOnModel): void {
+        $data = match ($dataType) {
+            'array' => ['categoryUrl' => '/categories/marketing'],
+            'numeric array' => [RichEditorTestBlockC::class],
+            'closure' => static function (): array {
+                throw new RuntimeException('Renderer data must not be evaluated by the editor.');
+            },
+        };
+
+        $blocks = [
+            'Marketing' => [RichEditorTestBlockC::class => ['categoryUrl' => '/categories/other']],
+            RichEditorTestBlockA::class => $data,
+            RichEditorTestBlockB::class,
+        ];
+
+        $record = new PostWithRichContent;
+        $record->registerRichContent('content')->customBlocks($blocks);
+
+        $richEditor = Schema::make(Livewire::make())
+            ->model($record)
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks($isRegisteredOnModel ? null : $blocks),
+            ])
+            ->getComponents()[0];
+
+        expect($richEditor->getGroupedCustomBlocks()->toArray())->toBe([
+            '' => [RichEditorTestBlockA::class, RichEditorTestBlockB::class],
+            'Marketing' => [RichEditorTestBlockC::class],
+        ]);
+    })->with(['array', 'numeric array', 'closure'])->with([
+        'model registration' => true,
+        'field registration' => false,
+    ]);
+
+    it('returns all blocks in a single ungrouped collection when no groups are used', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                        RichEditorTestBlockB::class,
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        $grouped = $richEditor->getGroupedCustomBlocks();
+
+        expect($grouped)->toHaveCount(1);
+        expect($grouped->keys()->first())->toBe('');
+        expect($grouped->first()->all())->toBe([
+            RichEditorTestBlockA::class,
+            RichEditorTestBlockB::class,
+        ]);
+    });
+
+    it('places ungrouped blocks before grouped blocks', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                        'Group' => [
+                            RichEditorTestBlockB::class,
+                        ],
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        $grouped = $richEditor->getGroupedCustomBlocks();
+        $keys = $grouped->keys()->all();
+
+        expect($keys[0])->toBe('');
+        expect($keys[1])->toBe('Group');
+        expect($grouped['']->all())->toBe([RichEditorTestBlockA::class]);
+    });
+
+    it('groups blocks under string-keyed arrays', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        'Alpha' => [RichEditorTestBlockA::class],
+                        'Beta' => [RichEditorTestBlockB::class, RichEditorTestBlockC::class],
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        $grouped = $richEditor->getGroupedCustomBlocks();
+
+        expect($grouped)->toHaveCount(2);
+        expect($grouped->has('Alpha'))->toBeTrue();
+        expect($grouped->has('Beta'))->toBeTrue();
+        expect($grouped['Beta']->all())->toBe([RichEditorTestBlockB::class, RichEditorTestBlockC::class]);
+    });
+
+    it('preserves group definition order', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        'Zebras' => [RichEditorTestBlockA::class],
+                        'Apples' => [RichEditorTestBlockB::class],
+                        'Middle' => [RichEditorTestBlockC::class],
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        $grouped = $richEditor->getGroupedCustomBlocks();
+        $keys = $grouped->keys()->all();
+
+        expect($keys[0])->toBe('Zebras');
+        expect($keys[1])->toBe('Apples');
+        expect($keys[2])->toBe('Middle');
+    });
+
+    it('treats numeric-keyed nested arrays as ungrouped', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        [RichEditorTestBlockA::class, RichEditorTestBlockB::class],
+                        'Group' => [RichEditorTestBlockC::class],
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        $grouped = $richEditor->getGroupedCustomBlocks();
+        $keys = $grouped->keys()->all();
+
+        expect($keys[0])->toBe('');
+        expect($keys[1])->toBe('Group');
+        expect($grouped['']->all())->toBe([RichEditorTestBlockA::class, RichEditorTestBlockB::class]);
+    });
+
+    it('collects all ungrouped blocks together', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content')
+                    ->customBlocks([
+                        RichEditorTestBlockA::class,
+                        'Group' => [RichEditorTestBlockC::class],
+                        RichEditorTestBlockB::class,
+                    ]),
+            ])
+            ->getComponents()[0];
+
+        $grouped = $richEditor->getGroupedCustomBlocks();
+
+        expect($grouped['']->all())->toBe([
+            RichEditorTestBlockA::class,
+            RichEditorTestBlockB::class,
+        ]);
+    });
+
+    it('returns an empty collection when no blocks are registered', function (): void {
+        $richEditor = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                RichEditor::make('content'),
+            ])
+            ->getComponents()[0];
+
+        $grouped = $richEditor->getGroupedCustomBlocks();
+
+        expect($grouped)->toBeEmpty();
+    });
+});
+
+describe('browser interactions', function (): void {
+    it('can render `RichEditor` in the browser', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="keyboard-rich-editor"]';
+        $content = $editor . ' [role="textbox"]';
+
+        $browser = visit('/rich-editor-browser-test');
+
+        foreach ([$browser, $browser->inDarkMode()] as $page) {
+            $page->assertNoSmoke()
+                ->assertNoAccessibilityIssues()
+                ->click($content)
+                ->assertPresent($content . ':focus')
+                ->keys(':focus', ['Control+Home', 'Control+Shift+ArrowRight'])
+                ->assertScript('window.getSelection().toString().trim()', 'Alpha')
+                ->keys(':focus', 'Shift+Tab')
+                ->keys(':focus', ['End', 'Enter'])
+                ->assertVisible('input[id="mountedActionSchema0.url"]')
+                ->assertNoAccessibilityIssues();
+        }
+    });
+
+    it('can navigate configured toolbar groups and format selected text using the keyboard', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="keyboard-rich-editor"]';
+        $content = $editor . ' [role="textbox"]';
+
+        $page = visit('/rich-editor-browser-test');
+
+        $page
+            ->click($content)
+            ->assertPresent($content . ':focus')
+            ->keys(':focus', ['Control+Home', 'Control+Shift+ArrowRight'])
+            ->assertScript('window.getSelection().toString().trim()', 'Alpha')
+            ->assertVisible($editor . ' [role="toolbar"][data-rich-editor-toolbar=""]')
+            ->keys(':focus', 'Shift+Tab')
+            ->assertPresent($editor . ' [data-rich-editor-tool="bold"]:focus')
+            ->keys(':focus', 'ArrowRight')
+            ->assertPresent($editor . ' [data-rich-editor-tool="italic"]:focus')
+            ->keys(':focus', 'End')
+            ->assertPresent($editor . ' [data-rich-editor-tool="link"]:focus')
+            ->keys(':focus', 'ArrowRight')
+            ->assertPresent($editor . ' [data-rich-editor-tool="bold"]:focus')
+            ->keys(':focus', 'Tab')
+            ->assertPresent($content . ':focus')
+            ->assertScript('window.getSelection().toString().trim()', 'Alpha')
+            ->assertVisible($editor . ' [role="toolbar"][data-rich-editor-toolbar=""]')
+            ->keys(':focus', 'Control+b')
+            ->assertSeeIn($editor . ' strong', 'Alpha')
+            ->assertDontSeeIn($editor . ' strong', 'beta')
+            ->assertSeeIn($content, 'Alpha beta.')
+            ->keys(':focus', 'Control+b')
+            ->assertMissing($editor . ' strong')
+            ->keys(':focus', 'Shift+Tab')
+            ->keys(':focus', 'Enter')
+            ->assertSeeIn($editor . ' strong', 'Alpha')
+            ->assertAttribute($editor . ' [data-rich-editor-toolbar="main"] [data-rich-editor-tool="bold"]', 'aria-pressed', 'true')
+            ->assertPresent($content . ':focus')
+            ->keys(':focus', 'Shift+Tab')
+            ->keys(':focus', ['ArrowRight', 'ArrowRight', 'ArrowDown'])
+            ->assertPresent('[role="menuitemcheckbox"]:focus')
+            ->assertAttribute(':focus', 'aria-checked', 'true')
+            ->keys(':focus', 'ArrowDown')
+            ->assertAttribute(':focus', 'aria-disabled', 'true')
+            ->keys(':focus', 'Enter')
+            ->assertDontSeeIn($editor, 'Unexpected text')
+            ->assertAttribute($editor . ' [data-rich-editor-tool^="Formatting"]', 'data-rich-editor-tool', 'Formatting "advanced"')
+            ->assertAttribute($editor . ' [data-rich-editor-tool^="Formatting"]', 'aria-expanded', 'true')
+            ->assertNoAccessibilityIssues()
+            ->keys(':focus', ['ArrowDown', 'Enter'])
+            ->assertSeeIn($editor . ' strong em', 'Alpha')
+            ->assertPresent($content . ':focus')
+            ->assertAttribute($editor . ' [data-rich-editor-tool^="Formatting"]', 'aria-expanded', 'false')
+            ->keys(':focus', 'Shift+Tab')
+            ->keys(':focus', ['ArrowRight', 'Enter'])
+            ->assertSeeIn($editor . ' u', 'Alpha')
+            ->assertAttribute($editor . ' [data-rich-editor-tool^="customUnderline"]', 'data-rich-editor-tool', 'customUnderline"advanced')
+            ->assertAttribute($editor . ' [data-rich-editor-tool^="customUnderline"]', 'aria-pressed', 'true')
+            ->assertPresent($content . ':focus')
+            ->keys(':focus', 'Shift+Tab')
+            ->keys(':focus', ['ArrowLeft', 'ArrowDown'])
+            ->assertPresent('[role="menuitemcheckbox"]:focus')
+            ->assertAttribute($editor . ' [data-rich-editor-tool^="Formatting"]', 'aria-expanded', 'true')
+            ->assertCount('[role="tooltip"]:visible', 0)
+            ->keys(':focus', 'Escape')
+            ->assertPresent($editor . ' [data-rich-editor-tool^="Formatting"]:focus')
+            ->assertAttribute($editor . ' [data-rich-editor-tool^="Formatting"]', 'aria-expanded', 'false')
+            ->keys(':focus', 'Escape')
+            ->assertCount('[role="tooltip"]:visible', 0)
+            ->keys(':focus', 'Escape')
+            ->assertPresent($content . ':focus')
+            ->keys(':focus', 'Shift+Tab')
+            ->keys(':focus', 'ArrowDown')
+            ->assertPresent('[role="menuitemcheckbox"]:focus')
+            ->assertAttribute($editor . ' [data-rich-editor-tool^="Formatting"]', 'aria-expanded', 'true')
+            ->keys(':focus', 'Tab')
+            ->assertPresent($content . ':focus')
+            ->assertNoSmoke();
+
+        $page->inDarkMode()
+            ->click($content)
+            ->keys($content, 'ControlOrMeta+a')
+            ->click($editor . ' [data-rich-editor-tool^="Formatting"]')
+            ->assertVisible($editor . ' [role="menu"]:visible')
+            ->assertNoAccessibilityIssues();
+    });
+
+    it('can tab into a toolbar after its editor is revealed and navigate in `rtl`', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="revealed-rich-editor"]';
+        $content = $editor . ' [role="textbox"]';
+
+        $page = visit('/rich-editor-browser-test');
+
+        $page->assertPresent($content);
+        $page->click('[data-testid="reveal-editor"]');
+
+        $page
+            ->assertPresent($editor . ' [role="toolbar"] [tabindex="0"]')
+            ->keys($content, 'Shift+Tab')
+            ->assertPresent($editor . ' [data-rich-editor-tool="italic"]:focus')
+            ->keys(':focus', 'ArrowLeft')
+            ->assertPresent($editor . ' [data-rich-editor-tool="bold"]:focus')
+            ->keys(':focus', 'ArrowRight')
+            ->assertPresent($editor . ' [data-rich-editor-tool="italic"]:focus')
+            ->keys(':focus', 'End')
+            ->assertPresent($editor . ' [data-rich-editor-tool="bold"]:focus')
+            ->keys(':focus', 'Home')
+            ->assertPresent($editor . ' [data-rich-editor-tool="italic"]:focus')
+            ->assertNoSmoke();
+    });
+
+    it('can reach both grid and table floating controls from a nested selection', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="nested-rich-editor"]';
+
+        visit('/rich-editor-browser-test')
+            ->click($editor . ' td:first-child p')
+            ->keys(':focus', 'Alt+F10')
+            ->assertPresent($editor . ' [data-rich-editor-tool="gridAddColumnBefore"]:focus')
+            ->keys(':focus', 'Alt+F10')
+            ->assertPresent($editor . ' [data-rich-editor-tool="tableAddColumnBefore"]:focus')
+            ->keys(':focus', ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'Enter'])
+            ->assertCount($editor . ' tr', 2)
+            ->assertSeeIn($editor, 'Nested cell.')
+            ->assertPresent($editor . ' [role="textbox"]:focus')
+            ->keys(':focus', 'Alt+F10')
+            ->assertPresent($editor . ' [data-rich-editor-tool="gridAddColumnBefore"]:focus')
+            ->keys(':focus', 'Enter')
+            ->assertCount($editor . ' .grid-layout-col', 3)
+            ->assertSeeIn($editor, 'Other column.')
+            ->assertNoSmoke();
+    });
+
+    it('preserves the selection and returns focus from toolbar link actions', function (string $origin): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="keyboard-rich-editor"]';
+        $content = $editor . ' [role="textbox"]';
+        $linkDialog = '[role="dialog"]:has(input[id="mountedActionSchema0.url"])';
+
+        $page = visit('/rich-editor-browser-test');
+
+        $page
+            ->click($content)
+            ->assertPresent($content . ':focus')
+            ->keys(':focus', 'Control+Home')
+            ->keys(':focus', 'Control+Shift+ArrowRight')
+            ->assertScript('window.getSelection().toString().trim()', 'Alpha')
+            ->assertVisible($editor . ' [role="toolbar"][data-rich-editor-toolbar=""]');
+
+        foreach (($origin === 'main') ? ['cancel', 'set link', 'extend link'] : ['cancel', 'set link'] as $operation) {
+            $shouldSubmit = $operation !== 'cancel';
+            $url = ($operation === 'extend link') ? 'https://example.com/revised-article' : 'https://example.com/article';
+
+            if ($operation === 'extend link') {
+                $page
+                    ->click($content . ' a[href="https://example.com/article"]')
+                    ->assertPresent($content . ':focus')
+                    ->assertScript('window.getSelection().isCollapsed', true);
+            }
+
+            if ($origin === 'main') {
+                $page->keys($content, 'Shift+Tab')->keys(':focus', ['End', 'Enter']);
+            } elseif ($origin === 'floating') {
+                $page->keys($content, 'Alt+F10')->keys(':focus', ['End', 'Enter']);
+            } else {
+                $page
+                    ->keys($content, 'Alt+F10')
+                    ->keys(':focus', ['Home', 'ArrowRight', 'ArrowDown'])
+                    ->assertAttribute(':focus', 'role', 'menuitemcheckbox')
+                    ->keys(':focus', ['ArrowDown', 'Enter']);
+            }
+
+            $page
+                ->assertVisible('input[id="mountedActionSchema0.url"]')
+                ->assertPresent("{$linkDialog}:focus, {$linkDialog} :focus")
+                ->assertCount('[role="tooltip"]:visible', 0);
+
+            if ($operation === 'extend link') {
+                $page->assertValue('input[id="mountedActionSchema0.url"]', 'https://example.com/article');
+            }
+
+            if ($shouldSubmit) {
+                $page
+                    ->type('input[id="mountedActionSchema0.url"]', $url)
+                    ->keys('input[id="mountedActionSchema0.url"]', 'Tab')
+                    ->keys(':focus', 'Tab')
+                    ->assertPresent('button[type="submit"]:focus')
+                    ->keys(':focus', 'Enter')
+                    ->assertSeeIn($editor . ' a[href="' . $url . '"]', 'Alpha')
+                    ->assertDontSeeIn($editor . ' a[href="' . $url . '"]', 'beta');
+
+                if ($operation === 'extend link') {
+                    $page->assertMissing($editor . ' a[href="https://example.com/article"]');
+                }
+            } else {
+                $page->keys('input[id="mountedActionSchema0.url"]', 'Escape');
+            }
+
+            $page
+                ->assertNotPresent('input[id="mountedActionSchema0.url"]')
+                ->assertPresent($origin === 'main'
+                    ? $editor . ' [data-rich-editor-tool="link"]:focus'
+                    : $content . ':focus')
+                ->assertNoSmoke()->assertEnabled('[data-testid="save-editor"]');
+        }
+    })->with(['main', 'floating', 'grouped floating']);
+
+    it('navigates horizontal toolbar menus using directional arrows and `Home` / `End`', function (bool $isRtl): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="duplicate-groups-rich-editor"]';
+        $content = $editor . ' [role="textbox"]';
+        $menu = $editor . ' [role="menu"][aria-orientation="horizontal"]';
+        $forwardKey = $isRtl ? 'ArrowLeft' : 'ArrowRight';
+        $backwardKey = $isRtl ? 'ArrowRight' : 'ArrowLeft';
+
+        $page = visit('/rich-editor-browser-test?rtl=' . (int) $isRtl);
+
+        $page
+            ->click($content)
+            ->assertPresent($content . ':focus')
+            ->keys(':focus', 'ControlOrMeta+a')
+            ->assertScript('window.getSelection().toString()', 'Alpha beta.');
+
+        $page
+            ->keys(':focus', 'Shift+Tab')
+            ->keys(':focus', ['Home', 'ArrowDown'])
+            ->assertPresent(':nth-match(' . $menu . ' button, 1):focus')
+            ->assertAttribute(':nth-match(' . $editor . ' [data-rich-editor-tool="Formatting"], 1)', 'aria-haspopup', 'menu')
+            ->keys(':focus', $backwardKey)
+            ->assertPresent(':nth-match(' . $menu . ' button, 4):focus')
+            ->keys(':focus', $forwardKey)
+            ->assertPresent(':nth-match(' . $menu . ' button, 1):focus')
+            ->keys(':focus', $forwardKey)
+            ->assertAttribute(':focus', 'aria-disabled', 'true')
+            ->keys(':focus', 'Enter')
+            ->assertDontSeeIn($editor, 'Unexpected text')
+            ->keys(':focus', 'End')
+            ->assertPresent(':nth-match(' . $menu . ' button, 4):focus')
+            ->keys(':focus', 'Home')
+            ->assertPresent(':nth-match(' . $menu . ' button, 1):focus')
+            ->keys(':focus', 'ArrowUp')
+            ->assertPresent(':nth-match(' . $menu . ' button, 4):focus')
+            ->keys(':focus', 'ArrowDown')
+            ->assertPresent(':nth-match(' . $menu . ' button, 1):focus')
+            ->assertNoAccessibilityIssues()
+            ->keys(':focus', [$forwardKey, $forwardKey, 'Enter'])
+            ->assertSeeIn($editor . ' em', 'Alpha beta.')
+            ->assertPresent($content . ':focus')
+            ->keys(':focus', 'Shift+Tab')
+            ->keys(':focus', 'ArrowDown')
+            ->assertAttribute(':focus', 'role', 'menuitemcheckbox')
+            ->keys(':focus', [$forwardKey, $forwardKey])
+            ->assertAttribute(':focus', 'aria-checked', 'true')
+            ->keys(':focus', 'Escape')
+            ->assertCount('[role="tooltip"]:visible', 0)
+            ->keys(':focus', 'Escape')
+            ->assertPresent(':nth-match(' . $editor . ' [data-rich-editor-tool="Formatting"], 1):focus')
+            ->assertNoSmoke();
+
+        $page->inDarkMode()->click($content)
+            ->click(':nth-match(' . $editor . ' [data-rich-editor-tool="Formatting"], 1)')
+            ->assertVisible($menu)
+            ->assertNoAccessibilityIssues();
+    })->with([false, true]);
+
+    it('returns link dialog focus to the originating toolbar group with duplicate labels', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="duplicate-groups-rich-editor"]';
+        $content = $editor . ' [role="textbox"]';
+        $trigger = $editor . ' [data-rich-editor-tool="Formatting"]';
+        $linkDialog = '[role="dialog"]:has(input[id="mountedActionSchema0.url"])';
+
+        $page = visit('/rich-editor-browser-test');
+
+        $page
+            ->click($content)
+            ->assertPresent($content . ':focus')
+            ->keys(':focus', 'Control+Home')
+            ->keys(':focus', 'Control+Shift+ArrowRight')
+            ->assertScript('window.getSelection().toString().trim()', 'Alpha')
+            ->keys(':focus', 'Shift+Tab')
+            ->keys(':focus', 'End')
+            ->assertPresent(':nth-match(' . $trigger . ', 2):focus')
+            ->keys(':focus', 'ArrowDown')
+            ->assertAttribute(':focus', 'role', 'menuitemcheckbox')
+            ->keys(':focus', 'ArrowDown')
+            ->keys(':focus', 'Enter')
+            ->assertVisible('input[id="mountedActionSchema0.url"]')
+            ->assertPresent("{$linkDialog}:focus, {$linkDialog} :focus")
+            ->assertCount('[role="tooltip"]:visible', 0)
+            ->assertCount($trigger . ':not([aria-expanded="false"])', 0);
+
+        $page
+            ->keys('input[id="mountedActionSchema0.url"]', 'Escape')
+            ->assertNotPresent('input[id="mountedActionSchema0.url"]')
+            ->assertPresent(':nth-match(' . $trigger . ', 2):focus')
+            ->assertNoSmoke();
+    });
+
+    it('does not render custom block previews from imported HTML', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="minimal-controls-editor"]';
+        $content = $editor . ' [role="textbox"]';
+        $importedBlock = $editor . ' [data-testid="rich-editor-custom-block"][data-config*="Copied callout."]';
+        $page = visit('/rich-editor-minimal-controls-browser-test', [
+            'permissions' => ['clipboard-read', 'clipboard-write'],
+        ]);
+
+        $page->assertPresent($content)->click($content);
+        $page->script(<<<'JS'
+            (async () => {
+                const preview = btoa('<img src="x" onerror="window.customBlockPreviewExecuted = true">')
+                const html = `<div data-type="customBlock" data-id="callout" data-config='{"message":"Copied callout.","options":{}}' data-label="Untrusted label" data-preview="${preview}" shouldApplyProseStylingToPreview="true"></div>`
+                window.customBlockPreviewExecuted = false
+                await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }) })])
+            })()
+            JS);
+
+        $page
+            ->keys($content, 'ControlOrMeta+v')
+            ->assertCount($importedBlock, 1)
+            ->assertSeeIn($importedBlock, 'Copied callout.')
+            ->assertDontSeeIn($importedBlock, 'Untrusted label')
+            ->assertNotPresent($importedBlock . ' img')
+            ->assertScript('window.customBlockPreviewExecuted', false)
+            ->keys($content, 'ControlOrMeta+z')
+            ->assertNotPresent($importedBlock)
+            ->keys($content, 'ControlOrMeta+Shift+z')
+            ->assertCount($importedBlock, 1)
+            ->assertSeeIn($importedBlock, 'Copied callout.')
+            ->assertNoSmoke();
+    });
+
+    it('can delete a grid from its floating toolbar without deleting its content', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="default-rich-editor"]';
+
+        $page = visit('/rich-editor-browser-test');
+
+        $page
+            ->click($editor . ' .grid-layout-col >> text=First column.')
+            ->assertVisible($editor . ' button[aria-label="Delete grid"]')
+            ->click($editor . ' button[aria-label="Delete grid"]')
+            ->assertMissing($editor . ' .grid-layout')
+            ->assertSeeIn($editor, 'Before grid.')
+            ->assertSeeIn($editor, 'First column.')
+            ->assertSeeIn($editor, 'Column heading')
+            ->assertSeeIn($editor, 'Second column.')
+            ->assertSeeIn($editor, 'List item.')
+            ->assertSeeIn($editor, 'After grid.')
+            ->assertNoSmoke();
+    });
+
+    it('can manage grid columns from its floating toolbar', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="default-rich-editor"]';
+
+        $page = visit('/rich-editor-browser-test');
+
+        $page
+            ->click($editor . ' .grid-layout-col >> text=Second column.')
+            ->assertVisible($editor . ' [data-testid="grid-add-column-before"]')
+            ->assertVisible($editor . ' [data-testid="grid-add-column-after"]')
+            ->assertVisible($editor . ' [data-testid="grid-delete-column"]')
+            ->assertEnabled($editor . ' [data-testid="grid-add-column-before"]')
+            ->assertEnabled($editor . ' [data-testid="grid-add-column-after"]')
+            ->assertEnabled($editor . ' [data-testid="grid-delete-column"]')
+            ->click($editor . ' [data-testid="grid-add-column-before"]')
+            ->click($editor . ' [data-testid="grid-add-column-after"]')
+            ->assertCount($editor . ' .grid-layout-col', 4)
+            ->assertSeeIn($editor, 'First column.')
+            ->assertSeeIn($editor, 'Second column.')
+            ->assertNoSmoke();
+    });
+
+    it('can search and insert a mention through the Alpine scope', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $page = visit('/rich-editor-browser-test');
+
+        $page
+            ->fill('[data-testid="default-rich-editor"] [role="textbox"]', '@Ali')
+            ->click('Alice Chen')
+            ->assertPresent('[data-testid="default-rich-editor"] [data-type="mention"][data-id="author-7"][data-provider="trusted"]')
+            ->assertNoSmoke()
+            ->assertNoAccessibilityIssues();
+
+        $page->inDarkMode()
+            ->assertVisible('[data-testid="default-rich-editor"] [role="textbox"]')
+            ->assertNoAccessibilityIssues();
+    });
+
+    it('only renders mention extra attributes configured by the provider', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $mention = '[data-testid="mention-attributes-rich-editor"] [data-type="mention"]';
+
+        $page = visit('/rich-editor-mention-attributes-browser-test');
+
+        $page->script(<<<'JS'
+            const richEditorElement = document.querySelector('[data-testid="mention-attributes-rich-editor"] [data-rich-editor-key]')
+
+            Alpine.$data(richEditorElement).getEditor().commands.setContent({
+                type: 'doc',
+                content: [{
+                    type: 'paragraph',
+                    content: [{
+                        type: 'mention',
+                        attrs: {
+                            id: 'author-7',
+                            label: 'Alice Chen',
+                            char: '@',
+                            extra: {
+                                autofocus: '',
+                                tabindex: '0',
+                                onfocus: 'window.mentionFocusAttributeExecuted = true',
+                                'x-init': 'window.mentionAlpineAttributeExecuted = true',
+                                'data-attacker': 'client',
+                            },
+                        },
+                    }],
+                }],
+            })
+            JS);
+
+        $page
+            ->assertPresent($mention . '[data-provider="trusted"]')
+            ->assertAttributeMissing($mention, 'autofocus')
+            ->assertAttributeMissing($mention, 'tabindex')
+            ->assertAttributeMissing($mention, 'onfocus')
+            ->assertAttributeMissing($mention, 'x-init')
+            ->assertAttributeMissing($mention, 'data-attacker')
+            ->assertScript('window.mentionFocusAttributeExecuted ?? false', false)
+            ->assertScript('window.mentionAlpineAttributeExecuted ?? false', false)
+            ->assertNoSmoke();
+    });
+
+    it('sanitizes stored CSS values before rendering them in the editor', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $editor = '[data-testid="style-attributes-rich-editor"]';
+        $page = visit('/rich-editor-style-attributes-browser-test');
+
+        $page->script(<<<'JS'
+            const richEditorElement = document.querySelector('[data-testid="style-attributes-rich-editor"] [data-rich-editor-key]')
+
+            Alpine.$data(richEditorElement).getEditor().commands.setContent({
+                type: 'doc',
+                content: [{
+                    type: 'paragraph',
+                    content: [
+                        {
+                            type: 'text',
+                            text: 'Unsafe color',
+                            marks: [{
+                                type: 'textColor',
+                                attrs: {
+                                    'data-color': 'red; position: fixed; background-image: url(//attacker)',
+                                },
+                            }],
+                        },
+                        {
+                            type: 'image',
+                            attrs: {
+                                id: 'unsafe-image',
+                                src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+                                width: '100; position: fixed; inset: 0',
+                                height: '100; background-image: url(//attacker)',
+                            },
+                        },
+                        {
+                            type: 'text',
+                            text: 'Safe color',
+                            marks: [{
+                                type: 'textColor',
+                                attrs: { 'data-color': '#00ff00' },
+                            }],
+                        },
+                        {
+                            type: 'image',
+                            attrs: {
+                                id: 'safe-image',
+                                src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+                                width: '50%',
+                                height: '200',
+                            },
+                        },
+                    ],
+                }],
+            })
+            JS);
+
+        $page
+            ->assertAttributeMissing($editor . ' img[data-id="unsafe-image"]', 'width')
+            ->assertAttributeMissing($editor . ' img[data-id="unsafe-image"]', 'height')
+            ->assertAttributeMissing($editor . ' img[data-id="unsafe-image"]', 'style')
+            ->assertScript(<<<'JS'
+                Array.from(document.querySelectorAll('[data-testid="style-attributes-rich-editor"] span.color'))
+                    .find((element) => element.dataset.color.includes('position'))
+                    ?.getAttribute('style') ?? null
+                JS, null)
+            ->assertScript(<<<'JS'
+                document.querySelector('[data-testid="style-attributes-rich-editor"] span.color[data-color="#00ff00"]')
+                    .style.getPropertyValue('--color').trim()
+                JS, '#00ff00')
+            ->assertScript("document.querySelector('{$editor} img[data-id=\"safe-image\"]').style.width", '50%')
+            ->assertScript("document.querySelector('{$editor} img[data-id=\"safe-image\"]').style.height", '200px')
+            ->assertNoSmoke();
+    });
+
+    it('keeps resizable images visible when loading fails', function (): void {
+        RichEditor::configureUsing(static fn (RichEditor $component) => $component->resizableImages());
+
+        $this->actingAs(User::factory()->create());
+
+        $page = visit('/rich-editor-browser-test');
+
+        $page->script(<<<'JS'
+            const richEditorElement = document.querySelector('[data-testid="default-rich-editor"] [data-rich-editor-key]')
+
+            Alpine.$data(richEditorElement).$getEditor().commands.setContent({
+                type: 'doc',
+                content: [{
+                    type: 'paragraph',
+                    content: [{
+                        type: 'image',
+                        attrs: {
+                            src: 'data:image/png;base64,broken',
+                            alt: 'Unavailable illustration',
+                            width: '120',
+                            height: '80',
+                        },
+                    }],
+                }],
+            })
+            JS);
+
+        $page
+            ->assertScript('document.querySelector(\'[data-testid="default-rich-editor"] img\').complete', true)
+            ->assertVisible('[data-testid="default-rich-editor"] img[alt="Unavailable illustration"]');
+    });
+
+    it('can search custom blocks and insert one at the preserved editor selection', function (): void {
+        $this->actingAs(User::factory()->create());
+
+        $page = visit('/rich-editor-browser-test')
+            ->fill('[data-testid="custom-blocks-rich-editor"] input[type="search"]', '  éDiTóRiAl  ')
+            ->assertVisible('[data-testid="custom-blocks-rich-editor"] [data-block-id="quote"]')
+            ->assertVisible('[data-testid="custom-blocks-rich-editor"] [data-block-id="section"]')
+            ->assertMissing('[data-testid="custom-blocks-rich-editor"] [data-block-id="image"]')
+            ->fill('[data-testid="custom-blocks-rich-editor"] input[type="search"]', 'unknown block')
+            ->assertPresent('[data-testid="custom-blocks-rich-editor"] [role="status"]')
+            ->assertMissing('[data-testid="custom-blocks-rich-editor"] [data-block-id="quote"]')->assertEnabled('[data-testid="save-editor"]')
+            ->assertNoAccessibilityIssues()
+            ->fill('[data-testid="custom-blocks-rich-editor"] input[type="search"]', '')
+            ->click('[data-testid="custom-blocks-rich-editor"] .tiptap p >> text=First paragraph.')
+            ->fill('[data-testid="custom-blocks-rich-editor"] input[type="search"]', '  QuOtE  ')
+            ->click('[data-testid="custom-blocks-rich-editor"] [data-block-id="quote"]')
+            ->assertPresent('[data-testid="custom-blocks-rich-editor"] [data-testid="rich-editor-custom-block"][data-id="quote"]')->assertEnabled('[data-testid="save-editor"]')
+            ->assertNoAccessibilityIssues();
+
+        visit('/rich-editor-browser-test')
+            ->inDarkMode()
+            ->assertPresent('[data-testid="custom-blocks-rich-editor"] [role="textbox"]')->assertEnabled('[data-testid="save-editor"]')
+            ->assertNoAccessibilityIssues();
+    });
+});
+
+describe('preventing file attachment tampering', function (): void {
+    $makeContent = static fn (string $file, bool $isJson): array | string => $isJson
+        ? ['type' => 'doc', 'content' => [['type' => 'image', 'attrs' => ['id' => $file, 'src' => '/placeholder']]]]
+        : '<p>Hello</p><img src="/placeholder" data-id="' . $file . '" />';
+
+    beforeEach(function (): void {
+        Storage::fake('local');
+        Storage::disk('local')->put('uploads/original.jpg', 'original');
+        Storage::disk('local')->put('uploads/evil.jpg', 'evil');
+    });
+
+    it('allows a tampered `data-id` to overwrite the record when `preventFileAttachmentPathTampering()` is not used', function (): void {
+        $post = Post::factory()->create([
+            'content' => '<p>Hello</p><img src="/placeholder" data-id="uploads/original.jpg" />',
+        ]);
+
+        livewire(TestComponentWithRichEditorRecord::class, ['record' => $post])
+            ->set('data.content', '<p>Hello</p><img src="/placeholder" data-id="uploads/evil.jpg" />')
+            ->call('save');
+
+        expect($post->fresh()->content)
+            ->toContain('data-id="uploads/evil.jpg"')
+            ->and($post->fresh()->content)->not->toContain('data-id="uploads/original.jpg"');
+    });
+
+    it('fails validation for a tampered `data-id` when using `preventFileAttachmentPathTampering()`', function (): void {
+        $post = Post::factory()->create([
+            'content' => '<p>Hello</p><img src="/placeholder" data-id="uploads/original.jpg" />',
+        ]);
+
+        livewire(TestComponentWithRichEditorRecordPreventingTampering::class, ['record' => $post])
+            ->set('data.content', '<p>Hello</p><img src="/placeholder" data-id="uploads/evil.jpg" />')
+            ->call('save')
+            ->assertHasFormErrors(['content']);
+
+        expect($post->fresh()->content)
+            ->toContain('data-id="uploads/original.jpg"')
+            ->and($post->fresh()->content)->not->toContain('uploads/evil.jpg');
+    });
+
+    it('leaves an unchanged `data-id` alone when using `preventFileAttachmentPathTampering()`', function (): void {
+        $post = Post::factory()->create([
+            'content' => '<p>Hello</p><img src="/placeholder" data-id="uploads/original.jpg" />',
+        ]);
+
+        livewire(TestComponentWithRichEditorRecordPreventingTampering::class, ['record' => $post])
+            ->set('data.content', '<p>Hello</p><img src="/placeholder" data-id="uploads/original.jpg" />')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect($post->fresh()->content)->toContain('data-id="uploads/original.jpg"');
+    });
+
+    it('validates nested original content rather than dirty current values with `preventFileAttachmentPathTampering()`', function (bool $isJson, bool $usesLayout, string $file, bool $shouldPass) use ($makeContent): void {
+        $user = User::factory()->create(['json' => ['content' => $makeContent('uploads/original.jpg', $isJson)]]);
+        $user->json = ['content' => $makeContent('uploads/evil.jpg', $isJson)];
+        $content = $makeContent($file, $isJson);
+
+        $field = RichEditor::make($usesLayout ? 'content' : 'json.content')
+            ->json($isJson)
+            ->preventFileAttachmentPathTampering();
+
+        $schema = Schema::make(Livewire::make()->data(['json' => ['content' => $content]]))
+            ->model($user)
+            ->statePath('data')
+            ->components([
+                $usesLayout ? Group::make([$field])->statePath('json') : $field,
+            ]);
+
+        if ($shouldPass) {
+            expect(data_get($schema->validate(), 'data.json.content'))->toBe($content);
+
+            return;
+        }
+
+        expect(fn (): array => $schema->validate())
+            ->toThrow(function (ValidationException $exception): void {
+                expect($exception->errors())->toHaveKey('data.json.content');
+            });
+    })->with(['HTML' => [false], 'JSON' => [true]])
+        ->with(['dotted name' => [false], 'layout' => [true]])
+        ->with(['original' => ['uploads/original.jpg', true], 'foreign' => ['uploads/evil.jpg', false]]);
+
+    it('requires callback approval for nested content without original data using `preventFileAttachmentPathTampering()`', function (bool $isJson, bool $usesAccessor, ?bool $isAllowed) use ($makeContent): void {
+        $content = $makeContent('uploads/evil.jpg', $isJson);
+        $user = $usesAccessor ? new UserWithJsonAccessor : new User;
+        $user->setRawAttributes(['id' => 1], sync: true);
+        $user->exists = true;
+        $user->json = ['content' => $content];
+
+        $schema = Schema::make(Livewire::make()->data(['json' => ['content' => $content]]))
+            ->model($user)
+            ->statePath('data')
+            ->components([
+                RichEditor::make('json.content')
+                    ->json($isJson)
+                    ->preventFileAttachmentPathTampering(
+                        allowFilePathUsing: $isAllowed === null ? null : static fn (string $file): bool => $isAllowed && ($file === 'uploads/evil.jpg'),
+                    ),
+            ]);
+
+        if ($isAllowed) {
+            expect(data_get($schema->validate(), 'data.json.content'))->toBe($content);
+
+            return;
+        }
+
+        expect(fn (): array => $schema->validate())
+            ->toThrow(function (ValidationException $exception): void {
+                expect($exception->errors())->toHaveKey('data.json.content');
+            });
+    })->with(['HTML' => [false], 'JSON' => [true]])
+        ->with(['array cast' => [false], 'accessor' => [true]])
+        ->with(['no callback' => [null], 'denied' => [false], 'approved' => [true]]);
+
+    it('authorizes nested content against the relationship item record with `preventFileAttachmentPathTampering()`', function (bool $isJson, string $file, bool $shouldPass) use ($makeContent): void {
+        $user = User::factory()->create(['json' => ['content' => $makeContent('uploads/parent.jpg', $isJson)]]);
+        $post = Post::factory()->create(['author_id' => $user->getKey(), 'json' => ['content' => $makeContent('uploads/child.jpg', $isJson)]]);
+        Post::factory()->create(['author_id' => $user->getKey(), 'json' => ['content' => $makeContent('uploads/sibling.jpg', $isJson)]]);
+        $content = $makeContent($file, $isJson);
+        $itemKey = 'record-' . $post->getKey();
+        $statePath = "data.posts.{$itemKey}.json.content";
+
+        $schema = Schema::make(Livewire::make()->data(['posts' => [$itemKey => ['json' => ['content' => $content]]]]))
+            ->model($user)
+            ->statePath('data')
+            ->components([
+                Repeater::make('posts')
+                    ->relationship()
+                    ->schema([
+                        Group::make([
+                            RichEditor::make('content')
+                                ->json($isJson)
+                                ->preventFileAttachmentPathTampering(),
+                        ])->statePath('json'),
+                    ]),
+            ]);
+
+        if ($shouldPass) {
+            expect(data_get($schema->validate(), $statePath))->toBe($content);
+
+            return;
+        }
+
+        expect(fn (): array => $schema->validate())
+            ->toThrow(function (ValidationException $exception) use ($statePath): void {
+                expect($exception->errors())->toHaveKey($statePath);
+            });
+    })->with(['HTML' => [false], 'JSON' => [true]])
+        ->with([
+            'own record' => ['uploads/child.jpg', true],
+            'parent record' => ['uploads/parent.jpg', false],
+            'sibling record' => ['uploads/sibling.jpg', false],
+        ]);
+
+    it('keeps a `data-id` that the `$allowFilePathUsing` callback approves', function (): void {
+        Storage::disk('local')->put('templates/brochure.jpg', 'template');
+
+        $post = Post::factory()->create([
+            'content' => '<p>Hello</p><img src="/placeholder" data-id="uploads/original.jpg" />',
+        ]);
+
+        livewire(TestComponentWithRichEditorRecordAllowingTemplatePaths::class, ['record' => $post])
+            ->set('data.content', '<p>Hello</p><img src="/placeholder" data-id="templates/brochure.jpg" />')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        expect($post->fresh()->content)->toContain('data-id="templates/brochure.jpg"');
+    });
+
+    it('fails validation when the `$allowFilePathUsing` callback rejects a `data-id`', function (): void {
+        $post = Post::factory()->create([
+            'content' => '<p>Hello</p><img src="/placeholder" data-id="uploads/original.jpg" />',
+        ]);
+
+        livewire(TestComponentWithRichEditorRecordAllowingTemplatePaths::class, ['record' => $post])
+            ->set('data.content', '<p>Hello</p><img src="/placeholder" data-id="uploads/evil.jpg" />')
+            ->call('save')
+            ->assertHasFormErrors(['content']);
+
+        expect($post->fresh()->content)
+            ->toContain('data-id="uploads/original.jpg"')
+            ->and($post->fresh()->content)->not->toContain('uploads/evil.jpg');
+    });
+
+    it('fails validation for all `data-id` values when no record is bound and `preventFileAttachmentPathTampering()` is used', function (): void {
+        livewire(TestComponentWithRichEditorPreventingTamperingWithoutRecord::class)
+            ->set('data.content', '<p>Hello</p><img src="/placeholder" data-id="uploads/evil.jpg" />')
+            ->call('save')
+            ->assertHasFormErrors(['content']);
+    });
+
+    it('uses a custom validation message when `tampered` is defined in `validationMessages()`', function (): void {
+        $post = Post::factory()->create([
+            'content' => '<p>Hello</p><img src="/placeholder" data-id="uploads/original.jpg" />',
+        ]);
+
+        livewire(TestComponentWithRichEditorRecordPreventingTamperingAndCustomMessage::class, ['record' => $post])
+            ->set('data.content', '<p>Hello</p><img src="/placeholder" data-id="uploads/evil.jpg" />')
+            ->call('save')
+            ->assertHasFormErrors(['content' => 'The content references an image that is not permitted.']);
+    });
+
+    it('does not resolve a URL for a tampered `data-id` during state cast hydration', function (): void {
+        $post = Post::factory()->create([
+            'content' => '<p>Hello</p><img src="/placeholder" data-id="uploads/original.jpg" />',
+        ]);
+
+        $editor = (new RichEditor('content'))
+            ->fileAttachmentsDisk('local')
+            ->preventFileAttachmentPathTampering()
+            ->container(Schema::make(Livewire::make())->model($post)->statePath('data'));
+
+        $cast = new RichEditorStateCast($editor);
+
+        $result = $cast->set('<p>Hello</p><img src="http://original" data-id="uploads/original.jpg" /><img src="http://evil" data-id="uploads/evil.jpg" />');
+
+        $decoded = json_decode(json_encode($result), true);
+
+        $srcById = [];
+
+        $walker = function ($nodes) use (&$walker, &$srcById): void {
+            foreach ($nodes as $node) {
+                if (($node['type'] ?? null) === 'image') {
+                    $id = $node['attrs']['id'] ?? null;
+
+                    if (filled($id)) {
+                        $srcById[$id] = $node['attrs']['src'] ?? null;
+                    }
+                }
+
+                if (! empty($node['content'] ?? null)) {
+                    $walker($node['content']);
+                }
+            }
+        };
+
+        $walker($decoded['content'] ?? []);
+
+        expect($srcById)->toHaveKey('uploads/original.jpg');
+        expect($srcById)->toHaveKey('uploads/evil.jpg');
+        expect($srcById['uploads/evil.jpg'])->toBeNull();
+    });
+});
+
+describe('cross-record file attachment callbacks', function (): void {
+    it('returns `null` from `getFileAttachmentUrlFromAnotherRecord()` when no callback is set', function (): void {
+        $editor = new RichEditor('content');
+
+        expect($editor->getFileAttachmentUrlFromAnotherRecord('any-id'))->toBeNull();
+    });
+
+    it('delegates `getFileAttachmentUrlFromAnotherRecord()` to the registered callback', function (): void {
+        $editor = (new RichEditor('content'))
+            ->getFileAttachmentUrlFromAnotherRecordUsing(
+                static fn (string $file): string => "xr://{$file}",
+            );
+
+        expect($editor->getFileAttachmentUrlFromAnotherRecord('shared-1'))->toBe('xr://shared-1');
+    });
+
+    it('returns `null` from `saveFileAttachmentFromAnotherRecord()` when no callback is set', function (): void {
+        $editor = new RichEditor('content');
+
+        expect($editor->saveFileAttachmentFromAnotherRecord('any-id'))->toBeNull();
+    });
+
+    it('delegates `saveFileAttachmentFromAnotherRecord()` to the registered callback', function (): void {
+        $editor = (new RichEditor('content'))
+            ->saveFileAttachmentFromAnotherRecordUsing(
+                static fn (string $file): string => "copied:{$file}",
+            );
+
+        expect($editor->saveFileAttachmentFromAnotherRecord('from-other'))->toBe('copied:from-other');
+    });
+});
+
+describe('`resolveFileAttachmentIds()` behaviour', function (): void {
+    $walkEditorRawState = function (RichEditor $editor, callable $callback): void {
+        $decoded = json_decode(json_encode($editor->getRawState()), true);
+
+        $walker = function ($nodes) use (&$walker, $callback): void {
+            foreach ($nodes as $node) {
+                $callback($node);
+
+                if (! empty($node['content'] ?? null)) {
+                    $walker($node['content']);
+                }
+            }
+        };
+
+        $walker($decoded['content'] ?? []);
+    };
+
+    it('only stores attachments during `getState()` when the editor and its containing schemas are enabled', function (bool $isSchemaDisabled, bool $isParentDisabled, bool $isFieldDisabled): void {
+        Storage::fake('tmp-for-tests');
+        Storage::fake('public');
+
+        $uploadedFile = UploadedFile::fake()->image('attachment.jpg');
+        $temporaryFileName = TemporaryUploadedFile::generateHashNameWithOriginalNameEmbedded($uploadedFile);
+        Storage::disk('tmp-for-tests')->put("livewire-tmp/{$temporaryFileName}", $uploadedFile->getContent());
+        $temporaryFile = TemporaryUploadedFile::createFromLivewire($temporaryFileName);
+
+        $editor = RichEditor::make('content')
+            ->fileAttachmentsDisk('public')
+            ->fileAttachmentsDirectory('attachments')
+            ->disabled($isFieldDisabled)
+            ->saved();
+        $livewire = Livewire::make();
+        $schema = Schema::make($livewire)
+            ->statePath('data')
+            ->disabled($isSchemaDisabled)
+            ->components([
+                Group::make([$editor])->disabled($isParentDisabled)->saved(),
+            ])
+            ->fill();
+
+        data_set($livewire, 'componentFileAttachments.data.content.new-upload', $temporaryFile);
+        $editor->rawState('<p><img src="placeholder" data-id="new-upload" /></p>');
+
+        $state = $schema->getState();
+        $shouldStore = (! $isSchemaDisabled) && (! $isParentDisabled) && (! $isFieldDisabled);
+
+        expect(Storage::disk('public')->allFiles())->toHaveCount($shouldStore ? 1 : 0);
+
+        if (! $shouldStore) {
+            if ($isSchemaDisabled) {
+                expect($state)->toBe([]);
+            } else {
+                expect($state['content'])->toContain('data-id="new-upload"');
+            }
+
+            $editor->saveFileAttachments();
+        }
+
+        $files = Storage::disk('public')->allFiles();
+
+        expect($files)->toHaveCount(1)
+            ->and(Storage::disk('public')->get($files[0]))->toBe($uploadedFile->getContent());
+    })->with([
+        'enabled' => [false, false, false],
+        'disabled schema' => [true, false, false],
+        'disabled parent' => [false, true, false],
+        'disabled editor' => [false, false, true],
+    ]);
+
+    it('persists a newly uploaded image and rewrites its `data-id` to the stored path', function () use ($walkEditorRawState): void {
+        Storage::fake('tmp-for-tests');
+
+        $image = imagecreatetruecolor(10, 10);
+        ob_start();
+        imagejpeg($image);
+        $imageContent = ob_get_clean();
+        imagedestroy($image);
+
+        $temporaryFileName = TemporaryUploadedFile::generateHashNameWithOriginalNameEmbedded(
+            UploadedFile::fake()->image('new-upload.jpg'),
+        );
+        Storage::disk('tmp-for-tests')->put("livewire-tmp/{$temporaryFileName}", $imageContent);
+
+        $temporaryFile = TemporaryUploadedFile::createFromLivewire($temporaryFileName);
+
+        $editor = (new RichEditor('content'))
+            ->container(Schema::make(Livewire::make())->statePath('data'));
+
+        $livewire = $editor->getLivewire();
+
+        data_set(
+            $livewire,
+            'componentFileAttachments.' . $editor->getStatePath() . '.new-upload-uuid',
+            $temporaryFile,
+        );
+
+        $editor->saveUploadedFileAttachmentUsing(static fn (): string => 'uploads/persisted.jpg');
+        $editor->getFileAttachmentUrlUsing(static fn (string $file): string => "https://cdn.test/{$file}");
+
+        $editor->rawState('<p><img src="placeholder" data-id="new-upload-uuid" /></p>');
+
+        $ids = $editor->resolveFileAttachmentIds();
+
+        expect($ids)->toContain('uploads/persisted.jpg');
+
+        $srcs = [];
+
+        $walkEditorRawState($editor, function (array $node) use (&$srcs): void {
+            if (($node['type'] ?? null) === 'image') {
+                $srcs[$node['attrs']['id'] ?? ''] = $node['attrs']['src'] ?? null;
+            }
+        });
+
+        expect($srcs)->toHaveKey('uploads/persisted.jpg');
+        expect($srcs['uploads/persisted.jpg'])->toBe('https://cdn.test/uploads/persisted.jpg');
+    });
+
+    it('keeps an existing disk-resident `data-id` unchanged and records it as in-use', function (): void {
+        $editor = (new RichEditor('content'))
+            ->container(Schema::make(Livewire::make())->statePath('data'));
+
+        $editor->getFileAttachmentUrlUsing(static fn (string $file): ?string => "https://cdn.test/{$file}");
+
+        $editor->rawState('<p><img src="placeholder" data-id="uploads/kept.jpg" /></p>');
+
+        $ids = $editor->resolveFileAttachmentIds();
+
+        expect($ids)->toContain('uploads/kept.jpg');
+    });
+
+    it('consults `saveFileAttachmentFromAnotherRecord()` for unknown `data-id`s that do not resolve to an existing file', function () use ($walkEditorRawState): void {
+        $editor = (new RichEditor('content'))
+            ->container(Schema::make(Livewire::make())->statePath('data'));
+
+        $editor->getFileAttachmentUrlUsing(static function (string $file): ?string {
+            return str_starts_with($file, 'migrated/') ? "https://cdn.test/{$file}" : null;
+        });
+
+        $editor->saveFileAttachmentFromAnotherRecordUsing(
+            static fn (string $file): string => "migrated/{$file}",
+        );
+
+        $editor->rawState('<p><img src="placeholder" data-id="foreign-id" /></p>');
+
+        $editor->resolveFileAttachmentIds();
+
+        $srcs = [];
+
+        $walkEditorRawState($editor, function (array $node) use (&$srcs): void {
+            if (($node['type'] ?? null) === 'image') {
+                $srcs[$node['attrs']['id'] ?? ''] = $node['attrs']['src'] ?? null;
+            }
+        });
+
+        expect($srcs)->toHaveKey('migrated/foreign-id');
+        expect($srcs['migrated/foreign-id'])->toBe('https://cdn.test/migrated/foreign-id');
+    });
+});
+
+it('exposes TipTap and ProseMirror modules on `window.FilamentRichEditor.tiptap` once the editor has mounted', function (): void {
+    $this->actingAs(User::factory()->create());
+
+    visit('/rich-editor-browser-test')
+        ->assertScript("typeof window.FilamentRichEditor?.tiptap?.core?.Editor === 'function'")
+        ->assertScript("typeof window.FilamentRichEditor?.tiptap?.pmState?.Plugin === 'function'")
+        ->assertScript("typeof window.FilamentRichEditor?.tiptap?.pmView?.EditorView === 'function'")
+        ->assertScript("typeof window.FilamentRichEditor?.tiptap?.pmModel?.Node === 'function'");
+});
+
+class RenderRichEditor extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([RichEditor::make('content')])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithToolbarButtons extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->toolbarButtons([['bold', 'italic'], ['undo', 'redo']]),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureToolbarButtons extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->toolbarButtons(static fn (): array => [['bold', 'italic']]),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithDisabledToolbarButtons extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->disableToolbarButtons(['bold', 'italic', 'attachFiles']),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithEnabledToolbarButtons extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->enableToolbarButtons(['h1', 'textColor']),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithNoToolbarButtons extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->disableAllToolbarButtons(),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithAllToolbarButtons extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->disableAllToolbarButtons(false),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithMergeTags extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->mergeTags(['{{name}}', '{{email}}']),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureMergeTags extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->mergeTags(static fn (): array => ['{{name}}', '{{email}}']),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithLinkProtocols extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->linkProtocols(['https', 'mailto']),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureLinkProtocols extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->linkProtocols(static fn (): array => ['https', 'tel']),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithTextColors extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->textColors(['red' => '#ff0000', 'blue' => '#0000ff']),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithResizableImages extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->resizableImages(),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureResizableImages extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->resizableImages(static fn (): bool => true),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithActivePanel extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->activePanel('merge-tags'),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureActivePanel extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->activePanel(static fn (): string => 'custom-panel'),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithNullActivePanel extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->activePanel('merge-tags')->activePanel(null),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithUploadingFileMessage extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->uploadingFileMessage('Uploading file...'),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureUploadingFileMessage extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->uploadingFileMessage(static fn (): string => 'Uploading...'),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithJson extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([RichEditor::make('content')->json()])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureJson extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->json(static fn (): bool => true),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithJsonFalse extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->json()->json(false),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithCustomTextColors extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->customTextColors(),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureCustomTextColors extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->customTextColors(static fn (): bool => true),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithCustomTextColorsFalse extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->customTextColors()->customTextColors(false),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithClosureCustomBlocks extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->customBlocks(static fn (): array => []),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithModelCustomBlocks extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        $record = new PostWithRichContent;
+        $record->registerRichContent('content')->customBlocks([
+            RichEditorTestBlockA::class => static function (): array {
+                throw new RuntimeException('Renderer data must not be evaluated by the editor.');
+            },
+            'Marketing' => [RichEditorTestBlockB::class => ['categoryUrl' => '/categories/marketing']],
+            RichEditorTestBlockC::class,
+        ]);
+
+        return $form
+            ->model($record)
+            ->schema([
+                RichEditor::make('content'),
+            ])
+            ->statePath('data');
+    }
+}
+
+class RenderRichEditorWithMinimalCustomBlockControls extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->minimalCustomBlockControls(),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithNoMergeTagSearchResultsMessage extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->noMergeTagSearchResultsMessage('No tags found'),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithNoFileAttachments extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')->fileAttachments(false),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithPluginEnabledButtons extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')
+                ->plugins([new TestRichContentPlugin(enabledButtons: ['highlight'])]),
+        ])->statePath('data');
+    }
+}
+
+class RenderRichEditorWithPluginDisabledButtons extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form->schema([
+            RichEditor::make('content')
+                ->plugins([new TestRichContentPlugin(disabledButtons: ['bold', 'italic'])]),
+        ])->statePath('data');
+    }
+}
+
+class RichEditorTestBlockA extends RichContentCustomBlock
+{
+    public static function getId(): string
+    {
+        return 'block-a';
     }
 
-    expect($errors)
-        ->toContain('The content field is required.');
-});
-
-test('can get default toolbar buttons using `getDefaultToolbarButtons()`', function (): void {
-    $richEditor = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ])
-        ->getComponents()[0];
-
-    $defaultButtons = $richEditor->getDefaultToolbarButtons();
-
-    expect($defaultButtons)
-        ->toBeArray()
-        ->toHaveCount(5)
-        ->and($defaultButtons[0])->toEqual(['bold', 'italic', 'underline', 'strike', 'subscript', 'superscript', 'link'])
-        ->and($defaultButtons[1])->toEqual(['h2', 'h3', 'alignStart', 'alignCenter', 'alignEnd'])
-        ->and($defaultButtons[2])->toEqual(['blockquote', 'codeBlock', 'bulletList', 'orderedList'])
-        ->and($defaultButtons[3])->toEqual(['table', 'attachFiles'])
-        ->and($defaultButtons[4])->toEqual(['undo', 'redo']);
-});
-
-test('can overwrite toolbar buttons array using `toolbarButtons()`', function (): void {
-    $richEditor = RichEditor::make('content')
-        ->toolbarButtons([
-            ['bold', 'italic'],
-            ['undo', 'redo'],
-        ]);
-
-    $buttons = $richEditor->getToolbarButtons();
-
-    expect($buttons)
-        ->toBeArray()
-        ->toHaveCount(2)
-        ->and($buttons[0])->toEqual(['bold', 'italic'])
-        ->and($buttons[1])->toEqual(['undo', 'redo']);
-});
-
-test('can overwrite toolbar buttons with closure using `toolbarButtons()`', function (): void {
-    $richEditor = RichEditor::make('content')
-        ->toolbarButtons(fn () => [
-            ['bold', 'italic'],
-        ]);
-
-    $buttons = $richEditor->getToolbarButtons();
-
-    expect($buttons)
-        ->toBeArray()
-        ->toHaveCount(1)
-        ->and($buttons[0])->toEqual(['bold', 'italic']);
-});
-
-test('can disable specific toolbar buttons using `disableToolbarButtons()`', function (): void {
-    $schema = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ]);
-
-    $richEditor = $schema->getComponents()[0];
-    $richEditor->disableToolbarButtons(['bold', 'italic', 'attachFiles']);
-
-    $buttons = $richEditor->getToolbarButtons();
-
-    // Check that `bold`, `italic`, and `attachFiles` buttons are not present
-    $flatButtons = array_merge(...$buttons);
-
-    expect($flatButtons)
-        ->not->toContain('bold')
-        ->not->toContain('italic')
-        ->not->toContain('attachFiles')
-        ->toContain('underline')
-        ->toContain('strike')
-        ->toContain('undo');
-});
-
-test('can enable additional toolbar buttons using `enableToolbarButtons()`', function (): void {
-    $schema = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ]);
-
-    $richEditor = $schema->getComponents()[0];
-    $richEditor->enableToolbarButtons(['h1', 'textColor']);
-
-    $buttons = $richEditor->getToolbarButtons();
-
-    // Check that all default buttons plus `h1` and `textColor` are present
-    $flatButtons = array_merge(...$buttons);
-
-    expect($flatButtons)
-        ->toContain('bold')
-        ->toContain('italic')
-        ->toContain('h1')
-        ->toContain('textColor');
-});
-
-test('can disable all toolbar buttons using `disableAllToolbarButtons()`', function (): void {
-    $schema = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ]);
-
-    $richEditor = $schema->getComponents()[0];
-    $richEditor->disableAllToolbarButtons();
-
-    $buttons = $richEditor->getToolbarButtons();
-
-    expect($buttons)->toBeArray()->toBeEmpty();
-});
-
-test('can conditionally disable all toolbar buttons using `disableAllToolbarButtons()`', function (): void {
-    $richEditor = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content')
-                ->disableAllToolbarButtons(false),
-        ])
-        ->getComponents()[0];
-
-    $buttons = $richEditor->getToolbarButtons();
-
-    expect($buttons)->toBeArray()->not->toBeEmpty();
-});
-
-test('can check if toolbar button exists using `hasToolbarButton()`', function (): void {
-    $richEditor = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ])
-        ->getComponents()[0];
-
-    expect($richEditor->hasToolbarButton('bold'))->toBeTrue()
-        ->and($richEditor->hasToolbarButton('italic'))->toBeTrue()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeTrue()
-        ->and($richEditor->hasToolbarButton('nonexistent'))->toBeFalse();
-});
-
-test('can check if toolbar button exists with array using `hasToolbarButton()`', function (): void {
-    $richEditor = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ])
-        ->getComponents()[0];
-
-    expect($richEditor->hasToolbarButton(['bold', 'italic']))->toBeTrue()
-        ->and($richEditor->hasToolbarButton(['nonexistent1', 'nonexistent2']))->toBeFalse()
-        ->and($richEditor->hasToolbarButton(['bold', 'nonexistent']))->toBeTrue(); // At least one exists
-});
-
-test('can check if custom toolbar buttons are set using `hasCustomToolbarButtons()`', function (): void {
-    $richEditor = RichEditor::make('content');
-
-    expect($richEditor->hasCustomToolbarButtons())->toBeFalse();
-
-    $richEditor->toolbarButtons([['bold', 'italic']]);
-
-    expect($richEditor->hasCustomToolbarButtons())->toBeTrue();
-});
-
-test('toolbar buttons are properly grouped by `getToolbarButtons()`', function (): void {
-    $richEditor = RichEditor::make('content')
-        ->toolbarButtons([
-            ['bold', 'italic'],
-            'underline',
-            'strike',
-        ]);
-
-    $buttons = $richEditor->getToolbarButtons();
-
-    // The `getToolbarButtons()` method groups consecutive non-array buttons together.
-    // When an array is encountered, it becomes its own group, and any preceding
-    // non-array buttons are grouped into their own group at the end.
-    expect($buttons)
-        ->toBeArray()
-        ->toHaveCount(2)
-        ->and($buttons[0])->toEqual(['bold', 'italic'])
-        ->and($buttons[1])->toEqual(['underline', 'strike']);
-});
-
-test('blank button groups are filtered out by `getToolbarButtons()`', function (): void {
-    $richEditor = RichEditor::make('content')
-        ->toolbarButtons([
-            ['bold', 'italic'],
-            [],
-            ['undo', 'redo'],
-        ]);
-
-    $buttons = $richEditor->getToolbarButtons();
-
-    expect($buttons)
-        ->toBeArray()
-        ->toHaveCount(2)
-        ->and($buttons[0])->toEqual(['bold', 'italic'])
-        ->and($buttons[1])->toEqual(['undo', 'redo']);
-});
-
-test('cannot use `disableToolbarButtons()` when using closure', function (): void {
-    $richEditor = RichEditor::make('content')
-        ->toolbarButtons(fn () => [['bold', 'italic']]);
-
-    expect(fn () => $richEditor->disableToolbarButtons(['bold']))
-        ->toThrow(LogicException::class, 'You cannot use the `disableToolbarButtons()` method when the toolbar buttons are dynamically returned from a function.');
-});
-
-test('cannot use `enableToolbarButtons()` when using closure', function (): void {
-    $richEditor = RichEditor::make('content')
-        ->toolbarButtons(fn () => [['bold', 'italic']]);
-
-    expect(fn () => $richEditor->enableToolbarButtons(['underline']))
-        ->toThrow(LogicException::class, 'You cannot use the `enableToolbarButtons()` method when the toolbar buttons are dynamically returned from a function.');
-});
-
-test('`hasFileAttachments()` returns true by default', function (): void {
-    $richEditor = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ])
-        ->getComponents()[0];
-
-    expect($richEditor->hasFileAttachments())->toBeTrue()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeTrue();
-});
-
-test('`hasFileAttachments()` returns false when `attachFiles` button is removed using `disableToolbarButtons()`', function (): void {
-    $schema = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ]);
-
-    $richEditor = $schema->getComponents()[0];
-    $richEditor->disableToolbarButtons(['attachFiles']);
-
-    expect($richEditor->hasFileAttachments())->toBeFalse()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
-});
-
-test('`hasFileAttachments()` returns true when `attachFiles` is in custom toolbar buttons', function (): void {
-    $richEditor = RichEditor::make('content')
-        ->toolbarButtons([
-            ['bold', 'italic'],
-            ['attachFiles'],
-        ]);
-
-    expect($richEditor->hasFileAttachments())->toBeTrue()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeTrue();
-});
-
-test('`hasFileAttachments()` returns false with custom toolbar buttons without `attachFiles`', function (): void {
-    $richEditor = RichEditor::make('content')
-        ->toolbarButtons([
-            ['bold', 'italic'],
-            ['undo', 'redo'],
-        ]);
-
-    expect($richEditor->hasFileAttachments())->toBeFalse()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
-});
-
-test('`fileAttachments()` method takes precedence over `disableToolbarButtons()`', function (): void {
-    $schema = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ]);
-
-    $richEditor = $schema->getComponents()[0];
-    $richEditor->disableToolbarButtons(['bold']);
-    $richEditor->fileAttachments(false);
-
-    expect($richEditor->hasFileAttachments())->toBeFalse()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
-
-    $buttons = $richEditor->getToolbarButtons();
-    $flatButtons = array_merge(...$buttons);
-
-    expect($flatButtons)->not->toContain('attachFiles');
-});
-
-test('`fileAttachments(false)` works when called before `disableToolbarButtons()`', function (): void {
-    $schema = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ]);
-
-    $richEditor = $schema->getComponents()[0];
-    $richEditor->fileAttachments(false);
-    $richEditor->disableToolbarButtons(['bold']);
-
-    expect($richEditor->hasFileAttachments())->toBeFalse()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
-
-    $buttons = $richEditor->getToolbarButtons();
-    $flatButtons = array_merge(...$buttons);
-
-    expect($flatButtons)->not->toContain('attachFiles');
-});
-
-test('`disableToolbarButtons()` with `attachFiles` also makes `hasFileAttachments()` return false', function (): void {
-    $schema = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ]);
-
-    $richEditor = $schema->getComponents()[0];
-    $richEditor->disableToolbarButtons(['attachFiles']);
-
-    expect($richEditor->hasFileAttachments())->toBeFalse()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
-});
-
-test('`fileAttachments(true)` does not force `attachFiles` button to appear when using `disableToolbarButtons()`', function (): void {
-    $schema = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            RichEditor::make('content'),
-        ]);
-
-    $richEditor = $schema->getComponents()[0];
-    $richEditor->disableToolbarButtons(['attachFiles']);
-    $richEditor->fileAttachments(true);
-
-    // File attachments are enabled (drag/drop works), but the toolbar button remains hidden
-    expect($richEditor->hasFileAttachments())->toBeTrue()
-        ->and($richEditor->hasToolbarButton('attachFiles'))->toBeFalse();
-});
+    public static function toHtml(array $config, array $data): ?string
+    {
+        return '<div>A</div>';
+    }
+}
+
+class RichEditorTestBlockB extends RichContentCustomBlock
+{
+    public static function getId(): string
+    {
+        return 'block-b';
+    }
+
+    public static function toHtml(array $config, array $data): ?string
+    {
+        return '<div>B</div>';
+    }
+}
+
+class RichEditorTestBlockC extends RichContentCustomBlock
+{
+    public static function getId(): string
+    {
+        return 'block-c';
+    }
+
+    public static function toHtml(array $config, array $data): ?string
+    {
+        return '<div>C</div>';
+    }
+}
+
+class TestComponentWithRichEditorRecord extends Livewire
+{
+    public Post $record;
+
+    public function mount(): void
+    {
+        $this->form->fill($this->record->attributesToArray());
+    }
+
+    public function form(Schema $form): Schema
+    {
+        return $form
+            ->components([
+                RichEditor::make('content')
+                    ->fileAttachmentsDisk('local'),
+            ])
+            ->model($this->record)
+            ->statePath('data');
+    }
+
+    public function save(): void
+    {
+        $this->record->update($this->form->getState());
+    }
+}
+
+class TestComponentWithRichEditorRecordPreventingTampering extends Livewire
+{
+    public Post $record;
+
+    public function mount(): void
+    {
+        $this->form->fill($this->record->attributesToArray());
+    }
+
+    public function form(Schema $form): Schema
+    {
+        return $form
+            ->components([
+                RichEditor::make('content')
+                    ->fileAttachmentsDisk('local')
+                    ->preventFileAttachmentPathTampering(),
+            ])
+            ->model($this->record)
+            ->statePath('data');
+    }
+
+    public function save(): void
+    {
+        $this->record->update($this->form->getState());
+    }
+}
+
+class TestComponentWithRichEditorRecordAllowingTemplatePaths extends Livewire
+{
+    public Post $record;
+
+    public function mount(): void
+    {
+        $this->form->fill($this->record->attributesToArray());
+    }
+
+    public function form(Schema $form): Schema
+    {
+        return $form
+            ->components([
+                RichEditor::make('content')
+                    ->fileAttachmentsDisk('local')
+                    ->preventFileAttachmentPathTampering(
+                        allowFilePathUsing: static fn (string $file): bool => str_starts_with($file, 'templates/'),
+                    ),
+            ])
+            ->model($this->record)
+            ->statePath('data');
+    }
+
+    public function save(): void
+    {
+        $this->record->update($this->form->getState());
+    }
+}
+
+class TestComponentWithRichEditorPreventingTamperingWithoutRecord extends Livewire
+{
+    public function form(Schema $form): Schema
+    {
+        return $form
+            ->components([
+                RichEditor::make('content')
+                    ->fileAttachmentsDisk('local')
+                    ->preventFileAttachmentPathTampering(),
+            ])
+            ->statePath('data');
+    }
+
+    public function save(): void
+    {
+        $this->form->getState();
+    }
+}
+
+class TestComponentWithRichEditorRecordPreventingTamperingAndCustomMessage extends Livewire
+{
+    public Post $record;
+
+    public function mount(): void
+    {
+        $this->form->fill($this->record->attributesToArray());
+    }
+
+    public function form(Schema $form): Schema
+    {
+        return $form
+            ->components([
+                RichEditor::make('content')
+                    ->fileAttachmentsDisk('local')
+                    ->preventFileAttachmentPathTampering()
+                    ->validationMessages([
+                        'tampered' => 'The content references an image that is not permitted.',
+                    ]),
+            ])
+            ->model($this->record)
+            ->statePath('data');
+    }
+
+    public function save(): void
+    {
+        $this->record->update($this->form->getState());
+    }
+}

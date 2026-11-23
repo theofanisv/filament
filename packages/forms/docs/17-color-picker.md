@@ -1,7 +1,6 @@
 ---
 title: Color picker
 ---
-import AutoScreenshot from "@components/AutoScreenshot.astro"
 
 ## Introduction
 
@@ -15,7 +14,11 @@ use Filament\Forms\Components\ColorPicker;
 ColorPicker::make('color')
 ```
 
-<AutoScreenshot name="forms/fields/color-picker/simple" alt="Color picker" version="4.x" />
+<AutoScreenshot name="forms/fields/color-picker/simple" alt="Color picker" />
+
+Clicking the color swatch opens a color picker panel where users can visually select a color:
+
+<AutoScreenshot name="forms/fields/color-picker/panel" alt="Color picker with panel open" />
 
 ## Setting the color format
 
@@ -33,6 +36,35 @@ ColorPicker::make('rgb_color')
 ColorPicker::make('rgba_color')
     ->rgba()
 ```
+
+<AutoScreenshot name="forms/fields/color-picker/formats" alt="Color pickers with different format options" />
+
+## Customizing the loading placeholder
+
+The color picker displays a loading placeholder while its JavaScript is loaded and initialized. You may customize it using `loadingPlaceholder()`, passing a Blade view or an `Htmlable` instance, such as an `HtmlString` containing trusted HTML:
+
+```php
+use Filament\Forms\Components\ColorPicker;
+
+ColorPicker::make('color')
+    ->loadingPlaceholder(fn () => view('forms.color-picker-loading-placeholder'))
+```
+
+<UtilityInjection set="formFields">As well as allowing a static value, the `loadingPlaceholder()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+Keep your placeholder HTML decorative and noninteractive. Filament hides it from assistive technologies and supplies an accessible loading status in the surrounding wrapper. If the JavaScript fails to load or initialize, the placeholder remains visible.
+
+To customize the placeholder for all color pickers, use [`ColorPicker::configureUsing()`](overview#global-settings) in a service provider's `boot()` method:
+
+```php
+use Filament\Forms\Components\ColorPicker;
+
+ColorPicker::configureUsing(function (ColorPicker $colorPicker): void {
+    $colorPicker->loadingPlaceholder(fn () => view('forms.color-picker-loading-placeholder'));
+});
+```
+
+You may call `loadingPlaceholder(null)` on an individual color picker to restore the default loading placeholder.
 
 ## Color picker validation
 

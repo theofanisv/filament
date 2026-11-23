@@ -1,8 +1,6 @@
 ---
 title: Text input column
 ---
-import AutoScreenshot from "@components/AutoScreenshot.astro"
-import UtilityInjection from "@components/UtilityInjection.astro"
 
 ## Introduction
 
@@ -14,7 +12,7 @@ use Filament\Tables\Columns\TextInputColumn;
 TextInputColumn::make('email')
 ```
 
-<AutoScreenshot name="tables/columns/text-input/simple" alt="Text input column" version="4.x" />
+<AutoScreenshot name="tables/columns/text-input/simple" alt="Text input column" />
 
 ## Validation
 
@@ -37,18 +35,29 @@ use Filament\Tables\Columns\TextInputColumn;
 TextInputColumn::make('background_color')->type('color')
 ```
 
-## Lifecycle hooks
+## Setting the HTML input mode
 
-Hooks may be used to execute code at various points within the input's lifecycle:
+You may use the `inputMode()` method to set the [HTML inputmode attribute](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/inputmode), which hints at the type of keyboard to show on mobile. For numeric inputs, use `inputMode('decimal')` for decimal values or `inputMode('numeric')` for integers:
 
 ```php
-TextInputColumn::make()
-    ->beforeStateUpdated(function ($record, $state) {
-        // Runs before the state is saved to the database.
-    })
-    ->afterStateUpdated(function ($record, $state) {
-        // Runs after the state is saved to the database.
-    })
+use Filament\Tables\Columns\TextInputColumn;
+
+TextInputColumn::make('quantity')
+    ->type('number')
+    ->inputMode('decimal')
+```
+
+## Setting the numeric step
+
+When using `type('number')`, you may use the `step()` method to set the [HTML step attribute](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/number#step). Use `step('any')` for decimal values or `step('1')` for integers:
+
+```php
+use Filament\Tables\Columns\TextInputColumn;
+
+TextInputColumn::make('quantity')
+    ->type('number')
+    ->inputMode('decimal')
+    ->step('1')
 ```
 
 ## Adding affix text aside the field
@@ -63,7 +72,9 @@ TextInputColumn::make('domain')
     ->suffix('.com')
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing static values, the `prefix()` and `suffix()` methods also accept a function to dynamically calculate them. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing static values, the `prefix()` and `suffix()` methods also accept a function to dynamically calculate them. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="tables/columns/text-input/affix" alt="Text input column with affixes" />
 
 ### Using icons as affixes
 
@@ -78,7 +89,9 @@ TextInputColumn::make('domain')
     ->suffixIcon(Heroicon::CheckCircle)
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing static values, the `prefixIcon()` and `suffixIcon()` methods also accept a function to dynamically calculate them. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing static values, the `prefixIcon()` and `suffixIcon()` methods also accept a function to dynamically calculate them. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="tables/columns/text-input/prefix-icon" alt="Text input column with prefix icon" />
 
 #### Setting the affix icon's color
 
@@ -93,4 +106,45 @@ TextInputColumn::make('status')
     ->suffixIconColor('success')
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing static values, the `prefixIconColor()` and `suffixIconColor()` methods also accept a function to dynamically calculate them. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing static values, the `prefixIconColor()` and `suffixIconColor()` methods also accept a function to dynamically calculate them. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="tables/columns/text-input/suffix-icon-color" alt="Text input column with suffix icon in color" />
+
+## Lifecycle hooks
+
+Hooks may be used to execute code at various points within the input's lifecycle:
+
+```php
+use Filament\Tables\Columns\TextInputColumn;
+
+TextInputColumn::make('email')
+    ->beforeStateUpdated(function ($record, $state) {
+        // Runs before the state is saved to the database.
+    })
+    ->afterStateUpdated(function ($record, $state) {
+        // Runs after the state is saved to the database.
+    })
+```
+
+## Rendering only the updated cells
+
+By default, the whole table re-renders after a text input column is updated. You may [re-render only the updated cells](overview#rendering-only-the-updated-cells-of-editable-columns) using `partiallyRenderAfterStateUpdated()` or `partiallyRenderColumnsAfterStateUpdated()`.
+
+## Security
+
+### Authorization
+
+By default, text input columns do not check model policies. Without an authorization check, users can update the column for records accessible through the table query, even if the record's `update()` policy denies access to its edit page.
+
+Use `authorize()` to check the record's `update()` policy. Denied columns are disabled, and changes are rejected on the server:
+
+```php
+use Filament\Tables\Columns\TextInputColumn;
+
+TextInputColumn::make('email')
+    ->authorize()
+```
+
+You may pass a different ability, such as `authorize('updateEmail')`, or a custom callback. See [authorizing editable columns](overview#authorizing-editable-columns) for callbacks and global configuration.
+
+Check permission for the specific attribute being changed. If the column updates a related model or pivot, authorize that operation too. Alternatively, use a resource edit page or a policy-backed `EditAction` to apply the resource's edit authorization.

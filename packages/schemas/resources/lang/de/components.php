@@ -2,6 +2,45 @@
 
 return [
 
+    'callout' => [
+
+        'statuses' => [
+            'danger' => 'Fehler:',
+            'info' => 'Hinweis:',
+            'success' => 'Erfolg:',
+            'warning' => 'Warnung:',
+        ],
+
+    ],
+
+    'section' => [
+
+        'actions' => [
+
+            'collapse' => [
+                'label' => 'Abschnitt einklappen',
+            ],
+
+            'expand' => [
+                'label' => 'Abschnitt ausklappen',
+            ],
+
+        ],
+
+    ],
+
+    'tabs' => [
+
+        'actions' => [
+
+            'more' => [
+                'label' => 'Weitere Tabs',
+            ],
+
+        ],
+
+    ],
+
     'wizard' => [
 
         'actions' => [
@@ -12,6 +51,19 @@ return [
 
             'next_step' => [
                 'label' => 'Weiter',
+            ],
+
+        ],
+
+        'header' => [
+
+            'step' => [
+
+                'statuses' => [
+                    'completed' => 'Abgeschlossen',
+                    'upcoming' => 'Nicht abgeschlossen',
+                ],
+
             ],
 
         ],

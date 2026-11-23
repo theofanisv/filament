@@ -1,7 +1,6 @@
 ---
 title: View action
 ---
-import UtilityInjection from "@components/UtilityInjection.astro"
 
 ## Introduction
 
@@ -20,6 +19,8 @@ ViewAction::make()
     ])
 ```
 
+<AutoScreenshot name="actions/view-action/modal" alt="View action modal" />
+
 ## Customizing data before filling the form
 
 You may wish to modify the data from a record before it is filled into the form. To do this, you may use the `mutateRecordDataUsing()` method to modify the `$data` array, and return the modified version before it is filled into the form:
@@ -35,4 +36,4 @@ ViewAction::make()
     })
 ```
 
-<UtilityInjection set="actions" version="4.x">As well as `$data`, the `mutateRecordDataUsing()` function can inject various utilities as parameters.</UtilityInjection>
+<UtilityInjection set="actions">As well as `$data`, the `mutateRecordDataUsing()` function can inject various utilities as parameters.</UtilityInjection>

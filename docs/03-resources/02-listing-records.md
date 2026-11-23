@@ -2,6 +2,8 @@
 title: Listing records
 ---
 
+<AutoScreenshot name="panels/resources/listing" alt="Resource listing page" />
+
 ## Using tabs to filter the records
 
 You can add tabs above the table, which can be used to filter the records based on some predefined conditions. Each tab can scope the Eloquent query of the table in a different way. To register tabs, add a `getTabs()` method to the List page class, and return an array of `Tab` objects:
@@ -21,6 +23,8 @@ public function getTabs(): array
     ];
 }
 ```
+
+<AutoScreenshot name="panels/resources/listing-tabs" alt="Resource listing page with tabs" />
 
 ### Customizing the filter tab labels
 
@@ -52,6 +56,8 @@ use Filament\Schemas\Components\Tabs\Tab;
 Tab::make()
     ->icon('heroicon-m-user-group')
 ```
+
+<AutoScreenshot name="panels/resources/listing-tabs-icons" alt="Resource listing page with tab icons" />
 
 You can also change the icon's position to be after the label instead of before it, using the `iconPosition()` method:
 
@@ -86,6 +92,25 @@ Tab::make()
     ->badgeColor('success')
 ```
 
+<UtilityInjection set="schemaComponents" extras="Badge;;?string;;$badge;;The evaluated value of the badge.">As well as allowing a static value, the `badgeColor()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="panels/resources/listing-tabs-badge-colors" alt="Resource listing page with colored tab badges" />
+
+#### Lazy loading filter tab badges
+
+If you have expensive queries powering your tab badges (such as counting large datasets), the initial page load may be slow. You can lazy load tab badges using the `lazyLoadedBadge()` method, which will load the badge values asynchronously after the page has rendered:
+
+```php
+use Filament\Schemas\Components\Tabs\Tab;
+
+Tab::make()
+    ->badge(static fn (): int => Customer::query()->where('active', true)->count())
+    ->lazyLoadedBadge()
+```
+
+> [!CAUTION]
+> The `badge()` value must be returned from a function when using `lazyLoadedBadge()`. If you pass a raw value like `badge(Customer::query()->count())`, the query runs immediately when the tab is built, defeating the purpose of lazy loading.
+
 ### Adding extra attributes to filter tabs
 
 You may also pass extra HTML attributes to filter tabs using `extraAttributes()`:
@@ -119,13 +144,41 @@ public function getDefaultActiveTab(): string | int | null
 }
 ```
 
+### Excluding the tab query when resolving records
+
+When a user interacts with a table record (e.g., clicking an action button), Filament resolves that record from the database. While a valid tab is active, its query is applied when resolving the record.
+
+However, when a record's state changes after the user saw it in the table, you may still want the user to interact with it. For example, if you have an "Active" tab and an action sets a record to inactive, subsequent actions in the same modal would fail to resolve that record.
+
+You may mark a tab to be excluded when resolving records using the `excludeQueryWhenResolvingRecord()` method:
+
+```php
+use Filament\Schemas\Components\Tabs\Tab;
+use Illuminate\Database\Eloquent\Builder;
+
+public function getTabs(): array
+{
+    return [
+        'active' => Tab::make()
+            ->modifyQueryUsing(fn (Builder $query) => $query->where('active', true))
+            ->excludeQueryWhenResolvingRecord(),
+        'inactive' => Tab::make()
+            ->modifyQueryUsing(fn (Builder $query) => $query->where('active', false))
+            ->excludeQueryWhenResolvingRecord(),
+    ];
+}
+```
+
+> [!CAUTION]
+> Tabs are controlled by the client and must not be your only tenant or ownership restriction. Apply mandatory restrictions to the resource's `getEloquentQuery()` or the table's `modifyQueryUsing()`, and authorize operations separately. `excludeQueryWhenResolvingRecord()` only changes record resolution; it must not remove your application's authorization boundary.
+
 ## Authorization
 
 For authorization, Filament will observe any [model policies](https://laravel.com/docs/authorization#creating-policies) that are registered in your app.
 
 Users may access the List page if the `viewAny()` method of the model policy returns `true`.
 
-The `reorder()` method is used to control [reordering a record](#reordering-records).
+The `reorder()` method is used to control [reordering a record](../tables/overview#reordering-records).
 
 ## Customizing the table Eloquent query
 
@@ -150,6 +203,7 @@ Each page in Filament has its own [schema](../schemas), which defines the overal
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\RenderHook;
 use Filament\Schemas\Schema;
+use Filament\View\PanelsRenderHook;
 
 public function content(Schema $schema): Schema
 {
@@ -167,7 +221,7 @@ Inside the `components()` array, you can insert any [schema component](../schema
 
 ### Using a custom Blade view
 
-For further customization opportunities, you can override the static `$view` property on the page class to a custom view in your app:
+For further customization opportunities, you can override the `$view` property on the page class to a custom view in your app:
 
 ```php
 protected string $view = 'filament.resources.users.pages.list-users';

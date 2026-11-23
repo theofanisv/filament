@@ -2,11 +2,15 @@
 
 namespace Filament\Commands;
 
+use Composer\InstalledVersions;
+use Filament\Support\Commands\Concerns\CanConfigureVite;
+use Filament\Support\Commands\Concerns\CanManageJavaScriptPackages;
 use Filament\Support\Commands\Concerns\CanManipulateFiles;
 use Filament\Support\Commands\Concerns\HasPanel;
 use Filament\Support\Commands\Exceptions\FailureCommandOutput;
 use Filament\Support\Commands\Exceptions\SuccessCommandOutput;
 use Illuminate\Console\Command;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -19,6 +23,8 @@ use Symfony\Component\Console\Input\InputOption;
 ])]
 class MakeThemeCommand extends Command
 {
+    use CanConfigureVite;
+    use CanManageJavaScriptPackages;
     use CanManipulateFiles;
     use HasPanel;
 
@@ -26,7 +32,9 @@ class MakeThemeCommand extends Command
 
     protected $name = 'make:filament-theme';
 
-    protected string $pm;
+    protected Filesystem $filesystem;
+
+    protected string $themePath;
 
     /**
      * @var array<string>
@@ -68,6 +76,16 @@ class MakeThemeCommand extends Command
                 description: 'The package manager to use (npm, yarn)',
             ),
             new InputOption(
+                name: 'skip-install',
+                mode: InputOption::VALUE_NONE,
+                description: 'Skip installing JavaScript dependencies',
+            ),
+            new InputOption(
+                name: 'skip-build',
+                mode: InputOption::VALUE_NONE,
+                description: 'Skip building JavaScript assets',
+            ),
+            new InputOption(
                 name: 'force',
                 shortcut: 'F',
                 mode: InputOption::VALUE_NONE,
@@ -76,12 +94,20 @@ class MakeThemeCommand extends Command
         ];
     }
 
-    public function handle(): int
+    public function handle(Filesystem $filesystem): int
     {
+        $this->filesystem = $filesystem;
+
         try {
             $this->configurePanel(question: 'Which panel would you like to create this theme for?');
-            $this->configurePackageManager();
 
+            $this->themePath = "resources/css/filament/{$this->panel->getId()}/theme.css";
+
+            if (! $this->option('force') && $this->checkForCollision(resource_path("css/filament/{$this->panel->getId()}/theme.css"))) {
+                throw new FailureCommandOutput;
+            }
+
+            $this->configurePackageManager();
             $this->installDependencies();
             $this->createThemeSourceFiles();
 
@@ -92,52 +118,39 @@ class MakeThemeCommand extends Command
             return static::SUCCESS;
         }
 
-        $this->components->warn('Action is required to complete the theme setup:');
-        $this->components->bulletList([
-            "First, add a new item to the Laravel plugin's `input` array in `vite.config.js`: `resources/css/filament/{$this->panel->getId()}/theme.css`.",
-            "Next, register the theme in the {$this->panel->getId()} panel provider using `->viteTheme('resources/css/filament/{$this->panel->getId()}/theme.css')`",
-            "Finally, run `{$this->pm} run build` to compile the theme.",
-        ]);
+        $pendingActions = [];
 
-        return static::SUCCESS;
-    }
-
-    protected function configurePackageManager(): void
-    {
-        $this->pm = $this->option('pm') ?? 'npm';
-
-        exec("{$this->pm} -v", $pmVersion, $pmVersionExistCode);
-
-        if ($pmVersionExistCode !== 0) {
-            $this->error('Node.js is not installed. Please install before continuing.');
-
-            throw new FailureCommandOutput;
+        // Try to register in `vite.config.js`
+        if (! $this->registerInViteConfig()) {
+            $pendingActions[] = "Add a new item to the Laravel plugin's `input` array in `vite.config.js`: `{$this->themePath}`.";
         }
 
-        $this->info("Using {$this->pm} v{$pmVersion[0]}");
+        // Try to register in panel provider
+        if (! $this->registerInPanelProvider()) {
+            $pendingActions[] = "Register the theme in the {$this->panel->getId()} panel provider using `->viteTheme('{$this->themePath}')`";
+        }
+
+        // Show pending manual actions if any
+        if (count($pendingActions) > 0) {
+            $this->components->warn('Action is required to complete the theme setup:');
+            $this->components->bulletList($pendingActions);
+            $this->newLine();
+        }
+
+        return $this->buildJavaScriptAssets('theme') ? static::SUCCESS : static::FAILURE;
     }
 
     protected function installDependencies(): void
     {
-        $installCommand = match ($this->pm) {
-            'yarn' => 'yarn add',
-            default => "{$this->pm} install",
-        };
-
-        exec("{$installCommand} tailwindcss@latest @tailwindcss/vite --save-dev");
-
-        $this->components->info('Dependencies installed successfully.');
+        $this->installJavaScriptDependencies([
+            'tailwindcss@latest',
+            '@tailwindcss/vite',
+        ]);
     }
 
     protected function createThemeSourceFiles(): void
     {
         $cssFilePath = resource_path("css/filament/{$this->panel->getId()}/theme.css");
-
-        if (! $this->option('force') && $this->checkForCollision([
-            $cssFilePath,
-        ])) {
-            throw new FailureCommandOutput;
-        }
 
         $classDirectory = (string) str(Arr::first($this->panel->getPageDirectories()))
             ->afterLast('Filament/')
@@ -150,6 +163,12 @@ class MakeThemeCommand extends Command
 
         $this->copyStubToApp('ThemeCss', $cssFilePath, [
             'classDirectory' => filled($classDirectory) ? $classDirectory : '',
+            'filamentThemeCssPath' => $this->escapeCssString(
+                $this->getRelativePath(
+                    (string) InstalledVersions::getInstallPath('filament/filament') . '/resources/css/theme.css',
+                    dirname($cssFilePath),
+                ),
+            ),
             'panel' => $this->panel->getId(),
             'viewDirectory' => filled($viewDirectory) ? $viewDirectory : '',
         ]);
@@ -163,14 +182,71 @@ class MakeThemeCommand extends Command
             return;
         }
 
+        $panelId = $this->panel->getId();
+        $publicPath = "public/css/filament/{$panelId}/theme.css";
+
         $this->components->warn('Action is required to complete the theme setup:');
         $this->components->bulletList([
-            "It looks like you don't have Vite installed. Please use your asset bundling system of choice to compile `resources/css/filament/{$this->panel->getId()}/theme.css` into `public/css/filament/{$this->panel->getId()}/theme.css`.",
+            "It looks like you don't have Vite installed. Please use your asset bundling system of choice to compile `{$this->themePath}` into `{$publicPath}`.",
             "If you're not currently using a bundler, we recommend using Vite. Alternatively, you can use the Tailwind CLI with the following command:",
-            "npx @tailwindcss/cli --input ./resources/css/filament/{$this->panel->getId()}/theme.css --output ./public/css/filament/{$this->panel->getId()}/theme.css --config ./resources/css/filament/{$this->panel->getId()}/tailwind.config.js --minify",
-            "Make sure to register the theme in the {$this->panel->getId()} panel provider using `->theme(asset('css/filament/{$this->panel->getId()}/theme.css'))`",
+            "npx @tailwindcss/cli --input ./{$this->themePath} --output ./{$publicPath} --minify",
+            "Make sure to register the theme in the {$panelId} panel provider using `->theme(asset('css/filament/{$panelId}/theme.css'))`",
         ]);
 
         throw new SuccessCommandOutput;
+    }
+
+    protected function registerInViteConfig(): bool
+    {
+        return $this->registerViteInput($this->themePath);
+    }
+
+    protected function registerInPanelProvider(): bool
+    {
+        $panelId = $this->panel->getId();
+
+        // Find the panel provider file
+        $providerPath = app_path('Providers/Filament/' . Str::studly($panelId) . 'PanelProvider.php');
+
+        if (! $this->filesystem->exists($providerPath)) {
+            return false;
+        }
+
+        $contents = $this->filesystem->get($providerPath);
+
+        // Check if already registered
+        if (str_contains($contents, 'viteTheme(')) {
+            $this->components->info('viteTheme() already configured in panel provider.');
+
+            return true;
+        }
+
+        // Look for ->id('panelId') to confirm we're in the right file
+        $idPattern = '/(->id\s*\(\s*[\'"]' . preg_quote($panelId, '/') . '[\'"]\s*\))(\s*\n)/';
+        if (! preg_match($idPattern, $contents)) {
+            return false;
+        }
+
+        // Try to insert after ->path() first, then fall back to ->id()
+        $pathPattern = '/(->path\s*\(\s*[\'"][^\'"]*[\'"]\s*\))(\s*\n)/';
+
+        if (preg_match($pathPattern, $contents)) {
+            $pattern = $pathPattern;
+        } else {
+            // No ->path() found, insert after ->id() instead
+            $pattern = $idPattern;
+        }
+
+        $replacement = '$1' . "\n            ->viteTheme('{$this->themePath}')" . '$2';
+        $newContents = preg_replace($pattern, $replacement, $contents, 1);
+
+        if ($newContents === null || $newContents === $contents) {
+            return false;
+        }
+
+        $this->filesystem->put($providerPath, $newContents);
+        $this->components->info('Added viteTheme() to panel provider.');
+
+        return true;
     }
 }

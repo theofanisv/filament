@@ -2,6 +2,7 @@
 title: Icon button Blade component
 ---
 
+
 ## Introduction
 
 The button component is used to render a clickable button that can perform an action:
@@ -13,6 +14,8 @@ The button component is used to render a clickable button that can perform an ac
     label="New label"
 />
 ```
+
+<AutoScreenshot name="components/icon-button/simple" alt="Icon buttons" />
 
 ## Using an icon button as an anchor link
 
@@ -26,6 +29,9 @@ By default, an icon button's underlying HTML tag is `<button>`. You can change i
     label="Filament"
 />
 ```
+
+> [!CAUTION]
+> If you are passing user-controlled data to the `href` attribute, validate its scheme using [`Str::sanitizeUrl()`](../advanced/security#validating-user-input) before rendering it. HTML escaping alone does not prevent a `javascript:` URL from executing code when clicked.
 
 ## Setting the size of an icon button
 
@@ -56,6 +62,8 @@ By default, the size of an icon button is "medium". You can make it "extra small
     label="New label"
 />
 ```
+
+<AutoScreenshot name="components/icon-button/sizes" alt="Icon buttons in different sizes" />
 
 ## Changing the color of an icon button
 
@@ -92,6 +100,8 @@ By default, the color of an icon button is "primary". You can change it to be `d
     label="New label"
 />
 ```
+
+<AutoScreenshot name="components/icon-button/colors" alt="Icon buttons in different colors" />
 
 ## Adding a tooltip to an icon button
 
@@ -133,3 +143,5 @@ You can [change the color](badge#changing-the-color-of-the-badge) of the badge u
     </x-slot>
 </x-filament::icon-button>
 ```
+
+<AutoScreenshot name="components/icon-button/badge" alt="Icon buttons with badges" />

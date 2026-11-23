@@ -5,6 +5,7 @@ namespace Filament\QueryBuilder\Constraints\DateConstraint\Operators;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
+use Filament\QueryBuilder\Constraints\DateConstraint\Operators\Concerns\CanQueryDateRanges;
 use Filament\QueryBuilder\Constraints\Operators\Operator;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,6 +13,8 @@ use Illuminate\Support\Carbon;
 
 class IsDateOperator extends Operator
 {
+    use CanQueryDateRanges;
+
     public function getName(): string
     {
         return 'isDate';
@@ -34,7 +37,7 @@ class IsDateOperator extends Operator
                 'filament-query-builder::query-builder.operators.date.is_date.summary.direct',
             [
                 'attribute' => $this->getConstraint()->getAttributeLabel(),
-                'date' => Carbon::parse($this->getSettings()['date'])->toFormattedDateString(),
+                'date' => ($date = $this->getDateSetting('date')) === null ? null : Carbon::parse($date)->toFormattedDateString(),
             ],
         );
     }
@@ -53,6 +56,13 @@ class IsDateOperator extends Operator
 
     public function apply(Builder $query, string $qualifiedColumn): Builder
     {
-        return $query->whereDate($qualifiedColumn, $this->isInverse() ? '!=' : '=', $this->getSettings()['date']);
+        $date = $this->getDateSetting('date');
+
+        // Security: skip applying the constraint when the tampered setting is not a scalar date.
+        if ($date === null) {
+            return $query;
+        }
+
+        return $this->whereDateUsingRange($query, $qualifiedColumn, $this->isInverse() ? '!=' : '=', $date);
     }
 }

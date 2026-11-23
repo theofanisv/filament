@@ -2,6 +2,7 @@
 title: Section Blade component
 ---
 
+
 ## Introduction
 
 A section can be used to group content together, with an optional heading:
@@ -15,6 +16,8 @@ A section can be used to group content together, with an optional heading:
     {{-- Content --}}
 </x-filament::section>
 ```
+
+<AutoScreenshot name="components/section/simple" alt="A simple section" />
 
 ## Adding a description to the section
 
@@ -34,6 +37,8 @@ You can add a description below the heading to the section by using the `descrip
 </x-filament::section>
 ```
 
+<AutoScreenshot name="components/section/description" alt="A section with a description and icon" />
+
 ## Adding an icon to the section header
 
 You can add an [icon](../styling/icons) to a section by using the `icon` attribute:
@@ -47,6 +52,8 @@ You can add an [icon](../styling/icons) to a section by using the `icon` attribu
     {{-- Content --}}
 </x-filament::section>
 ```
+
+<AutoScreenshot name="components/section/icon" alt="A section with an icon" />
 
 ### Changing the color of the section icon
 
@@ -64,6 +71,8 @@ By default, the color of the section icon is "gray". You can change it to be `da
     {{-- Content --}}
 </x-filament::section>
 ```
+
+<AutoScreenshot name="components/section/icon-color" alt="A section with a colored icon" />
 
 ### Changing the size of the section icon
 
@@ -93,6 +102,8 @@ By default, the size of the section icon is "large". You can change it to be "sm
 </x-filament::section>
 ```
 
+<AutoScreenshot name="components/section/icon-sizes" alt="Sections with different icon sizes" />
+
 ## Adding content to the end of the header
 
 You may render additional content at the end of the header, next to the heading and description, using the `afterHeader` slot:
@@ -111,6 +122,8 @@ You may render additional content at the end of the header, next to the heading 
 </x-filament::section>
 ```
 
+<AutoScreenshot name="components/section/after-header" alt="A section with content after the header" />
+
 ## Making a section collapsible
 
 You can make the content of a section collapsible by using the `collapsible` attribute:
@@ -124,6 +137,8 @@ You can make the content of a section collapsible by using the `collapsible` att
     {{-- Content --}}
 </x-filament::section>
 ```
+
+<AutoScreenshot name="components/section/collapsible" alt="A collapsible section" />
 
 ### Making a section collapsed by default
 
@@ -141,6 +156,8 @@ You can make a section collapsed by default by using the `collapsed` attribute:
     {{-- Content --}}
 </x-filament::section>
 ```
+
+<AutoScreenshot name="components/section/collapsed" alt="A collapsed section" />
 
 ### Persisting collapsed sections
 
@@ -175,6 +192,8 @@ You can change the position of the section header to be aside the content instea
 </x-filament::section>
 ```
 
+<AutoScreenshot name="components/section/aside" alt="A section with the header aside the content" />
+
 ### Positioning the content before the header
 
 You can change the position of the content to be before the header instead of after it by using the `content-before` attribute:
@@ -191,3 +210,5 @@ You can change the position of the content to be before the header instead of af
     {{-- Content --}}
 </x-filament::section>
 ```
+
+<AutoScreenshot name="components/section/content-before" alt="A section with content before the header" />

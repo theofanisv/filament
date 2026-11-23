@@ -12,6 +12,11 @@ use LogicException;
 
 trait CanBeAuthorized
 {
+    // Security: Actions do not have automatic policy-based authorization.
+    // Authorization defaults to `null` (allowed for all users).
+    // You must explicitly use `authorize()`, `visible()`, or
+    // `hidden()` to restrict access to custom actions.
+
     protected mixed $authorization = null;
 
     protected string | Closure | null $authorizationMessage = null;
@@ -80,6 +85,19 @@ trait CanBeAuthorized
 
     public function isAuthorized(): bool
     {
+        if (! $this->hasTable()) {
+            return $this->resolveIsAuthorized();
+        }
+
+        if (! $this->prepareVisibilityCache()) {
+            return $this->resolveIsAuthorized();
+        }
+
+        return $this->cachedIsAuthorized ??= $this->resolveIsAuthorized();
+    }
+
+    protected function resolveIsAuthorized(): bool
+    {
         if ($this->authorization === null) {
             return $this->getHasActionsLivewire()?->getDefaultActionAuthorizationResponse($this)?->allowed() ?? true;
         }
@@ -124,16 +142,26 @@ trait CanBeAuthorized
         $arguments = $this->parseAuthorizationArguments($this->authorization['arguments'] ?? []);
         $type = $this->authorization['type'] ?? null;
 
+        $firstDeniedResponse = null;
+
         foreach ($abilities as $ability) {
             $response = Gate::inspect($ability, Arr::wrap($arguments));
 
-            if (($type === 'any') && $response->allowed()) {
-                return $response;
+            if ($type === 'any') {
+                if ($response->allowed()) {
+                    return $response;
+                }
+
+                $firstDeniedResponse ??= $response;
             }
 
             if (($type === 'all') && $response->denied()) {
                 return $response;
             }
+        }
+
+        if ($type === 'any') {
+            return $firstDeniedResponse ?? Response::deny();
         }
 
         return Response::allow();
@@ -200,15 +228,30 @@ trait CanBeAuthorized
 
     public function isAuthorizedOrNotHiddenWhenUnauthorized(): bool
     {
-        if ($this->hasAuthorizationTooltip()) {
+        if (! $this->hasTable()) {
+            return $this->resolveIsAuthorizedOrNotHiddenWhenUnauthorized();
+        }
+
+        if (! $this->prepareVisibilityCache()) {
+            return $this->resolveIsAuthorizedOrNotHiddenWhenUnauthorized();
+        }
+
+        return $this->cachedIsAuthorizedOrNotHiddenWhenUnauthorized ??= $this->resolveIsAuthorizedOrNotHiddenWhenUnauthorized();
+    }
+
+    protected function resolveIsAuthorizedOrNotHiddenWhenUnauthorized(): bool
+    {
+        if (! $this->hasAuthorizationTooltip() && ! $this->hasAuthorizationNotification()) {
+            return $this->isAuthorized();
+        }
+
+        $response = $this->getAuthorizationResponse();
+
+        if ($response->allowed()) {
             return true;
         }
 
-        if ($this->hasAuthorizationNotification()) {
-            return true;
-        }
-
-        return $this->isAuthorized();
+        return filled($response->message()) || filled($this->getAuthorizationMessage());
     }
 
     public function authorizeIndividualRecords(bool | string | Closure | null $callback = true): static
@@ -244,5 +287,14 @@ trait CanBeAuthorized
     public function shouldAuthorizeIndividualRecords(): bool
     {
         return filled($this->authorizeIndividualRecords) && ($this->authorizeIndividualRecords !== false);
+    }
+
+    public function hasAuthorization(): bool
+    {
+        return $this->authorization !== null
+            || $this->authorizeIndividualRecords !== null
+            || $this->hasAuthorizationNotification !== false
+            || $this->hasAuthorizationTooltip !== false
+            || $this->authorizationMessage !== null;
     }
 }

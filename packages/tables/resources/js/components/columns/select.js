@@ -1,20 +1,28 @@
-import { Select } from '../../../../../support/resources/js/utilities/select.js'
+import {
+    Select,
+    createSelectOptionRequestHandler,
+} from '../../../../../support/resources/js/utilities/select.js'
+import editableTableColumn from '../../utilities/editable-table-column.js'
 
 export default function selectTableColumn({
+    accessibilityAttributes,
+    ariaLabel,
     canOptionLabelsWrap,
     canSelectPlaceholder,
-    getOptionLabelUsing,
-    getOptionsUsing,
-    getSearchResultsUsing,
+    clearButtonLabel,
+    errorMessage,
     hasDynamicOptions,
     hasDynamicSearchResults,
+    hasInitialNoOptionsMessage,
     initialOptionLabel,
     isDisabled,
     isHtmlAllowed,
     isNative,
     isSearchable,
     loadingMessage,
+    messages,
     name,
+    noOptionsMessage,
     noSearchResultsMessage,
     options,
     optionsLimit,
@@ -24,84 +32,108 @@ export default function selectTableColumn({
     searchableOptionFields,
     searchDebounce,
     searchingMessage,
+    searchLabel,
     searchPrompt,
     state,
 }) {
-    return {
-        error: undefined,
+    const optionRequests = createSelectOptionRequestHandler()
+    const editableColumn = editableTableColumn({
+        name,
+        recordKey,
+        state,
+        messages,
+    })
 
-        isLoading: false,
+    return {
+        ...editableColumn,
 
         select: null,
-
-        state,
 
         init() {
             if (!isNative) {
                 this.select = new Select({
-                    element: this.$refs.select,
-                    options,
-                    placeholder,
-                    state: this.state,
+                    accessibilityAttributes,
+                    ariaLabel,
                     canOptionLabelsWrap,
                     canSelectPlaceholder,
-                    initialOptionLabel,
-                    isHtmlAllowed,
-                    isDisabled,
-                    isSearchable,
-                    getOptionLabelUsing,
-                    getOptionsUsing,
-                    getSearchResultsUsing,
+                    clearButtonLabel,
+                    element: this.$refs.select,
+                    errorMessage,
+                    getOptionLabelUsing: () =>
+                        this.$wire.callTableColumnMethod(
+                            name,
+                            recordKey,
+                            'getOptionLabel',
+                        ),
+                    getOptionsUsing: optionRequests.wrap((request) =>
+                        request(this.$wire, 'callTableColumnMethod', [
+                            name,
+                            recordKey,
+                            'getOptionsForJs',
+                        ]),
+                    ),
+                    getSearchResultsUsing: optionRequests.wrap(
+                        (search, request) =>
+                            request(
+                                this.$wire,
+                                'callTableColumnMethod',
+                                [
+                                    name,
+                                    recordKey,
+                                    'getOptionsSearchResultsForJs',
+                                ],
+                                { search },
+                            ),
+                    ),
                     hasDynamicOptions,
                     hasDynamicSearchResults,
-                    searchPrompt,
-                    searchDebounce,
+                    hasInitialNoOptionsMessage,
+                    initialOptionLabel,
+                    initialState: this.state,
+                    isDisabled,
+                    isHtmlAllowed,
+                    isSearchable,
                     loadingMessage,
-                    searchingMessage,
+                    noOptionsMessage,
                     noSearchResultsMessage,
-                    optionsLimit,
-                    position,
-                    searchableOptionFields,
                     onStateChange: (newState) => {
+                        this.clearError()
                         this.state = newState
                     },
+                    options,
+                    optionsLimit,
+                    placeholder,
+                    position,
+                    searchableOptionFields,
+                    searchDebounce,
+                    searchingMessage,
+                    searchLabel,
+                    searchPrompt,
+                    state: this.state,
                 })
+
+                const syncAccessibilityAttributes = () => {
+                    this.select.setAccessibilityAttributes(
+                        this.getAccessibilityAttributes(
+                            accessibilityAttributes,
+                        ),
+                    )
+
+                    this.select.selectButton.setAttribute(
+                        'aria-disabled',
+                        this.isLoading || this.select.isDisabled
+                            ? 'true'
+                            : 'false',
+                    )
+                }
+
+                this.$watch('error', syncAccessibilityAttributes)
+                this.$watch('isLoading', syncAccessibilityAttributes)
             }
 
-            Livewire.hook(
-                'commit',
-                ({ component, commit, succeed, fail, respond }) => {
-                    succeed(({ snapshot, effect }) => {
-                        this.$nextTick(() => {
-                            if (this.isLoading) {
-                                return
-                            }
+            this.initEditableColumn()
 
-                            if (
-                                component.id !==
-                                this.$root.closest('[wire\\:id]')?.attributes[
-                                    'wire:id'
-                                ].value
-                            ) {
-                                return
-                            }
-
-                            const serverState = this.getServerState()
-
-                            if (
-                                serverState === undefined ||
-                                this.getNormalizedState() === serverState
-                            ) {
-                                return
-                            }
-
-                            this.state = serverState
-                        })
-                    })
-                },
-            )
-
-            this.$watch('state', async (newState) => {
+            this.$watch('state', (newState) => {
                 if (
                     !isNative &&
                     this.select &&
@@ -111,32 +143,40 @@ export default function selectTableColumn({
                     this.select.updateSelectedDisplay()
                     this.select.renderOptions()
                 }
-
-                const serverState = this.getServerState()
-
-                if (
-                    serverState === undefined ||
-                    this.getNormalizedState() === serverState
-                ) {
-                    return
-                }
-
-                this.isLoading = true
-
-                const response = await this.$wire.updateTableColumnState(
-                    name,
-                    recordKey,
-                    this.state,
-                )
-
-                this.error = response?.error ?? undefined
-
-                if (!this.error && this.$refs.serverState) {
-                    this.$refs.serverState.value = this.getNormalizedState()
-                }
-
-                this.isLoading = false
             })
+        },
+
+        syncServerState() {
+            if (
+                !isNative &&
+                this.select &&
+                this.$refs.serverState?.hasAttribute('data-option-label')
+            ) {
+                const state = this.getServerState()
+                const label = this.$refs.serverState.dataset.optionLabel
+
+                if (this.select.labelRepository[state] !== label) {
+                    this.select.updateOptionLabelInList(state, label)
+
+                    if (this.select.state === state) {
+                        this.select.updateSelectedDisplay()
+                    }
+                }
+            }
+
+            editableColumn.syncServerState.call(this)
+
+            if (
+                !isNative &&
+                this.select &&
+                this.$refs.serverState?.hasAttribute('data-disabled')
+            ) {
+                if (this.$refs.serverState.dataset.disabled === 'true') {
+                    this.select.disable()
+                } else {
+                    this.select.enable()
+                }
+            }
         },
 
         getServerState() {
@@ -152,21 +192,14 @@ export default function selectTableColumn({
                   )
         },
 
-        getNormalizedState() {
-            const state = Alpine.raw(this.state)
-
-            if ([null, undefined].includes(state)) {
-                return ''
-            }
-
-            return state
-        },
-
         destroy() {
+            editableColumn.destroy.call(this)
+
             if (this.select) {
                 this.select.destroy()
                 this.select = null
             }
+            optionRequests.destroy()
         },
     }
 }

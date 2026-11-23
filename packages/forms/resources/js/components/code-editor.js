@@ -1,8 +1,11 @@
-import { EditorState, Compartment } from '@codemirror/state'
+import * as CodeMirrorState from '@codemirror/state'
+import * as CodeMirrorView from '@codemirror/view'
+import * as CodeMirrorLanguage from '@codemirror/language'
 import { EditorView, basicSetup } from 'codemirror-v6'
 import { indentWithTab } from '@codemirror/commands'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { keymap } from '@codemirror/view'
+import { observeFieldAccessibility } from '../utilities/field-accessibility.js'
 
 import { cpp } from '@codemirror/lang-cpp'
 import { css } from '@codemirror/lang-css'
@@ -18,29 +21,36 @@ import { sql } from '@codemirror/lang-sql'
 import { xml } from '@codemirror/lang-xml'
 import { yaml } from '@codemirror/lang-yaml'
 
+const { EditorState, Compartment } = CodeMirrorState
+
 export default function codeEditorFormComponent({
     canWrap,
     isDisabled,
     isLive,
     isLiveDebounced,
     isLiveOnBlur,
+    label,
     liveDebounce,
     language,
     state,
 }) {
     return {
         editor: null,
+        languageCompartment: new Compartment(),
         themeCompartment: new Compartment(),
+        accessibilityCompartment: new Compartment(),
+        accessibilityObserver: null,
         isDocChanged: false,
         state,
 
         init() {
             const languageExtension = this.getLanguageExtension()
 
-            const debouncedCommit = Alpine.debounce(
-                () => this.$wire.commit(),
-                liveDebounce ?? 300,
-            )
+            const debouncedCommit = Alpine.debounce(() => {
+                if (this.editor) {
+                    this.$wire.commit()
+                }
+            }, liveDebounce ?? 300)
 
             this.editor = new EditorView({
                 parent: this.$refs.editor,
@@ -48,7 +58,15 @@ export default function codeEditorFormComponent({
                     doc: this.state,
                     extensions: [
                         basicSetup,
+                        this.accessibilityCompartment.of([]),
                         keymap.of([indentWithTab]),
+                        ...(label
+                            ? [
+                                  EditorView.contentAttributes.of({
+                                      'aria-label': label,
+                                  }),
+                              ]
+                            : []),
                         ...(canWrap ? [EditorView.lineWrapping] : []),
                         EditorState.readOnly.of(isDisabled),
                         EditorView.editable.of(!isDisabled),
@@ -69,11 +87,28 @@ export default function codeEditorFormComponent({
                                 }
                             },
                         }),
-                        ...(languageExtension ? [languageExtension] : []),
+                        this.languageCompartment.of(languageExtension ?? []),
                         this.themeCompartment.of(this.getThemeExtensions()),
                     ],
                 }),
             })
+
+            this.accessibilityObserver = observeFieldAccessibility(
+                this.$el,
+                (attributes) => {
+                    this.editor.dispatch({
+                        effects: this.accessibilityCompartment.reconfigure(
+                            EditorView.contentAttributes.of(
+                                Object.fromEntries(
+                                    Object.entries(attributes).filter(
+                                        ([, value]) => value !== null,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    })
+                },
+            )
 
             this.$watch('state', () => {
                 if (this.state === undefined) {
@@ -105,6 +140,12 @@ export default function codeEditorFormComponent({
                 attributes: true,
                 attributeFilter: ['class'],
             })
+
+            if (language && !languageExtension) {
+                this.loadLanguageExtension()
+            }
+
+            this.$dispatch('async-component-ready')
         },
 
         isDarkMode() {
@@ -136,10 +177,46 @@ export default function codeEditorFormComponent({
                 yaml,
             }
 
-            return extensions[language]?.() || null
+            return Object.prototype.hasOwnProperty.call(extensions, language)
+                ? extensions[language]()
+                : null
+        },
+
+        async loadLanguageExtension() {
+            const editor = this.editor
+
+            try {
+                const url = new URL(language, document.baseURI).href
+                const factory = (await import(url)).default
+
+                if (this.editor !== editor || !this.$el.isConnected) {
+                    return
+                }
+
+                const extension = await factory({
+                    state: CodeMirrorState,
+                    view: CodeMirrorView,
+                    language: CodeMirrorLanguage,
+                })
+
+                if (this.editor !== editor || !this.$el.isConnected) {
+                    return
+                }
+
+                editor.dispatch({
+                    effects: this.languageCompartment.reconfigure(extension),
+                })
+            } catch (error) {
+                console.error(
+                    `Failed to load code editor language from [${language}]:`,
+                    error,
+                )
+            }
         },
 
         destroy() {
+            this.accessibilityObserver?.disconnect()
+
             if (this.themeObserver) {
                 this.themeObserver.disconnect()
                 this.themeObserver = null

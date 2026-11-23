@@ -12,14 +12,18 @@ use Filament\Support\Concerns\HasAlignment;
 use Filament\Support\Concerns\HasCellState;
 use Filament\Support\Concerns\HasExtraAttributes;
 use Filament\Support\Concerns\HasPlaceholder;
+use Filament\Support\Concerns\HasRelatedRecord;
 use Filament\Support\Concerns\HasVerticalAlignment;
 use Filament\Support\Concerns\HasWidth;
 use Filament\Support\Enums\Alignment;
+use Filament\Support\Enums\VerticalAlignment;
+use Filament\Support\View\ComponentAttributeBag as FilamentComponentAttributeBag;
 use Filament\Tables\Columns\Concerns\HasTooltip;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
-use Illuminate\View\ComponentAttributeBag;
+use Illuminate\Support\Js;
+use Livewire\Component;
 use LogicException;
 
 use function Filament\Support\generate_href_html;
@@ -47,12 +51,13 @@ class Column extends ViewComponent
     use Concerns\HasLabel;
     use Concerns\HasName;
     use Concerns\HasRecord;
-    use Concerns\HasRowLoopObject;
+    use Concerns\HasRowLoop;
     use Concerns\InteractsWithTableQuery;
     use HasAlignment;
     use HasCellState;
     use HasExtraAttributes;
     use HasPlaceholder;
+    use HasRelatedRecord;
     use HasTooltip;
     use HasVerticalAlignment;
     use HasWidth;
@@ -60,6 +65,8 @@ class Column extends ViewComponent
     protected string $evaluationIdentifier = 'column';
 
     protected string $viewIdentifier = 'column';
+
+    protected ?string $cachedCellAttributesHtml = null;
 
     final public function __construct(string $name)
     {
@@ -92,6 +99,11 @@ class Column extends ViewComponent
         return $this->table ?? $this->getGroup()?->getTable() ?? $this->getLayout()?->getTable() ?? throw new LogicException("The column [{$this->getName()}] is not mounted to a table.");
     }
 
+    public function hasTable(): bool
+    {
+        return isset($this->table) || ($this->getGroup()?->hasTable() ?? false) || ($this->getLayout()?->hasTable() ?? false);
+    }
+
     /**
      * @return array<mixed>
      */
@@ -112,7 +124,7 @@ class Column extends ViewComponent
      */
     protected function resolveDefaultClosureDependencyForEvaluationByType(string $parameterType): array
     {
-        $record = $this->getRecord();
+        $record = is_a($parameterType, Model::class, allow_string: true) ? $this->getRecord() : null;
 
         if (! $record) {
             return parent::resolveDefaultClosureDependencyForEvaluationByType($parameterType);
@@ -134,7 +146,7 @@ class Column extends ViewComponent
             return null;
         }
 
-        $attributes = (new ComponentAttributeBag)
+        $attributes = (new FilamentComponentAttributeBag)
             ->gridColumn(
                 $this->getColumnSpan(),
                 $this->getColumnStart(),
@@ -162,13 +174,13 @@ class Column extends ViewComponent
                 'type' => ($wrapperTag === 'button') ? 'button' : null,
                 'wire:click.prevent.stop' => $wireClickAction = match (true) {
                     ($wrapperTag !== 'button') => null,
-                    $action instanceof Action => "mountTableAction('{$action->getName()}', '{$this->getRecordKey()}')",
-                    filled($action) => "callTableColumnAction('{$this->getName()}', '{$this->getRecordKey()}')",
+                    $action instanceof Action => "mountAction('{$action->getName()}', {}, " . Js::from(['table' => true, 'recordKey' => $this->getRecordKey()]) . ')',
+                    filled($action) => "callTableColumnAction('{$this->getName()}', " . Js::from($this->getRecordKey()) . ')',
                     default => null,
                 },
                 'wire:loading.attr' => ($wrapperTag === 'button') ? 'disabled' : null,
                 'wire:target' => $wireClickAction,
-            ], escape: false)
+            ])
             ->class([
                 'fi-ta-col',
                 ((($alignment = $this->getAlignment()) instanceof Alignment) ? "fi-align-{$alignment->value}" : (is_string($alignment) ? $alignment : '')),
@@ -187,6 +199,146 @@ class Column extends ViewComponent
         </<?= $wrapperTag ?>>
 
         <?php return new HtmlString(ob_get_clean());
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    public function renderInTableCell(?string $recordAction = null, ?string $recordUrl = null, bool $shouldOpenRecordUrlInNewTab = false, bool $isPartiallyRenderable = false, ?bool $isReordering = null, ?bool $isStackedOnMobile = null): HtmlString
+    {
+        $table = $this->getTable();
+        $livewire = $this->getLivewire();
+        $recordKey = $this->getRecordKey();
+        $record = $this->getRecord();
+        $previousStateCacheKey = $this->cachedStateCacheKey;
+
+        // Reuse the renderer's identity only within this cell, preserving uncached state for unsaved models.
+        $this->cachedStateCacheKey = (($record instanceof Model) && blank($record->getKey()) && (! $table->hasPivotRecordKeys()))
+            ? null
+            : $recordKey;
+
+        try {
+
+            $action = $this->getAction();
+            $url = $this->getUrl();
+            $hasStateBasedUrls = $this->hasStateBasedUrls();
+            $isClickDisabled = $this->isClickDisabled() || ($isReordering ?? $table->isReordering());
+            $isStackedOnMobile ??= $table->isStackedOnMobile();
+
+            $wrapperTag = match (true) {
+                ($url || ($recordUrl && $action === null)) && (! $hasStateBasedUrls) && (! $isClickDisabled) => 'a',
+                ($action || $recordAction) && (! $hasStateBasedUrls) && (! $isClickDisabled) => 'button',
+                default => 'div',
+            };
+
+            $wireClickAction = null;
+
+            if ($wrapperTag === 'button') {
+                if ($action instanceof Action) {
+                    $wireClickAction = "mountAction('{$action->getName()}', {}, " . Js::from(['table' => true, 'recordKey' => $recordKey]) . ')';
+                } elseif ($action) {
+                    $wireClickAction = "callTableColumnAction('{$this->getName()}', " . Js::from($recordKey) . ')';
+                } elseif ($table->getAction($recordAction)) {
+                    $wireClickAction = "mountAction('{$recordAction}', {}, " . Js::from(['table' => true, 'recordKey' => $recordKey]) . ')';
+                } else {
+                    $wireClickAction = "{$recordAction}(" . Js::from($recordKey) . ')';
+                }
+            }
+
+            ob_start(); ?>
+
+        <td
+            wire:key="<?= ($livewire instanceof Component) ? e($livewire->getId()) : '' ?>.table.record.<?= e($recordKey) ?>.column.<?= e($this->getName()) ?>"
+            <?php if ($isPartiallyRenderable) { ?>
+                wire:partial="<?= e($this->getTableCellPartialName()) ?>"
+            <?php } ?>
+            <?= $this->getCachedCellAttributesHtml() ?>
+        >
+            <?= $isStackedOnMobile ? '<div class="fi-ta-cell-label">' . e($this->getLabel()) . '</div><div class="fi-ta-cell-content">' : '' ?>
+            <<?= $wrapperTag ?>
+                <?php if ($wrapperTag === 'a') { ?>
+                    <?= generate_href_html($url ?: $recordUrl, $url ? $this->shouldOpenUrlInNewTab() : $shouldOpenRecordUrlInNewTab, hasNestedClickEventHandler: true)->toHtml() ?>
+                    <?php if (blank($url) && filled($recordUrl)) { ?>
+                        <?= $table->getExtraRecordLinkAttributeBag($this->getRecord())->toHtml() ?>
+                    <?php } ?>
+                <?php } elseif ($wrapperTag === 'button') { ?>
+                    type="button"
+                    wire:click.prevent.stop="<?= e($wireClickAction) ?>"
+                    wire:loading.attr="disabled"
+                    wire:target="<?= e($wireClickAction) ?>"
+                <?php } ?>
+                class="<?= (($wrapperTag === 'a') && filled($url)) ? 'fi-ta-col fi-ta-col-has-column-url' : 'fi-ta-col' ?>"
+            >
+                <?= $this->toHtml() ?>
+            </<?= $wrapperTag ?>>
+            <?= $isStackedOnMobile ? '</div>' : '' ?>
+        </td>
+
+        <?php return new HtmlString(ob_get_clean());
+        } finally {
+            $this->cachedStateCacheKey = (($this->getRecord() === $record) && ($this->getRecordKey() === $recordKey))
+                ? $previousStateCacheKey
+                : null;
+        }
+    }
+
+    public function getTableCellPartialName(): string
+    {
+        // Encode each segment, including the `.` delimiter, so distinct record keys and column names never share
+        // a name, and the name is safe in the `wire:partial` attribute selector used to find the cell in the DOM.
+        $encodeSegment = static fn (string $segment): string => str_replace('.', '%2E', rawurlencode($segment));
+
+        return 'table.record.' . $encodeSegment((string) $this->getRecordKey()) . '.column.' . $encodeSegment($this->getName());
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    public function getCellAttributesHtml(): string
+    {
+        $columnAlignment = $this->getAlignment();
+        $columnVerticalAlignment = $this->getVerticalAlignment();
+
+        return $this->getExtraCellAttributeBag()->class([
+            'fi-ta-cell',
+            'fi-ta-cell-' . str($this->getName())->camel()->kebab(),
+            (($columnAlignment instanceof Alignment) ? "fi-align-{$columnAlignment->value}" : (is_string($columnAlignment) ? $columnAlignment : '')),
+            (($columnVerticalAlignment instanceof VerticalAlignment) ? "fi-vertical-align-{$columnVerticalAlignment->value}" : (is_string($columnVerticalAlignment) ? $columnVerticalAlignment : '')),
+            (filled($columnHiddenFrom = $this->getHiddenFrom()) ? "{$columnHiddenFrom}:fi-hidden" : ''),
+            (filled($columnVisibleFrom = $this->getVisibleFrom()) ? "{$columnVisibleFrom}:fi-visible" : ''),
+        ])->toHtml();
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    public function getCachedCellAttributesHtml(): string
+    {
+        if ($this->cachedCellAttributesHtml !== null) {
+            return $this->cachedCellAttributesHtml;
+        }
+
+        if (
+            $this->hasDynamicExtraCellAttributes()
+            || $this->hasDynamicAlignment()
+            || $this->hasDynamicVerticalAlignment()
+            || $this->hasDynamicHiddenFrom()
+            || $this->hasDynamicVisibleFrom()
+        ) {
+            return $this->getCellAttributesHtml();
+        }
+
+        return $this->cachedCellAttributesHtml = $this->getCellAttributesHtml();
+    }
+
+    /**
+     * @deprecated Use `getCachedCellAttributesHtml()` instead.
+     *
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    public function getCachedCellAttributeHtml(): string
+    {
+        return $this->getCachedCellAttributesHtml();
     }
 
     /**

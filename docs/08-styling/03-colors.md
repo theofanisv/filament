@@ -4,9 +4,9 @@ title: Colors
 
 ## Introduction
 
-Filament uses CSS variables to define its color palette. These CSS variables are mapped to Tailwind classes in the preset file that you load when installing Filament. The reason why Filament uses CSS variables is that it allows the framework to pass a color palette from PHP via a `<style>` element that gets rendered as part of the `@filamentStyles` Blade directive.
+You can configure Filament's color palettes in PHP and use their names in PHP or Blade components. Filament selects shades from each palette for light and dark mode.
 
-By default, Filament's Tailwind preset file ships with 6 colors:
+Filament provides 6 colors by default:
 
 - `primary`, which is [Tailwind's `amber` color](https://tailwindcss.com/docs/customizing-colors) by default
 - `success`, which is [Tailwind's `green` color](https://tailwindcss.com/docs/customizing-colors) by default
@@ -66,6 +66,8 @@ FilamentColor::register([
 
 The `Color` class contains every [Tailwind CSS color](https://tailwindcss.com/docs/customizing-colors#color-palette-reference) to choose from.
 
+<AutoScreenshot name="panels/configuration/colors" alt="Panel with custom primary color" />
+
 You can also pass in a function to `register()` which will only get called when the app is getting rendered. This is useful if you are calling `register()` from a service provider, and want to access objects like the currently authenticated user, which are initialized later in middleware.
 
 ### Registering extra colors
@@ -122,3 +124,195 @@ FilamentColor::register([
     'danger' => 'rgb(255, 0, 0)',
 ]);
 ```
+
+## How Filament selects accessible shades
+
+Filament selects shades using [WCAG 2.1 contrast ratios](https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html). The same palette can produce different shades in a button, badge, or link because each component has different backgrounds and contrast requirements. Changing a registered palette updates these choices automatically.
+
+The contrast thresholds Filament uses come from WCAG 2.1:
+
+- **Normal text (`Color::WCAG_AA_TEXT`, 4.5:1)** — applied to text-bearing components such as buttons, badges, links, dropdown items, and text columns. From [success criterion 1.4.3 Contrast (Minimum)](https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html).
+- **User interface components and graphical objects (`Color::WCAG_AA_NON_TEXT`, 3:1)** — applied to icon-only components such as icon buttons, toggles, icon columns, and icon entries. From [success criterion 1.4.11 Non-text Contrast](https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast.html).
+
+The `Filament\Support\Colors\Color` class exposes these as constants — `WCAG_AA_TEXT`, `WCAG_AA_LARGE_TEXT`, `WCAG_AA_NON_TEXT`, `WCAG_AAA_TEXT`, `WCAG_AAA_LARGE_TEXT` — so you can reference them by name when customizing.
+
+> [!WARNING]
+> Shade selection uses fallback shades when a palette cannot meet the requested contrast. It does not guarantee accessibility for every custom palette or background. Check contrast in light and dark mode, including hover states, after customizing colors or component styles.
+
+### Why some buttons render dark text instead of white
+
+Solid buttons prefer backgrounds that support light text. Pale palettes such as yellow, amber, or lime may instead use a lighter background with dark text to preserve contrast. Avoid overriding these buttons to always use white text without checking the resulting contrast.
+
+## Customizing shade selection
+
+If you need to override how a particular component picks its shades — for example, to target WCAG AAA contrast or prefer darker button backgrounds — you can extend the relevant view component and rebind it through Laravel's container.
+
+Filament exposes three color-map classes for this purpose, all under the `Filament\Support\View\Components\ColorMaps` namespace. Each follows the same fluent shape — `make($palette)` to start, chained configuration setters, then `get()` to return an `array<string, int>` mapping slot names (such as `bg`, `text`, `dark:hover:bg`) to shade numbers.
+
+The three classes are:
+
+- `ComponentColorMap` — for components that pick one shade per slot, like badges, links, text columns, icons, dropdowns, and toggles.
+- `ButtonComponentColorMap` — for solid buttons. Picks a background shade and pairs it with a matching text shade.
+- `IconButtonComponentColorMap` — for icon-only buttons. Picks a single icon shade and derives a hover variant from it.
+
+### Components you can override
+
+Every Filament component that picks shades from a palette implements `getColorMap()`. To customize one, extend the class, override `getColorMap()`, and bind your subclass through Laravel's container.
+
+| Component class | Used by | Documentation |
+| --- | --- | --- |
+| `Filament\Support\View\Components\BadgeComponent` | Badges | [Badge](../components/badge) |
+| `Filament\Support\View\Components\ButtonComponent` | Buttons (solid and outlined) | [Button](../components/button) |
+| `Filament\Support\View\Components\IconButtonComponent` | Icon-only buttons | [Icon button](../components/icon-button) |
+| `Filament\Support\View\Components\LinkComponent` | Links | [Link](../components/link) |
+| `Filament\Support\View\Components\ToggleComponent` | Form toggle | [Toggle](../forms/toggle) |
+| `Filament\Support\View\Components\DropdownComponent\HeaderComponent` | Dropdown headers | [Dropdown](../components/dropdown) |
+| `Filament\Support\View\Components\DropdownComponent\ItemComponent` | Dropdown items | [Dropdown](../components/dropdown) |
+| `Filament\Schemas\View\Components\TextComponent` | Schema text primes | [Prime components](../schemas/primes) |
+| `Filament\Infolists\View\Components\TextEntryComponent\ItemComponent` | Infolist text entries | [Text entry](../infolists/text-entry) |
+| `Filament\Infolists\View\Components\IconEntryComponent\IconComponent` | Infolist icon entries | [Icon entry](../infolists/icon-entry) |
+| `Filament\Tables\View\Components\Columns\TextColumnComponent\ItemComponent` | Table text columns | [Text column](../tables/columns/text) |
+| `Filament\Tables\View\Components\Columns\IconColumnComponent\IconComponent` | Table icon columns | [Icon column](../tables/columns/icon) |
+| `Filament\Tables\View\Components\Columns\Summarizers\CountComponent\IconComponent` | Table count summarizers | [Summaries](../tables/summaries) |
+| `Filament\Widgets\View\Components\StatsOverviewWidgetComponent\StatComponent\DescriptionComponent` | Stats overview widget descriptions | [Stats overview](../widgets/stats-overview) |
+
+> [!TIP]
+> The fastest way to write a custom `getColorMap()` is to copy the original implementation from the class you're overriding and tweak the configuration values. The source files live alongside the documented classes in `packages/<package>/src/View/Components/`. Each one is a few lines of fluent calls — the easiest way to learn the surface is to read the default and change it.
+
+### `ComponentColorMap`
+
+Builds a slot map one entry at a time. Call `slot()` once per output slot, then `get()`.
+
+```php
+use Filament\Support\Colors\Color;
+use Filament\Support\Facades\FilamentColor;
+use Filament\Support\View\Components\ColorMaps\ComponentColorMap;
+
+$gray = FilamentColor::getColor('gray');
+
+ComponentColorMap::make($color)
+    ->slot('text', surface: $gray[50], minRatio: Color::WCAG_AA_TEXT, fallback: 900)
+    ->slot('dark:text', surface: $gray[700], maxShade: 500, shouldStartFromDarkest: true, fallback: 200)
+    ->get();
+```
+
+`slot()` parameters:
+
+- `$name` — Output map key (`text`, `bg`, `hover:text`, `dark:hover:bg`, etc.).
+- `$surface` — The color the chosen shade must contrast against (typically `$gray[50]`, `$gray[700]`, or `'oklch(1 0 0)'`).
+- `$minRatio` — Minimum WCAG contrast ratio. Defaults to `Color::WCAG_AA_TEXT` (`4.5`); use `WCAG_AA_NON_TEXT` (`3.0`) for icons or `WCAG_AAA_TEXT` (`7.0`) for AAA.
+- `$maxShade` — Optional upper bound on the shade number considered.
+- `$minShade` — Optional lower bound.
+- `$shouldStartFromDarkest` — Walk darkest→lightest instead of the default lightest→darkest. Use for dark-mode lookups.
+- `$fallback` — Shade returned when no candidate qualifies. Typically `900` for light mode, `200` for dark mode.
+
+### `ButtonComponentColorMap`
+
+Returns all eight slots a solid button needs (`bg`, `hover:bg`, `dark:bg`, `dark:hover:bg`, `text`, `hover:text`, `dark:text`, `dark:hover:text`) from one `get()` call. You configure which background shades to use; the matching text shade for each is found automatically. At least one `lightBackground()` and one `darkBackground()` are required.
+
+```php
+use Filament\Support\Colors\Color;
+use Filament\Support\View\Components\ColorMaps\ButtonComponentColorMap;
+
+ButtonComponentColorMap::make($color)
+    ->minContrastRatio(Color::WCAG_AA_TEXT)
+    ->lightBackground(bg: 600, hover: 500)
+    ->lightBackground(bg: 400, hover: 300, alternateHover: 500)
+    ->darkBackground(bg: 600, hover: 500, alternateHover: 700)
+    ->get();
+```
+
+`minContrastRatio()` sets the minimum WCAG ratio between bg and text. Defaults to `Color::WCAG_AA_TEXT` (`4.5`); set to `WCAG_AAA_TEXT` (`7.0`) for AAA.
+
+`lightBackground()` and `darkBackground()` accept `(bg, hover, alternateHover?)`. Chain candidates in preference order. Filament prefers candidates that support light text in both resting and hover states, using `alternateHover` when the main hover shade is unsuitable. The final candidate is the fallback. Provide a pale-friendly fallback to support palettes that need dark text.
+
+To express a color-aware cascade — "use 800 if the palette can carry it, otherwise 700, otherwise 600, falling back to a paler bg with dark text for yellows" — chain candidates and end with a pale-friendly fallback:
+
+```php
+ButtonComponentColorMap::make($color)
+    ->lightBackground(bg: 800, hover: 700)
+    ->lightBackground(bg: 700, hover: 600)
+    ->lightBackground(bg: 600, hover: 500)
+    ->lightBackground(bg: 400, hover: 300, alternateHover: 500) // pale fallback
+    ->darkBackground(bg: 600, hover: 500, alternateHover: 700)
+    ->get();
+```
+
+> [!WARNING]
+> The last candidate doubles as the fallback when no candidate produces light text on its `bg`. If you configure only vibrant-friendly candidates and your palette is pale, that last candidate is used anyway — likely producing a dark-text-on-dark-bg button. Always end with a pale-friendly candidate (typically `bg` around `400`) to handle yellows, ambers, and limes.
+
+### `IconButtonComponentColorMap`
+
+Returns the four icon slots (`text`, `hover:text`, `dark:text`, `dark:hover:text`) for icon-only buttons. At least one `lightSurface()` and one `darkSurface()` are required.
+
+```php
+use Filament\Support\Colors\Color;
+use Filament\Support\Facades\FilamentColor;
+use Filament\Support\View\Components\ColorMaps\IconButtonComponentColorMap;
+
+$gray = FilamentColor::getColor('gray');
+
+IconButtonComponentColorMap::make($color)
+    ->minContrastRatio(Color::WCAG_AA_NON_TEXT)
+    ->lightSurface($gray[50])
+    ->darkSurface($gray[700])
+    ->darkMaxShade(500)
+    ->get();
+```
+
+- `minContrastRatio()` — Minimum contrast ratio between icon and surface. Defaults to `Color::WCAG_AA_NON_TEXT` (`3.0`).
+- `lightSurface()` / `darkSurface()` — The body surface color the icon must contrast against in each mode. Typically `$gray[50]` and `$gray[700]`.
+- `darkMaxShade()` — Upper bound on the shade considered for dark-mode icon color. Defaults to `500`; lower for lighter icons.
+
+### Worked example: AAA contrast for buttons
+
+Here is a complete subclass that targets WCAG AAA contrast and prefers darker button backgrounds. Verify the rendered contrast with your palettes and backgrounds, since fallback shades may not meet the target:
+
+```php
+namespace App\View\Components;
+
+use Filament\Support\Colors\Color;
+use Filament\Support\Facades\FilamentColor;
+use Filament\Support\View\Components\ButtonComponent as BaseButtonComponent;
+use Filament\Support\View\Components\ColorMaps\ButtonComponentColorMap;
+use Filament\Support\View\Components\ColorMaps\ComponentColorMap;
+
+class ButtonComponent extends BaseButtonComponent
+{
+    public function getColorMap(array $color): array
+    {
+        $gray = FilamentColor::getColor('gray');
+
+        if ($this->isOutlined) {
+            return ComponentColorMap::make($color)
+                ->slot('text', surface: $gray[50], minRatio: Color::WCAG_AAA_TEXT, fallback: 900)
+                ->slot('dark:text', surface: $gray[700], minRatio: Color::WCAG_AAA_TEXT, maxShade: 500, shouldStartFromDarkest: true, fallback: 200)
+                ->get();
+        }
+
+        return ButtonComponentColorMap::make($color)
+            ->minContrastRatio(Color::WCAG_AAA_TEXT)
+            ->lightBackground(bg: 700, hover: 600)
+            ->lightBackground(bg: 400, hover: 300, alternateHover: 500)
+            ->darkBackground(bg: 600, hover: 500, alternateHover: 700)
+            ->get();
+    }
+}
+```
+
+Bind your subclass in a service provider's `register()` method:
+
+```php
+use App\View\Components\ButtonComponent;
+use Filament\Support\View\Components\ButtonComponent as BaseButtonComponent;
+
+public function register(): void
+{
+    $this->app->bind(BaseButtonComponent::class, ButtonComponent::class);
+}
+```
+
+The same pattern works for any of the components listed above — extend, override `getColorMap()`, and bind.
+
+> [!TIP]
+> The defaults work for the overwhelming majority of palettes. Only override these classes if you have specific accessibility requirements (such as AAA compliance) or a design system that mandates different shade preferences.

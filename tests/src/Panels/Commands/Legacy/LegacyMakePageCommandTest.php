@@ -6,13 +6,12 @@ use Filament\Support\Commands\FileGenerators\FileGenerationFlag;
 use Filament\Tests\TestCase;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Arr;
 use Illuminate\Testing\PendingCommand;
 
 use function PHPUnit\Framework\assertFileDoesNotExist;
 use function PHPUnit\Framework\assertFileExists;
 
-uses(TestCase::class);
+uses(TestCase::class)->group('serial');
 
 beforeEach(function (): void {
     config()->set('filament.file_generation.flags', [
@@ -24,8 +23,7 @@ beforeEach(function (): void {
     ]);
 
     MakePageCommand::$shouldCheckModelsForSoftDeletes = false;
-})
-    ->skip((bool) Arr::get($_SERVER, 'PARATEST'), 'File generation tests cannot be run in parallel as they would share a filesystem and have the potential to conflict with each other.');
+});
 
 it('can generate a page class', function (): void {
     $this->withoutMockingConsoleOutput();
@@ -144,10 +142,9 @@ it('can generate a page class in a resource', function (): void {
     require_once app_path('Filament/Resources/UserResource/Pages/CreateUser.php');
     require_once app_path('Filament/Resources/UserResource/Pages/EditUser.php');
 
-    invade(Filament::getCurrentOrDefaultPanel())->resources = [
-        ...invade(Filament::getCurrentOrDefaultPanel())->resources,
+    Filament::getCurrentOrDefaultPanel()->resources([
         app()->getNamespace() . 'Filament\\Resources\\UserResource',
-    ];
+    ]);
 
     $this->artisan('make:filament-page', [
         'name' => 'ManageUserPermissions',
@@ -177,10 +174,9 @@ it('can generate a page view in a resource', function (): void {
     require_once app_path('Filament/Resources/UserResource/Pages/CreateUser.php');
     require_once app_path('Filament/Resources/UserResource/Pages/EditUser.php');
 
-    invade(Filament::getCurrentOrDefaultPanel())->resources = [
-        ...invade(Filament::getCurrentOrDefaultPanel())->resources,
+    Filament::getCurrentOrDefaultPanel()->resources([
         app()->getNamespace() . 'Filament\\Resources\\UserResource',
-    ];
+    ]);
 
     $this->artisan('make:filament-page', [
         'name' => 'ManageUserPermissions',
@@ -210,10 +206,9 @@ it('can generate a create page class in a resource', function (): void {
     require_once app_path('Filament/Resources/UserResource/Pages/CreateUser.php');
     require_once app_path('Filament/Resources/UserResource/Pages/EditUser.php');
 
-    invade(Filament::getCurrentOrDefaultPanel())->resources = [
-        ...invade(Filament::getCurrentOrDefaultPanel())->resources,
+    Filament::getCurrentOrDefaultPanel()->resources([
         app()->getNamespace() . 'Filament\\Resources\\UserResource',
-    ];
+    ]);
 
     $this->artisan('make:filament-page', [
         'name' => 'CreateUser',
@@ -245,10 +240,9 @@ it('can generate an edit page class in a resource', function (): void {
     require_once app_path('Filament/Resources/UserResource/Pages/CreateUser.php');
     require_once app_path('Filament/Resources/UserResource/Pages/EditUser.php');
 
-    invade(Filament::getCurrentOrDefaultPanel())->resources = [
-        ...invade(Filament::getCurrentOrDefaultPanel())->resources,
+    Filament::getCurrentOrDefaultPanel()->resources([
         app()->getNamespace() . 'Filament\\Resources\\UserResource',
-    ];
+    ]);
 
     $this->artisan('make:filament-page', [
         'name' => 'EditUser',
@@ -280,10 +274,9 @@ it('can generate a view page class in a resource', function (): void {
     require_once app_path('Filament/Resources/UserResource/Pages/CreateUser.php');
     require_once app_path('Filament/Resources/UserResource/Pages/EditUser.php');
 
-    invade(Filament::getCurrentOrDefaultPanel())->resources = [
-        ...invade(Filament::getCurrentOrDefaultPanel())->resources,
+    Filament::getCurrentOrDefaultPanel()->resources([
         app()->getNamespace() . 'Filament\\Resources\\UserResource',
-    ];
+    ]);
 
     $this->artisan('make:filament-page', [
         'name' => 'ViewUser',
@@ -332,11 +325,10 @@ $runGenerateManageRelatedRecordsPageCommand = function (TestCase $testCase): Pen
     require_once app_path('Filament/Resources/UserResource/Pages/CreateUser.php');
     require_once app_path('Filament/Resources/UserResource/Pages/EditUser.php');
 
-    invade(Filament::getCurrentOrDefaultPanel())->resources = [
-        ...invade(Filament::getCurrentOrDefaultPanel())->resources,
+    Filament::getCurrentOrDefaultPanel()->resources([
         app()->getNamespace() . 'Filament\\Resources\\TeamResource',
         app()->getNamespace() . 'Filament\\Resources\\UserResource',
-    ];
+    ]);
 
     return $testCase->artisan('make:filament-page', [
         'name' => 'ManageUserTeams',
@@ -349,7 +341,7 @@ $runGenerateManageRelatedRecordsPageCommand = function (TestCase $testCase): Pen
 
 $generateManageRelatedRecordsPageCommandQuestions = [
     'relationship' => 'What is the relationship?',
-    'hasRelatedResource' => 'Do you want to do this?',
+    'hasRelatedResource' => 'Do you want to link this to an existing resource?',
     'relatedResource' => 'Which resource do you want to use?',
     'isGenerated' => 'Should the page be generated from the current database columns?',
     'relatedModel' => 'What is the related model?',

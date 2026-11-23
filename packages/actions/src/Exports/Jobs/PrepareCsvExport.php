@@ -17,7 +17,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use League\Csv\Bom;
 use League\Csv\Writer;
-use SplTempFileObject;
+use League\Flysystem\UnableToWriteFile;
 
 class PrepareCsvExport implements ShouldQueue
 {
@@ -28,6 +28,10 @@ class PrepareCsvExport implements ShouldQueue
     use SerializesModels;
 
     public bool $deleteWhenMissingModels = true;
+
+    public ?int $tries = 1;
+
+    public ?int $maxExceptions = 0;
 
     protected Exporter $exporter;
 
@@ -52,13 +56,20 @@ class PrepareCsvExport implements ShouldQueue
 
     public function handle(): void
     {
-        $csv = Writer::from(new SplTempFileObject);
+        if ($this->batch()?->cancelled()) {
+            return;
+        }
+
+        $csv = Writer::fromString();
         $csv->setOutputBOM(Bom::Utf8);
         $csv->setDelimiter($this->exporter::getCsvDelimiter());
         $csv->insertOne(array_values($this->columnMap));
 
         $filePath = $this->export->getFileDirectory() . DIRECTORY_SEPARATOR . 'headers.csv';
-        $this->export->getFileDisk()->put($filePath, $csv->toString(), Filesystem::VISIBILITY_PRIVATE);
+
+        if (! $this->export->getFileDisk()->put($filePath, $csv->toString(), Filesystem::VISIBILITY_PRIVATE)) {
+            throw UnableToWriteFile::atLocation($filePath);
+        }
 
         $query = EloquentSerializeFacade::unserialize($this->query);
         $keyName = $query->getModel()->getKeyName();
@@ -96,8 +107,11 @@ class PrepareCsvExport implements ShouldQueue
                 $firstOrder = $originalOrders->first();
 
                 if (($firstOrder['type'] ?? null) === 'Raw') {
+                    /** @var literal-string $sql */
+                    $sql = $firstOrder['sql'];
+
                     $query->reorder();
-                    $query->orderByRaw($firstOrder['sql']);
+                    $query->orderByRaw($sql);
                 } else {
                     $query->reorder($firstOrder['column'], $firstOrder['direction']);
                 }
@@ -109,7 +123,10 @@ class PrepareCsvExport implements ShouldQueue
 
             foreach ($originalOrders as $order) {
                 if (($order['type'] ?? null) === 'Raw') {
-                    $query->orderByRaw($order['sql']);
+                    /** @var literal-string $orderSql */
+                    $orderSql = $order['sql'];
+
+                    $query->orderByRaw($orderSql);
                 } elseif (filled($order['column'] ?? null) && filled($order['direction'] ?? null)) {
                     $query->orderBy($order['column'], $order['direction']);
                 }
@@ -207,7 +224,7 @@ class PrepareCsvExport implements ShouldQueue
                 fn (Collection $records) => $dispatchRecords(
                     Arr::pluck($records->all(), $keyName),
                 ),
-                column: $qualifiedKeyName,
+                column: $baseQueryOrders[0]['column'] ?? $qualifiedKeyName,
                 alias: $keyName,
                 descending: ($baseQueryOrders[0]['direction'] ?? 'asc') === 'desc',
             );

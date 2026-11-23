@@ -5,6 +5,7 @@ namespace Filament\Resources\Concerns;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Support\Components\Attributes\Unexposed;
 use Illuminate\Database\Eloquent\Builder;
 
 trait HasTabs
@@ -28,6 +29,7 @@ trait HasTabs
     /**
      * @return array<string | int, Tab>
      */
+    #[Unexposed]
     public function getTabs(): array
     {
         return [];
@@ -36,6 +38,7 @@ trait HasTabs
     /**
      * @return array<string | int, Tab>
      */
+    #[Unexposed]
     public function getCachedTabs(): array
     {
         return $this->cachedTabs ??= collect($this->getTabs())
@@ -43,11 +46,13 @@ trait HasTabs
             ->all();
     }
 
+    #[Unexposed]
     public function getDefaultActiveTab(): string | int | null
     {
         return array_key_first($this->getCachedTabs());
     }
 
+    #[Unexposed]
     public function updatedActiveTab(): void
     {
         $this->resetPage();
@@ -57,6 +62,7 @@ trait HasTabs
         $this->applyTableColumnManager();
     }
 
+    #[Unexposed]
     public function generateTabLabel(string $key): string
     {
         return (string) str($key)
@@ -64,9 +70,9 @@ trait HasTabs
             ->ucfirst();
     }
 
-    protected function modifyQueryWithActiveTab(Builder $query): Builder
+    protected function modifyQueryWithActiveTab(Builder $query, bool $isResolvingRecord = false): Builder
     {
-        if (blank(filled($this->activeTab))) {
+        if (blank($this->activeTab)) {
             return $query;
         }
 
@@ -76,15 +82,24 @@ trait HasTabs
             return $query;
         }
 
-        return $tabs[$this->activeTab]->modifyQuery($query);
+        $tab = $tabs[$this->activeTab];
+
+        if ($isResolvingRecord && $tab->shouldExcludeQueryWhenResolvingRecord()) {
+            return $query;
+        }
+
+        return $tab->modifyQuery($query);
     }
 
+    #[Unexposed]
     public function getTabsContentComponent(): Component
     {
         $tabs = $this->getCachedTabs();
 
-        return Tabs::make()
+        return Tabs::make(__('filament-panels::resources/pages/list-records.tabs.label'))
+            ->key('resourceTabs')
             ->livewireProperty('activeTab')
+            ->tabPanels(false)
             ->contained(false)
             ->tabs($tabs)
             ->hidden(empty($tabs));

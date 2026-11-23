@@ -12,15 +12,24 @@ use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\Testing\TestAction;
 use Filament\Actions\ViewAction;
 use Filament\Facades\Filament;
+use Filament\Tables\Columns\ToggleColumn;
+use Filament\Tables\Table;
+use Filament\Tests\Fixtures\Models\Department;
 use Filament\Tests\Fixtures\Models\Post;
 use Filament\Tests\Fixtures\Models\Ticket;
 use Filament\Tests\Fixtures\Models\TicketMessage;
 use Filament\Tests\Fixtures\Models\User;
 use Filament\Tests\Fixtures\Policies\TicketPolicy;
 use Filament\Tests\Fixtures\Resources\Posts\Pages\ListPosts;
+use Filament\Tests\Fixtures\Resources\Posts\Pages\ListPostsWithCustomFiltersRemoveAllAction;
+use Filament\Tests\Fixtures\Resources\Posts\Pages\ListPostsWithDisabledEditAction;
+use Filament\Tests\Fixtures\Resources\Posts\Pages\ListPostsWithTabs;
 use Filament\Tests\Fixtures\Resources\Posts\PostResource;
 use Filament\Tests\Fixtures\Resources\TicketMessages\TicketMessageResource;
 use Filament\Tests\Fixtures\Resources\Tickets\Pages\ListTickets;
+use Filament\Tests\Fixtures\Resources\Tickets\Pages\ListTicketsWithRelationshipInViewAction;
+use Filament\Tests\Fixtures\Resources\Tickets\Pages\ListTicketsWithRelationshipSavedInViewAction;
+use Filament\Tests\Fixtures\Resources\Tickets\Pages\ListTicketsWithRelationshipSaveOptInInViewAction;
 use Filament\Tests\Fixtures\Resources\Tickets\TicketResource;
 use Filament\Tests\Fixtures\Resources\Users\UserResource;
 use Filament\Tests\Panels\Resources\TestCase;
@@ -47,6 +56,23 @@ it('can list posts', function (): void {
 
     livewire(ListPosts::class)
         ->assertCanSeeTableRecords($posts);
+});
+
+it('uses no-panel filters without changing default queries or pagination updates', function (): void {
+    $published = Post::factory()->create(['is_published' => true]);
+    $draft = Post::factory()->create(['is_published' => false]);
+
+    livewire(ListPostsWithTabs::class)
+        ->assertSet('activeTab', 'published')
+        ->assertSeeHtml('role="group"')
+        ->assertDontSeeHtml('role="tabpanel"')
+        ->assertCanSeeTableRecords([$published])
+        ->assertCanNotSeeTableRecords([$draft])
+        ->call('setPage', 2)
+        ->set('activeTab', 'draft')
+        ->assertSet('paginators.page', 1)
+        ->assertCanSeeTableRecords([$draft])
+        ->assertCanNotSeeTableRecords([$published]);
 });
 
 it('can render post titles', function (): void {
@@ -107,14 +133,7 @@ it('can sort posts by author', function (): void {
 });
 
 it('can sort posts with default sort key', function (): void {
-
-    $faker = fake()->unique();
-    Post::factory()->count(10)->state(function () use ($faker) {
-        return [
-            'id' => $faker->randomDigit(),
-            'title' => 'Lorem Ipsum',
-        ];
-    })->create();
+    Post::factory()->count(10)->create(['title' => 'Lorem Ipsum']);
 
     $sortedAsc = Post::query()->orderBy('title')->orderBy('id')->get();
     $sortedDesc = Post::query()->orderByDesc('title')->orderByDesc('id')->get();
@@ -154,7 +173,17 @@ it('can filter posts by `is_published`', function (): void {
     livewire(ListPosts::class)
         ->assertCanSeeTableRecords($posts)
         ->filterTable('is_published')
+        ->assertDontSee('Clear filters')
         ->assertCanSeeTableRecords($posts->where('is_published', true))
+        ->assertCanNotSeeTableRecords($posts->where('is_published', false));
+});
+
+it('can customize the `filtersRemoveAllAction()` for resource tables', function (): void {
+    $posts = Post::factory()->count(10)->create();
+
+    livewire(ListPostsWithCustomFiltersRemoveAllAction::class)
+        ->filterTable('is_published')
+        ->assertSee('Clear filters')
         ->assertCanNotSeeTableRecords($posts->where('is_published', false));
 });
 
@@ -187,10 +216,8 @@ test('table actions will not interfere with database transactions on an error', 
         livewire(ListPosts::class)
             ->callTableAction('randomize_title', $post);
     } catch (Exception $exception) {
-        // This can be caught and handled somewhere else, code continues...
+        // Inspect the transaction level after the action exception is handled.
     }
-
-    // Original transaction level should be unaffected...
 
     expect(DB::transactionLevel())
         ->toBe($transactionLevel);
@@ -204,7 +231,7 @@ it('can render ticket messages page without a policy', function (): void {
         ->assertSuccessful();
 });
 
-it('can render tickets page if the policy viewAny returns true', function (): void {
+it('can render tickets page if the policy `viewAny()` returns `true`', function (): void {
     Ticket::factory(10)
         ->create();
 
@@ -214,7 +241,7 @@ it('can render tickets page if the policy viewAny returns true', function (): vo
         ->assertSuccessful();
 });
 
-it('can render tickets page if the policy viewAny returns an allowed response', function (): void {
+it('can render tickets page if the policy `viewAny()` returns an allowed response', function (): void {
     Ticket::factory(10)
         ->create();
 
@@ -238,7 +265,7 @@ it('does not render ticket messages page without a policy if authorization is st
     Filament::getCurrentOrDefaultPanel()->strictAuthorization(false);
 });
 
-it('does not render tickets page if the policy viewAny returns false', function (): void {
+it('does not render tickets page if the policy `viewAny()` returns `false`', function (): void {
     Ticket::factory(10)
         ->create();
 
@@ -250,7 +277,7 @@ it('does not render tickets page if the policy viewAny returns false', function 
     app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
 });
 
-it('does not render tickets page if the policy viewAny returns a denied response', function (): void {
+it('does not render tickets page if the policy `viewAny()` returns a denied response', function (): void {
     Ticket::factory(10)
         ->create();
 
@@ -261,6 +288,127 @@ it('does not render tickets page if the policy viewAny returns a denied response
 
     app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
 });
+
+describe('editable column authorization', function (): void {
+    afterEach(function (): void {
+        Filament::getCurrentOrDefaultPanel()->strictAuthorization(false);
+
+        app()->bind(TicketPolicy::class . '::update', fn (): bool => true);
+    });
+
+    it('does not automatically authorize resource editable columns, even in strict mode', function (bool $isAuthorizationStrict): void {
+        Filament::getCurrentOrDefaultPanel()->strictAuthorization($isAuthorizationStrict);
+
+        $ticket = Ticket::factory()->create();
+
+        app()->bind(TicketPolicy::class . '::update', fn (): bool => false);
+
+        livewire(ListTicketsWithEditableColumns::class)
+            ->assertTableColumnEnabled('is_open', $ticket)
+            ->call('updateTableColumnState', 'is_open', (string) $ticket->getKey(), true)
+            ->assertReturned(true);
+    })->with([false, true]);
+
+    it('can opt resource editable columns into authorization globally using `configureUsing()`', function (bool $isAuthorizationStrict): void {
+        Filament::getCurrentOrDefaultPanel()->strictAuthorization($isAuthorizationStrict);
+
+        $ticket = Ticket::factory()->create();
+
+        app()->bind(TicketPolicy::class . '::update', fn (): bool => false);
+
+        ToggleColumn::configureUsing(
+            fn (ToggleColumn $column) => $column->authorize(),
+            during: function () use ($ticket): void {
+                livewire(ListTicketsWithEditableColumns::class)
+                    ->assertTableColumnDisabled('is_open', $ticket)
+                    ->assertTableColumnEnabled('is_open_always_authorized', $ticket)
+                    ->call('updateTableColumnState', 'is_open', (string) $ticket->getKey(), true)
+                    ->assertReturned(['error' => __('filament-tables::table.columns.editable.unavailable')]);
+            },
+        );
+    })->with([false, true]);
+});
+
+it('re-authorizes resource access on Livewire updates after the initial mount', function (): void {
+    Ticket::factory(10)
+        ->create();
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
+
+    $component = livewire(ListTickets::class);
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => false);
+
+    $component
+        ->set('tableSearch', 'foo')
+        ->assertStatus(403);
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
+});
+
+it('re-authorizes resource access on Livewire updates when the policy returns a denied response after mount', function (): void {
+    Ticket::factory(10)
+        ->create();
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): Response => Response::allow());
+
+    $component = livewire(ListTickets::class);
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): Response => Response::deny());
+
+    $component
+        ->set('tableSearch', 'foo')
+        ->assertStatus(403);
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
+});
+
+it('does not save relationships when a view-only user calls the `ViewAction`', function (string $pageClass): void {
+    $ticket = Ticket::factory()->create();
+    $originalDepartment = Department::factory()->create();
+    $forgedDepartment = Department::factory()->create();
+    $ticket->departments()->attach($originalDepartment);
+
+    app()->bind(TicketPolicy::class . '::view', fn (): bool => true);
+    app()->bind(TicketPolicy::class . '::update', fn (): bool => false);
+
+    expect(TicketResource::canView($ticket))->toBeTrue()
+        ->and(TicketResource::canEdit($ticket))->toBeFalse();
+
+    livewire($pageClass)
+        ->call('mountAction', 'view', [], ['table' => true, 'recordKey' => (string) $ticket->getKey()])
+        ->set('mountedActions.0.data.departments', [$forgedDepartment->getKey()])
+        ->callMountedAction();
+
+    expect($ticket->fresh()->departments()->pluck('departments.id')->all())->toBe([$originalDepartment->getKey()]);
+})->with([
+    'default relationship saving' => ListTicketsWithRelationshipInViewAction::class,
+    'relationship saving opted in while disabled' => ListTicketsWithRelationshipSaveOptInInViewAction::class,
+    'relationship saved explicitly' => ListTicketsWithRelationshipSavedInViewAction::class,
+]);
+
+it('does not save forged field or relationship state when an `EditAction` schema is disabled', function (bool $isPublished): void {
+    $originalAuthor = User::factory()->create();
+    $submittedAuthor = User::factory()->create();
+    $post = Post::factory()->create([
+        'title' => 'Original title',
+        'is_published' => $isPublished,
+        'author_id' => $originalAuthor->getKey(),
+    ]);
+
+    livewire(ListPostsWithDisabledEditAction::class)
+        ->call('mountAction', 'edit', [], ['table' => true, 'recordKey' => (string) $post->getKey()])
+        ->set('mountedActions.0.data.title', 'Changed title')
+        ->set('mountedActions.0.data.author_id', $submittedAuthor->getKey())
+        ->callMountedAction();
+
+    expect($post->fresh())
+        ->title->toBe($isPublished ? 'Original title' : 'Changed title')
+        ->author_id->toBe(($isPublished ? $originalAuthor : $submittedAuthor)->getKey());
+})->with([
+    'disabled schema' => true,
+    'enabled schema' => false,
+]);
 
 it('renders actions based on policy', function (string $action, string $policyMethod, bool | Response $policyResult, bool $isVisible, bool $isSoftDeleted = false, bool $isTableAction = false, bool $isBulkAction = false): void {
     app()->bind(TicketPolicy::class . '::' . $policyMethod, fn (): bool | Response => $policyResult);
@@ -275,7 +423,7 @@ it('renders actions based on policy', function (string $action, string $policyMe
 
         livewire(ListTickets::class)
             ->filterTable('trashed', $isSoftDeleted ? 1 : null)
-            ->{$isVisible ? 'assertActionVisible' : 'assertActionHidden'}(TestAction::make($action)->table($ticket)->bulk($isBulkAction));
+            ->{$isVisible ? 'assertActionVisible' : 'assertActionHidden'}(TestAction::make($action)->table($isBulkAction ? true : $ticket)->bulk($isBulkAction));
     } else {
         livewire(ListTickets::class)
             ->{$isVisible ? 'assertActionVisible' : 'assertActionHidden'}($action);
@@ -324,3 +472,48 @@ it('renders actions based on policy', function (string $action, string $policyMe
     'restore bulk action with policy returning false' => fn (): array => [RestoreBulkAction::class, 'restoreAny', false, false, true, true, true],
     'restore bulk action with policy returning denied response' => fn (): array => [RestoreBulkAction::class, 'restoreAny', Response::deny(), false, true, true, true],
 ]);
+
+it('can access record for action after record no longer matches tab query', function (): void {
+    $post = Post::factory()->create(['is_published' => true]);
+
+    livewire(ListPostsWithTabs::class)
+        ->set('activeTab', 'published')
+        ->assertCanSeeTableRecords([$post])
+        ->tap(fn () => $post->update(['is_published' => false]))
+        ->callAction(TestAction::make(DeleteAction::class)->table($post));
+
+    expect($post->fresh()->trashed())->toBeTrue();
+});
+
+it('cannot access record for action after record no longer matches tab without `excludeQueryWhenResolvingRecord()`', function (): void {
+    $post = Post::factory()->create(['is_published' => true]);
+
+    livewire(ListPostsWithTabs::class)
+        ->set('shouldExcludeTabQueryWhenResolvingRecord', false)
+        ->set('activeTab', 'published')
+        ->assertCanSeeTableRecords([$post])
+        ->tap(fn () => $post->update(['is_published' => false]));
+
+    livewire(ListPostsWithTabs::class)
+        ->set('shouldExcludeTabQueryWhenResolvingRecord', false)
+        ->set('activeTab', 'published')
+        ->mountTableAction(DeleteAction::class, $post)
+        ->assertTableActionNotMounted(DeleteAction::class);
+});
+
+class ListTicketsWithEditableColumns extends ListTickets
+{
+    public function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                ToggleColumn::make('is_open')
+                    ->getStateUsing(fn (): bool => false)
+                    ->updateStateUsing(fn (): bool => true),
+                ToggleColumn::make('is_open_always_authorized')
+                    ->getStateUsing(fn (): bool => false)
+                    ->updateStateUsing(fn (): bool => true)
+                    ->authorize(true),
+            ]);
+    }
+}

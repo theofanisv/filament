@@ -36,11 +36,24 @@ livewire(ListInvoices::class)
     ->callAction(TestAction::make('send')->table($invoice));
 
 livewire(ListInvoices::class)
-    ->assertActionVisible(TestAction::make('send')->table($invoice))
+    ->assertActionVisible(TestAction::make('send')->table($invoice));
 
 livewire(ListInvoices::class)
-    ->assertActionExists(TestAction::make('send')->table($invoice))
+    ->assertActionExists(TestAction::make('send')->table($invoice));
 ```
+
+### Testing the order of table record actions
+
+To check that record actions exist in a particular order, use `assertTableRecordActionsExistInOrder()`:
+
+```php
+use function Pest\Livewire\livewire;
+
+livewire(ListInvoices::class)
+    ->assertTableRecordActionsExistInOrder(['edit', 'send']);
+```
+
+This checks record actions, including actions inside groups, but not header or bulk actions. Other record actions may appear before, between, or after the actions you specify.
 
 ### Testing table header actions
 
@@ -54,10 +67,10 @@ livewire(ListInvoices::class)
     ->callAction(TestAction::make('create')->table());
 
 livewire(ListInvoices::class)
-    ->assertActionVisible(TestAction::make('create')->table())
+    ->assertActionVisible(TestAction::make('create')->table());
 
 livewire(ListInvoices::class)
-    ->assertActionExists(TestAction::make('create')->table())
+    ->assertActionExists(TestAction::make('create')->table());
 ```
 
 ### Testing table bulk actions
@@ -75,10 +88,10 @@ livewire(ListInvoices::class)
     ->callAction(TestAction::make('send')->table()->bulk());
 
 livewire(ListInvoices::class)
-    ->assertActionVisible(TestAction::make('send')->table()->bulk())
+    ->assertActionVisible(TestAction::make('send')->table()->bulk());
 
 livewire(ListInvoices::class)
-    ->assertActionExists(TestAction::make('send')->table()->bulk())
+    ->assertActionExists(TestAction::make('send')->table()->bulk());
 ```
 
 ## Testing actions in a schema
@@ -95,15 +108,15 @@ livewire(EditInvoice::class)
     ->callAction(TestAction::make('send')->schemaComponent('customer_id'));
 
 livewire(EditInvoice::class)
-    ->assertActionVisible(TestAction::make('send')->schemaComponent('customer_id'))
+    ->assertActionVisible(TestAction::make('send')->schemaComponent('customer_id'));
 
 livewire(EditInvoice::class)
-    ->assertActionExists(TestAction::make('send')->schemaComponent('customer_id'))
+    ->assertActionExists(TestAction::make('send')->schemaComponent('customer_id'));
 ```
 
 ## Testing actions inside another action's schema / form
 
-If an action belongs to a component in another action's `schema()` (or `form()`), for example, if it is in the `belowContent()` method of a form field in an action modal, you can use the `TestAction` object with the `schemaComponent()` method. This object receives the name of the action you want to test and replaces the name of the action in any testing method you want to use. You should pass an array of `TestAction` objects in order, for example:
+If an action belongs to a component in another action's `schema()`, for example, if it is in the `belowContent()` method of a form field in an action modal, you can use the `TestAction` object with the `schemaComponent()` method. This object receives the name of the action you want to test and replaces the name of the action in any testing method you want to use. You should pass an array of `TestAction` objects in order, for example:
 
 ```php
 use Filament\Actions\Testing\TestAction;
@@ -132,7 +145,7 @@ livewire(ManageInvoices::class)
 
 ## Testing resource `getFormActions()`
 
-For details on how to test custom actions in the `getFormActions()` of a resource page, refer to the [Testing resources](testing-resources#testing-create--edit-page-getformactions) documentation.
+For details on how to test custom actions in the `getFormActions()` of a resource page, refer to the [Testing resources](testing-resources#testing-create-edit-page-getformactions) documentation.
 
 ## Testing forms in action modals
 
@@ -172,7 +185,7 @@ it('can send invoices', function () {
         ->mountAction('send')
         ->fillForm([
             'email' => $email = fake()->email(),
-        ])
+        ]);
 });
 ```
 
@@ -314,21 +327,6 @@ it('can only print a sent invoice', function () {
 });
 ```
 
-To ensure sets of actions exist in the correct order, you can use `assertActionsExistInOrder()`:
-
-```php
-use function Pest\Livewire\livewire;
-
-it('can have actions in order', function () {
-    $invoice = Invoice::factory()->create();
-
-    livewire(EditInvoice::class, [
-        'invoice' => $invoice,
-    ])
-        ->assertActionsExistInOrder(['send', 'export']);
-});
-```
-
 To check if an action is hidden to a user, you can use the `assertActionHidden()` method:
 
 ```php
@@ -433,10 +431,10 @@ livewire(ManageInvoices::class)
     ->callAction(TestAction::make('send')->arguments(['invoice' => $invoice->getKey()]));
 
 livewire(ManageInvoices::class)
-    ->assertActionVisible(TestAction::make('send')->arguments(['invoice' => $invoice->getKey()]))
+    ->assertActionVisible(TestAction::make('send')->arguments(['invoice' => $invoice->getKey()]));
 
 livewire(ManageInvoices::class)
-    ->assertActionExists(TestAction::make('send')->arguments(['invoice' => $invoice->getKey()]))
+    ->assertActionExists(TestAction::make('send')->arguments(['invoice' => $invoice->getKey()]));
 ```
 
 ## Testing if an action has been halted
@@ -499,7 +497,7 @@ use function Pest\Livewire\livewire;
 $invoice = Invoice::factory()->create();
 
 livewire(ManageInvoices::class)
-    ->callAction(TestAction::make(SendInvoiceAction::class)->table($invoice);
+    ->callAction(TestAction::make(SendInvoiceAction::class)->table($invoice));
 ```
 
 If you have an action class that extends the `Action` class, you can add a `getDefaultName()` static method to the class, which will be used to discover the name of the action. It also allows users to omit the name of the action from the `make()` method when instantiating it. For example:

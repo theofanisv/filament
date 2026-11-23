@@ -2,7 +2,7 @@
 
 return [
 
-    'label' => 'Query builder',
+    'label' => 'Tvůrce dotazů',
 
     'form' => [
 
@@ -14,8 +14,13 @@ return [
 
             'label' => 'Skupiny',
 
+            'group' => [
+                'label' => 'Skupina',
+            ],
+
             'block' => [
                 'label' => 'Disjunkce (NEBO)',
+                'picker_group' => 'Logika',
                 'or' => 'NEBO',
             ],
 
@@ -34,6 +39,8 @@ return [
     ],
 
     'no_rules' => '(Žádná pravidla)',
+
+    'max_rules_reached_tooltip' => 'Dosáhli jste maximálního počtu pravidel (:count).',
 
     'item_separators' => [
         'and' => 'A',
@@ -146,6 +153,50 @@ return [
 
             ],
 
+            'unit_labels' => [
+                'second' => 'Sekundy',
+                'minute' => 'Minuty',
+                'hour' => 'Hodiny',
+                'day' => 'Dny',
+                'week' => 'Týdny',
+                'month' => 'Měsíce',
+                'quarter' => 'Čtvrtletí',
+                'year' => 'Roky',
+            ],
+
+            'presets' => [
+                'past_decade' => 'Posledních 10 let',
+                'past_5_years' => 'Posledních 5 let',
+                'past_2_years' => 'Poslední 2 roky',
+                'past_year' => 'Poslední rok',
+                'past_6_months' => 'Posledních 6 měsíců',
+                'past_quarter' => 'Poslední čtvrtletí',
+                'past_month' => 'Poslední měsíc',
+                'past_2_weeks' => 'Poslední 2 týdny',
+                'past_week' => 'Poslední týden',
+                'past_hour' => 'Poslední hodina',
+                'past_minute' => 'Poslední minuta',
+                'this_decade' => 'Toto desetiletí',
+                'this_year' => 'Tento rok',
+                'this_quarter' => 'Toto čtvrtletí',
+                'this_month' => 'Tento měsíc',
+                'today' => 'Dnes',
+                'this_hour' => 'Tato hodina',
+                'this_minute' => 'Tato minuta',
+                'next_minute' => 'Příští minuta',
+                'next_hour' => 'Příští hodina',
+                'next_week' => 'Příští týden',
+                'next_2_weeks' => 'Příští 2 týdny',
+                'next_month' => 'Příští měsíc',
+                'next_quarter' => 'Příští čtvrtletí',
+                'next_6_months' => 'Příštích 6 měsíců',
+                'next_year' => 'Příští rok',
+                'next_2_years' => 'Příští 2 roky',
+                'next_5_years' => 'Příštích 5 let',
+                'next_decade' => 'Příštích 10 let',
+                'custom' => 'Vlastní',
+            ],
+
             'form' => [
 
                 'date' => [
@@ -158,6 +209,34 @@ return [
 
                 'year' => [
                     'label' => 'Rok',
+                ],
+
+                'mode' => [
+                    'label' => 'Typ data',
+                    'options' => [
+                        'absolute' => 'Konkrétní datum',
+                        'relative' => 'Posuvné okno',
+                    ],
+                ],
+
+                'preset' => [
+                    'label' => 'Časový rozsah',
+                ],
+
+                'relative_value' => [
+                    'label' => 'Kolik',
+                ],
+
+                'relative_unit' => [
+                    'label' => 'Jednotka času',
+                ],
+
+                'tense' => [
+                    'label' => 'Čas',
+                    'options' => [
+                        'past' => 'Minulost',
+                        'future' => 'Budoucnost',
+                    ],
                 ],
 
             ],
@@ -183,7 +262,7 @@ return [
             'is_max' => [
 
                 'label' => [
-                    'direct' => 'Je maximální',
+                    'direct' => 'Je nejvýše',
                     'inverse' => 'Je větší než',
                 ],
 
@@ -197,7 +276,7 @@ return [
             'is_min' => [
 
                 'label' => [
-                    'direct' => 'Je minimální',
+                    'direct' => 'Je nejméně',
                     'inverse' => 'Je menší než',
                 ],
 

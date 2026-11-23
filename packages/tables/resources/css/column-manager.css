@@ -1,9 +1,5 @@
 .fi-ta-col-manager {
-    @apply grid gap-y-4;
-
-    & .fi-ta-col-manager-ctn {
-        @apply grid gap-4;
-    }
+    @apply grid gap-4;
 
     & .fi-ta-col-manager-header {
         @apply flex items-center justify-between;
@@ -15,6 +11,11 @@
 
     & .fi-ta-col-manager-items {
         @apply -mt-6 gap-x-6;
+    }
+
+    & .fi-ta-col-manager-reorder-controls,
+    & .fi-ta-col-manager-status {
+        @apply sr-only;
     }
 
     & .fi-ta-col-manager-item {

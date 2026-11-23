@@ -2,8 +2,42 @@
 
 return [
 
-    'text_entry' => [
-        'more_list_items' => '还有 :count 条记录',
+    'entries' => [
+
+        'text' => [
+
+            'actions' => [
+                'collapse_list' => '收起 :count 项',
+                'expand_list' => '展开 :count 项',
+            ],
+
+            'more_list_items' => '还有 :count 项',
+
+        ],
+
+        'icon' => [
+            'true' => '是',
+            'false' => '否',
+        ],
+
+        'key_value' => [
+
+            'columns' => [
+
+                'key' => [
+                    'label' => '键名',
+                ],
+
+                'value' => [
+                    'label' => '值',
+                ],
+
+            ],
+
+            'placeholder' => '暂无条目',
+
+        ],
+
     ],
 
 ];

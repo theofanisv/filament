@@ -2,6 +2,7 @@
 title: Dropdown Blade component
 ---
 
+
 ## Introduction
 
 The dropdown component allows you to render a dropdown menu with a button that triggers it:
@@ -13,22 +14,24 @@ The dropdown component allows you to render a dropdown menu with a button that t
             More actions
         </x-filament::button>
     </x-slot>
-    
+
     <x-filament::dropdown.list>
         <x-filament::dropdown.list.item wire:click="openViewModal">
             View
         </x-filament::dropdown.list.item>
-        
+
         <x-filament::dropdown.list.item wire:click="openEditModal">
             Edit
         </x-filament::dropdown.list.item>
-        
+
         <x-filament::dropdown.list.item wire:click="openDeleteModal">
             Delete
         </x-filament::dropdown.list.item>
     </x-filament::dropdown.list>
 </x-filament::dropdown>
 ```
+
+<AutoScreenshot name="components/dropdown/simple" alt="A dropdown menu with action items" />
 
 ## Using a dropdown item as an anchor link
 
@@ -42,6 +45,9 @@ By default, a dropdown item's underlying HTML tag is `<button>`. You can change 
     Filament
 </x-filament::dropdown.list.item>
 ```
+
+> [!CAUTION]
+> If you are passing user-controlled data to the `href` attribute, validate its scheme using [`Str::sanitizeUrl()`](../advanced/security#validating-user-input) before rendering it. HTML escaping alone does not prevent a `javascript:` URL from executing code when clicked.
 
 ## Changing the color of a dropdown item
 
@@ -69,6 +75,8 @@ By default, the color of a dropdown item is "gray". You can change it to be `dan
 </x-filament::dropdown.list.item>
 ```
 
+<AutoScreenshot name="components/dropdown/colors" alt="Dropdown items in different colors" />
+
 ## Adding an icon to a dropdown item
 
 You can add an [icon](../styling/icons) to a dropdown item by using the `icon` attribute:
@@ -78,6 +86,8 @@ You can add an [icon](../styling/icons) to a dropdown item by using the `icon` a
     Edit
 </x-filament::dropdown.list.item>
 ```
+
+<AutoScreenshot name="components/dropdown/icons" alt="Dropdown items with icons" />
 
 ### Changing the icon color of a dropdown item
 
@@ -105,6 +115,8 @@ By default, the icon color uses the [same color as the item itself](#changing-th
 </x-filament::dropdown.list.item>
 ```
 
+<AutoScreenshot name="components/dropdown/icon-colors" alt="Dropdown items with different icon colors" />
+
 ## Adding an image to a dropdown item
 
 You can add a circular image to a dropdown item by using the `image` attribute:
@@ -114,6 +126,8 @@ You can add a circular image to a dropdown item by using the `image` attribute:
     Dan Harrin
 </x-filament::dropdown.list.item>
 ```
+
+<AutoScreenshot name="components/dropdown/image" alt="Dropdown items with images" />
 
 ## Adding a badge to a dropdown item
 
@@ -134,12 +148,14 @@ You can [change the color](badge#changing-the-color-of-the-badge) of the badge u
 ```blade
 <x-filament::dropdown.list.item badge-color="danger">
     Mark notifications as read
-    
+
     <x-slot name="badge">
         3
     </x-slot>
 </x-filament::dropdown.list.item>
 ```
+
+<AutoScreenshot name="components/dropdown/badge" alt="Dropdown items with badges" />
 
 ## Setting the placement of a dropdown
 
@@ -161,6 +177,8 @@ The dropdown may be set to a width by using the `width` attribute. Options corre
 </x-filament::dropdown>
 ```
 
+<AutoScreenshot name="components/dropdown/width" alt="A dropdown with a custom width" />
+
 ## Controlling the maximum height of a dropdown
 
 The dropdown content can have a maximum height using the `max-height` attribute, so that it scrolls. You can pass a [CSS length](https://developer.mozilla.org/en-US/docs/Web/CSS/length):
@@ -170,3 +188,27 @@ The dropdown content can have a maximum height using the `max-height` attribute,
     {{-- Dropdown items --}}
 </x-filament::dropdown>
 ```
+
+<AutoScreenshot name="components/dropdown/max-height" alt="A dropdown with a maximum height" />
+
+## Displaying content other than a menu
+
+If your dropdown contains form fields or other content that is not an action menu, set `:menu="false"` to preserve the content's native keyboard interactions:
+
+```blade
+<x-filament::dropdown :menu="false">
+    <x-slot name="trigger">
+        <x-filament::button>
+            Edit notes
+        </x-filament::button>
+    </x-slot>
+
+    <label for="dropdown-notes">Notes</label>
+
+    <x-filament::input.wrapper>
+        <x-filament::input id="dropdown-notes" wire:model="notes" />
+    </x-filament::input.wrapper>
+</x-filament::dropdown>
+```
+
+Use form components or native buttons and links in these popups, rather than `dropdown.list.item`, which renders menu-item semantics.

@@ -3,6 +3,7 @@
 namespace Filament\Resources\Resource\Concerns;
 
 use Filament\Actions\Action;
+use Filament\Facades\Filament;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Connection;
@@ -10,10 +11,16 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use ReflectionProperty;
 
+use function Filament\Support\apply_search_constraint;
 use function Filament\Support\generate_search_column_expression;
+use function Filament\Support\generate_search_pattern;
 use function Filament\Support\generate_search_term_expression;
 
+/**
+ * @template TModel of Model = Model
+ */
 trait HasGlobalSearch
 {
     protected static int $globalSearchResultsLimit = 50;
@@ -28,7 +35,18 @@ trait HasGlobalSearch
 
     public static function canGloballySearch(): bool
     {
-        return static::$isGloballySearchable && count(static::getGloballySearchableAttributes()) && static::canAccess();
+        $isGloballySearchable = static::$isGloballySearchable;
+
+        if (
+            $isGloballySearchable &&
+            Filament::getCurrentOrDefaultPanel()?->isGlobalSearchResourceOptIn()
+        ) {
+            $isGloballySearchable = (new ReflectionProperty(static::class, 'isGloballySearchable'))
+                ->getDeclaringClass()
+                ->getName() === static::class;
+        }
+
+        return $isGloballySearchable && count(static::getGloballySearchableAttributes()) && static::canAccess();
     }
 
     /**
@@ -160,16 +178,18 @@ trait HasGlobalSearch
         $search = generate_search_term_expression($search, static::isGlobalSearchForcedCaseInsensitive(), $databaseConnection);
 
         if (! static::shouldSplitGlobalSearchTerms()) {
-            $isFirst = true;
+            $query->where(function (Builder $query) use ($search): void {
+                $isFirst = true;
 
-            foreach (static::getGloballySearchableAttributes() as $attributes) {
-                static::applyGlobalSearchAttributeConstraint(
-                    query: $query,
-                    search: $search,
-                    searchAttributes: Arr::wrap($attributes),
-                    isFirst: $isFirst,
-                );
-            }
+                foreach (static::getGloballySearchableAttributes() as $attributes) {
+                    static::applyGlobalSearchAttributeConstraint(
+                        query: $query,
+                        search: $search,
+                        searchAttributes: Arr::wrap($attributes),
+                        isFirst: $isFirst,
+                    );
+                }
+            });
 
             return;
         }
@@ -201,6 +221,7 @@ trait HasGlobalSearch
     protected static function applyGlobalSearchAttributeConstraint(Builder $query, string $search, array $searchAttributes, bool &$isFirst): Builder
     {
         $isForcedCaseInsensitive = static::isGlobalSearchForcedCaseInsensitive();
+        $searchPattern = generate_search_pattern($search, hasLeadingWildcard: true, hasTrailingWildcard: true);
 
         /** @var Connection $databaseConnection */
         $databaseConnection = $query->getConnection();
@@ -210,20 +231,21 @@ trait HasGlobalSearch
 
             $query->when(
                 str($searchAttribute)->contains('.'),
-                function (Builder $query) use ($databaseConnection, $isForcedCaseInsensitive, $searchAttribute, $search, $whereClause): Builder {
+                function (Builder $query) use ($databaseConnection, $isForcedCaseInsensitive, $searchAttribute, $searchPattern, $whereClause): Builder {
                     return $query->{"{$whereClause}Has"}(
                         (string) str($searchAttribute)->beforeLast('.'),
-                        fn (Builder $query) => $query->where(
+                        fn (Builder $query): Builder => apply_search_constraint(
+                            $query,
                             generate_search_column_expression($query->qualifyColumn((string) str($searchAttribute)->afterLast('.')), $isForcedCaseInsensitive, $databaseConnection),
-                            'like',
-                            "%{$search}%",
+                            $searchPattern,
                         ),
                     );
                 },
-                fn (Builder $query) => $query->{$whereClause}(
+                fn (Builder $query): Builder => apply_search_constraint(
+                    $query,
                     generate_search_column_expression($query->qualifyColumn($searchAttribute), $isForcedCaseInsensitive, $databaseConnection),
-                    'like',
-                    "%{$search}%",
+                    $searchPattern,
+                    ($whereClause === 'where') ? 'and' : 'or',
                 ),
             );
 
@@ -233,6 +255,9 @@ trait HasGlobalSearch
         return $query;
     }
 
+    /**
+     * @return Builder<TModel>
+     */
     public static function getGlobalSearchEloquentQuery(): Builder
     {
         return static::getEloquentQuery();

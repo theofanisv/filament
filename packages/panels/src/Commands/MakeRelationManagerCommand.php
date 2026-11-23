@@ -279,6 +279,8 @@ class MakeRelationManagerCommand extends Command
                     $this->configureIsSoftDeletable();
 
                     $this->configureRelationshipType();
+                } elseif ($this->option('attach') || $this->option('associate')) {
+                    $this->configureRelationshipType();
                 }
             }
 
@@ -435,7 +437,7 @@ class MakeRelationManagerCommand extends Command
             //
         }
 
-        $this->askForRelatedModel($this->relationship);
+        $this->relatedModelFqn = $this->askForRelatedModel($this->relationship);
     }
 
     protected function configureRecordTitleAttributeIfNotAlready(): void
@@ -499,7 +501,7 @@ class MakeRelationManagerCommand extends Command
 
     protected function configureIsSoftDeletable(): void
     {
-        $this->isSoftDeletable = $this->option('soft-deletes') || ((static::$shouldCheckModelsForSoftDeletes && filled($this->relatedModelFqn))
+        $this->isSoftDeletable = $this->option('soft-deletes') || ((static::$shouldCheckModelsForSoftDeletes && filled($this->relatedModelFqn) && class_exists($this->relatedModelFqn))
                 ? in_array(SoftDeletes::class, class_uses_recursive($this->relatedModelFqn))
                 : confirm(
                     label: 'Does the model use soft-deletes?',
@@ -553,6 +555,7 @@ class MakeRelationManagerCommand extends Command
                 MorphToMany::class => 'MorphToMany',
                 'other' => 'Other',
             ],
+            default: $this->input->isInteractive() ? null : 'other',
         );
 
         if ($this->relationshipType === 'other') {

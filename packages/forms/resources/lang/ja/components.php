@@ -104,9 +104,19 @@ return [
 
         ],
 
+        'block_picker' => [
+
+            'no_search_results_message' => '検索条件に一致するブロックはありません。',
+
+            'search_prompt' => 'ブロックを検索...',
+
+        ],
+
     ],
 
     'checkbox_list' => [
+
+        'required_description' => '少なくとも1つのオプションを選択してください。',
 
         'actions' => [
 
@@ -122,9 +132,53 @@ return [
 
     ],
 
+    'color_picker' => [
+
+        'panel_label' => 'カラーピッカー',
+
+    ],
+
+    'date_time_picker' => [
+
+        'month_select' => [
+            'label' => '月',
+        ],
+
+        'year_input' => [
+            'label' => '年',
+        ],
+
+        'hour_input' => [
+            'label' => '時',
+        ],
+
+        'minute_input' => [
+            'label' => '分',
+        ],
+
+        'second_input' => [
+            'label' => '秒',
+        ],
+
+    ],
+
     'file_upload' => [
 
+        'actions' => [
+
+            'download' => [
+                'label' => 'ダウンロード',
+            ],
+
+            'open' => [
+                'label' => '新しいタブで開く',
+            ],
+
+        ],
+
         'editor' => [
+
+            'label' => '画像エディター',
 
             'actions' => [
 
@@ -268,6 +322,18 @@ return [
 
         ],
 
+        'columns' => [
+
+            'actions' => [
+                'label' => 'アクション',
+            ],
+
+            'reorder' => [
+                'label' => '並べ替え',
+            ],
+
+        ],
+
         'fields' => [
 
             'key' => [
@@ -338,6 +404,18 @@ return [
     ],
 
     'repeater' => [
+
+        'columns' => [
+
+            'actions' => [
+                'label' => 'アクション',
+            ],
+
+            'reorder' => [
+                'label' => '並べ替え',
+            ],
+
+        ],
 
         'actions' => [
 
@@ -425,6 +503,10 @@ return [
 
                 ],
 
+            ],
+
+            'close_panel' => [
+                'label' => 'パネルを閉じる',
             ],
 
             'custom_block' => [
@@ -548,6 +630,35 @@ return [
 
                         'color' => [
                             'label' => '色',
+
+                            'options' => [
+                                'slate' => 'スレート',
+                                'gray' => 'グレー',
+                                'zinc' => 'ジンク',
+                                'neutral' => 'ニュートラル',
+                                'stone' => 'ストーン',
+                                'mauve' => 'モーブ',
+                                'olive' => 'オリーブ',
+                                'mist' => 'ミスト',
+                                'taupe' => 'トープ',
+                                'red' => 'レッド',
+                                'orange' => 'オレンジ',
+                                'amber' => 'アンバー',
+                                'yellow' => 'イエロー',
+                                'lime' => 'ライム',
+                                'green' => 'グリーン',
+                                'emerald' => 'エメラルド',
+                                'teal' => 'ティール',
+                                'cyan' => 'シアン',
+                                'sky' => 'スカイ',
+                                'blue' => 'ブルー',
+                                'indigo' => 'インディゴ',
+                                'violet' => 'バイオレット',
+                                'purple' => 'パープル',
+                                'fuchsia' => 'フクシア',
+                                'pink' => 'ピンク',
+                                'rose' => 'ローズ',
+                            ],
                         ],
 
                         'custom_color' => [
@@ -562,11 +673,44 @@ return [
 
         ],
 
+        'custom_blocks' => [
+
+            'actions' => [
+
+                'delete' => [
+                    'label' => 'ブロックを削除',
+                ],
+
+                'edit' => [
+                    'label' => 'ブロックを編集',
+                ],
+
+            ],
+
+            'no_search_results_message' => '検索条件に一致するブロックはありません。',
+
+            'search_label' => 'ブロックを検索',
+
+            'search_prompt' => 'ブロックを検索...',
+
+        ],
+
         'file_attachments_accepted_file_types_message' => 'アップロードできるファイルの種類は :values です。',
 
         'file_attachments_max_size_message' => 'アップロードできるファイルの最大サイズは :max キロバイトです。',
 
         'no_merge_tag_search_results_message' => '一致するマージタグがありません。',
+
+        'mentions' => [
+            'no_options_message' => '利用可能なオプションはありません。',
+            'no_search_results_message' => '検索結果はありませんでした。',
+            'search_prompt' => '検索キーワードを入力...',
+            'searching_message' => '検索中...',
+        ],
+
+        'toolbar' => [
+            'label' => 'エディターツールバー',
+        ],
 
         'tools' => [
             'align_center' => '中央揃え',
@@ -583,8 +727,11 @@ return [
             'custom_blocks' => 'ブロック',
             'details' => '詳細',
             'h1' => 'タイトル',
-            'h2' => '見出し',
-            'h3' => '小見出し',
+            'h2' => '見出し 2',
+            'h3' => '見出し 3',
+            'h4' => '見出し 4',
+            'h5' => '見出し 5',
+            'h6' => '見出し 6',
             'grid' => 'グリッド',
             'grid_delete' => 'グリッドを削除',
             'highlight' => 'ハイライト',
@@ -594,6 +741,7 @@ return [
             'link' => 'リンク',
             'merge_tags' => 'マージタグ',
             'ordered_list' => '番号付きリスト',
+            'paragraph' => '段落',
             'redo' => 'やり直し',
             'small' => '小文字',
             'strike' => '取り消し線',
@@ -610,6 +758,7 @@ return [
             'table_merge_cells' => 'セルを結合',
             'table_split_cell' => 'セルを分割',
             'table_toggle_header_row' => 'ヘッダー行を切り替え',
+            'table_toggle_header_cell' => 'ヘッダーセルを切り替え',
             'text_color' => '文字色',
             'underline' => '下線',
             'undo' => '元に戻す',
@@ -622,6 +771,10 @@ return [
     'select' => [
 
         'actions' => [
+
+            'clear' => [
+                'label' => '選択を解除',
+            ],
 
             'create_option' => [
 
@@ -667,6 +820,10 @@ return [
 
             ],
 
+            'remove_option' => [
+                'label' => ':labelを削除',
+            ],
+
         ],
 
         'boolean' => [
@@ -676,20 +833,38 @@ return [
 
         'loading_message' => '読み込み中...',
 
-        'max_items_message' => ':count個のみ選択されてます',
+        'max_items_message' => ':count個のみ選択されてます。',
 
-        'no_search_results_message' => '検索結果はありませんでした',
+        'no_options_message' => '利用可能なオプションはありませんでした。',
+
+        'no_search_results_message' => '検索結果はありませんでした。',
 
         'placeholder' => 'オプションを選択',
 
         'searching_message' => '検索中...',
+
+        'search_label' => '検索',
 
         'search_prompt' => '検索キーワードを入力...',
 
     ],
 
     'tags_input' => [
+
+        'actions' => [
+
+            'delete' => [
+                'label' => '削除',
+            ],
+
+        ],
+
         'placeholder' => '新規タグ',
+
+        'tag_added' => ':tagを追加しました',
+
+        'tag_removed' => ':tagを削除しました',
+
     ],
 
     'text_input' => [
@@ -714,6 +889,8 @@ return [
     ],
 
     'toggle_buttons' => [
+
+        'required_description' => '少なくとも1つのオプションを選択してください。',
 
         'boolean' => [
             'true' => 'はい',

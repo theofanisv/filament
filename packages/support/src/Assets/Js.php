@@ -97,6 +97,9 @@ class Js extends Asset
      */
     public function extraAttributes(array $attributes): static
     {
+        // Security: Attribute values are not escaped when rendered. Never
+        // pass unsanitized user input as attribute names or values.
+
         $this->extraAttributes = $attributes;
 
         return $this;
@@ -145,6 +148,9 @@ class Js extends Asset
         return $this->extraAttributes;
     }
 
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
     public function getExtraAttributesHtml(): string
     {
         $attributes = '';

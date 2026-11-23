@@ -41,9 +41,10 @@ class UserResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('name'),
                 Tables\Columns\TextColumn::make('email'),
-                Tables\Columns\TextColumn::make('posts_exists')
+                // SQL Server does not support Laravel's `withExists()` projection.
+                ...(app(User::class)->getConnection()->getDriverName() === 'sqlsrv' ? [] : [Tables\Columns\TextColumn::make('posts_exists')
                     ->exists('posts')
-                    ->label('Has Posts'),
+                    ->label('Has Posts')]),
                 Tables\Columns\TextColumn::make('posts_count')
                     ->counts('posts')
                     ->label('# Posts'),
@@ -76,6 +77,8 @@ class UserResource extends Resource
             'create' => Pages\CreateUser::route('/create'),
             'view' => Pages\ViewUser::route('/{record}'),
             'edit' => Pages\EditUser::route('/{record}/edit'),
+            'posts' => Pages\ManageUserPostsByRelationshipName::route('/{record}/posts'),
+            'managePosts' => Pages\ManageUserPosts::route('/{record}/manage-posts'),
         ];
     }
 }

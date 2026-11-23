@@ -1,16 +1,14 @@
 ---
 title: Rendering an infolist in a Blade view
 ---
-import Aside from "@components/Aside.astro"
 
-<Aside variant="warning">
-    Before proceeding, make sure `filament/infolists` is installed in your project. You can check by running:
-
-    ```bash
-    composer show filament/infolists
-    ```
-    If it's not installed, consult the [installation guide](../introduction/installation#installing-the-individual-components) and configure the **individual components** according to the instructions.
-</Aside>
+> [!WARNING]
+> Before proceeding, make sure `filament/infolists` is installed in your project. You can check by running:
+>
+> ```bash
+> composer show filament/infolists
+> ```
+> If it's not installed, consult the [installation guide](../introduction/installation#installing-the-individual-components) and configure the **individual components** according to the instructions.
 
 ## Setting up the Livewire component
 
@@ -39,12 +37,14 @@ You must use the `InteractsWithSchemas` trait, and implement the `HasSchemas` in
 
 ```php
 use Filament\Schemas\Concerns\InteractsWithSchemas;
+use Filament\Schemas\Concerns\RestrictsFileUploadsToSchemaComponents;
 use Filament\Schemas\Contracts\HasSchemas;
 use Livewire\Component;
 
 class ViewProduct extends Component implements HasSchemas
 {
     use InteractsWithSchemas;
+    use RestrictsFileUploadsToSchemaComponents;
 
     // ...
 }
@@ -67,25 +67,27 @@ public function productInfolist(Schema $schema): Schema
 }
 ```
 
+> [!WARNING]
+> `$product` is a model property on a regular Livewire component. Filament does not re-query or authorize it on later requests. Re-query and authorize the product before passing it to the infolist, including any tenant or ownership restrictions your application requires. See [Eloquent model restoration in Livewire](../advanced/security#understanding-eloquent-model-restoration-in-livewire) for more information.
+
 Finally, render the infolist in the Livewire component's view:
 
 ```blade
 {{ $this->productInfolist }}
 ```
 
-<Aside variant="info">
-    `filament/infolists` also includes the following packages:
-
-    - `filament/actions`
-    - `filament/schemas`
-    - `filament/support`
-    
-    These packages allow you to use their components within Livewire components.
-    For example, if your infolist uses [Actions](../actions), remember to implement the `HasActions` interface and use the `InteractsWithActions` trait on your Livewire component class.
-    
-    If you are using any other [Filament components](overview#package-components) in your infolist, make sure to install and integrate the corresponding package as well.
-
-</Aside>
+> [!NOTE]
+> `filament/infolists` also includes the following packages:
+>
+> - `filament/actions`
+> - `filament/schemas`
+> - `filament/support`
+>
+> These packages allow you to use their components within Livewire components.
+> For example, if your infolist uses [Actions](../actions), remember to implement the `HasActions` interface and use the `InteractsWithActions` trait on your Livewire component class.
+>
+> If you are using any other [Filament components](overview#package-components) in your infolist, make sure to install and integrate the corresponding package as well.
+>
 
 ## Passing data to the infolist
 
@@ -109,7 +111,7 @@ public function productInfolist(Schema $schema): Schema
 }
 ```
 
-Alternatively, you can pass an array of data to the `state()` method of the infolist, to manually map the data to the entries in the infolist's schema:
+Alternatively, you can pass an array of data to the `constantState()` method of the infolist, to manually map the data to the entries in the infolist's schema:
 
 ```php
 use Filament\Infolists\Components\TextEntry;

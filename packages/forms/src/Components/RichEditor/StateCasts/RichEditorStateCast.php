@@ -5,6 +5,7 @@ namespace Filament\Forms\Components\RichEditor\StateCasts;
 use Filament\Forms\Components\RichEditor;
 use Filament\Schemas\Components\StateCasts\Contracts\StateCast;
 use Illuminate\Contracts\Support\Htmlable;
+use Tiptap\Editor;
 
 class RichEditorStateCast implements StateCast
 {
@@ -41,16 +42,17 @@ class RichEditorStateCast implements StateCast
             });
         }
 
-        if ($this->richEditor->getCustomBlocks()) {
-            $editor->descendants(function (object &$node): void {
-                if ($node->type !== 'customBlock') {
-                    return;
-                }
+        $editor->descendants(function (object &$node): void {
+            if ($node->type !== 'customBlock') {
+                return;
+            }
 
-                unset($node->attrs->label);
-                unset($node->attrs->preview);
-            });
-        }
+            unset($node->attrs->label);
+            unset($node->attrs->preview);
+            unset($node->attrs->shouldApplyProseStylingToPreview);
+        });
+
+        $this->normalizeMentionAttributes($editor);
 
         return $editor->{$this->richEditor->isJson() ? 'getDocument' : 'getHtml'}();
     }
@@ -64,6 +66,9 @@ class RichEditorStateCast implements StateCast
             $state = $state->toHtml();
         }
 
+        $shouldPreventTampering = $this->richEditor->shouldPreventFileAttachmentPathTampering();
+        $originalFileAttachmentPaths = $shouldPreventTampering ? $this->richEditor->getOriginalFileAttachmentPaths() : [];
+
         $editor = $this->richEditor->getTipTapEditor()
             ->setContent($state ?? [
                 'type' => 'doc',
@@ -74,7 +79,7 @@ class RichEditorStateCast implements StateCast
                     ],
                 ],
             ])
-            ->descendants(function (object &$node): void {
+            ->descendants(function (object &$node) use ($shouldPreventTampering, $originalFileAttachmentPaths): void {
                 if ($node->type !== 'image') {
                     return;
                 }
@@ -83,28 +88,128 @@ class RichEditorStateCast implements StateCast
                     return;
                 }
 
+                if ($shouldPreventTampering && ! $this->richEditor->isFileAttachmentPathAuthorized($node->attrs->id, $originalFileAttachmentPaths)) {
+                    $node->attrs->src = null;
+
+                    return;
+                }
+
                 $node->attrs->src = $this->richEditor->getFileAttachmentUrl($node->attrs->id) ?? $this->richEditor->getFileAttachmentUrlFromAnotherRecord($node->attrs->id) ?? $node->attrs->src ?? null;
             });
 
-        if ($this->richEditor->getCustomBlocks()) {
-            $editor->descendants(function (object &$node): void {
-                if ($node->type !== 'customBlock') {
-                    return;
-                }
+        $editor->descendants(function (object &$node): void {
+            if ($node->type !== 'customBlock') {
+                return;
+            }
 
-                $block = $this->richEditor->getCustomBlock($node->attrs->id);
+            unset($node->attrs->label);
+            unset($node->attrs->preview);
+            unset($node->attrs->shouldApplyProseStylingToPreview);
 
-                if (blank($block)) {
-                    return;
-                }
+            if (blank($node->attrs->id ?? null)) {
+                return;
+            }
 
-                $nodeConfig = json_decode(json_encode($node->attrs->config ?? []), associative: true);
+            $block = $this->richEditor->getCustomBlock($node->attrs->id);
 
-                $node->attrs->label = $block::getPreviewLabel($nodeConfig);
-                $node->attrs->preview = base64_encode($block::toPreviewHtml($nodeConfig));
-            });
-        }
+            if (blank($block)) {
+                return;
+            }
+
+            $nodeConfig = json_decode(json_encode($node->attrs->config ?? []), associative: true);
+
+            $node->attrs->label = $block::getPreviewLabel($nodeConfig);
+            $node->attrs->preview = base64_encode($block::toPreviewHtml($nodeConfig));
+            $node->attrs->shouldApplyProseStylingToPreview = $block::shouldApplyProseStylingToPreview($nodeConfig);
+        });
+
+        $this->normalizeMentionAttributes($editor);
+        $this->hydrateMentionLabels($editor);
 
         return $editor->getDocument();
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    protected function normalizeMentionAttributes(Editor $editor): void
+    {
+        $extraAttributesByTriggerCharacter = [];
+
+        foreach ($this->richEditor->getMentionProviders() as $provider) {
+            $extraAttributesByTriggerCharacter[$provider->getTriggerCharacter()] ??= $provider->getExtraAttributes();
+        }
+
+        $editor->descendants(function (object &$node) use ($extraAttributesByTriggerCharacter): void {
+            if ($node->type !== 'mention') {
+                return;
+            }
+
+            $node->attrs ??= (object) [];
+
+            $triggerCharacter = $node->attrs->char ?? '@';
+            $node->attrs->extra = isset($extraAttributesByTriggerCharacter[$triggerCharacter])
+                ? (object) $extraAttributesByTriggerCharacter[$triggerCharacter]
+                : null;
+
+            unset($node->attrs->href);
+        });
+    }
+
+    protected function hydrateMentionLabels(Editor $editor): void
+    {
+        $mentionProviders = $this->richEditor->getMentionProviders();
+
+        if (blank($mentionProviders)) {
+            return;
+        }
+
+        $mentionsByTriggerCharacter = [];
+
+        $editor->descendants(function (object &$node) use (&$mentionsByTriggerCharacter): void {
+            if ($node->type !== 'mention') {
+                return;
+            }
+
+            $triggerCharacter = $node->attrs->char ?? '@';
+            $id = $node->attrs->id ?? null;
+
+            if (blank($id)) {
+                return;
+            }
+
+            $mentionsByTriggerCharacter[$triggerCharacter][] = (string) $id;
+        });
+
+        if (blank($mentionsByTriggerCharacter)) {
+            return;
+        }
+
+        $labelsByTriggerCharacter = [];
+
+        foreach ($mentionsByTriggerCharacter as $triggerCharacter => $ids) {
+            foreach ($mentionProviders as $provider) {
+                if ($provider->getTriggerCharacter() === $triggerCharacter) {
+                    $labelsByTriggerCharacter[$triggerCharacter] = $provider->getLabels(array_unique($ids));
+
+                    break;
+                }
+            }
+        }
+
+        $editor->descendants(function (object &$node) use ($labelsByTriggerCharacter): void {
+            if ($node->type !== 'mention') {
+                return;
+            }
+
+            $triggerCharacter = $node->attrs->char ?? '@';
+            $id = $node->attrs->id ?? null;
+
+            if (blank($id)) {
+                return;
+            }
+
+            $node->attrs->label = $labelsByTriggerCharacter[$triggerCharacter][(string) $id] ?? '';
+        });
     }
 }

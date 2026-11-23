@@ -14,6 +14,7 @@ use Filament\Resources\Concerns\HasTabs;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Components\RenderHook;
 use Filament\Schemas\Schema;
+use Filament\Support\Components\Attributes\Unexposed;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\View\PanelsRenderHook;
@@ -21,6 +22,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 
 class ListRecords extends Page implements Tables\Contracts\HasTable
@@ -31,6 +33,7 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
     }
 
     #[Url(as: 'reordering')]
+    #[Locked]
     public bool $isTableReordering = false;
 
     /**
@@ -54,6 +57,7 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
     #[Url(as: 'tab')]
     public ?string $activeTab = null;
 
+    #[Unexposed]
     public function mount(): void
     {
         $this->authorizeAccess();
@@ -63,36 +67,42 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
 
     protected function authorizeAccess(): void {}
 
+    #[Unexposed]
     public function getBreadcrumb(): ?string
     {
         return static::$breadcrumb ?? __('filament-panels::resources/pages/list-records.breadcrumb');
     }
 
+    #[Unexposed]
     public function table(Table $table): Table
     {
         return $table;
     }
 
+    #[Unexposed]
     public function getTitle(): string | Htmlable
     {
         return static::$title ?? static::getResource()::getTitleCasePluralModelLabel();
     }
 
+    #[Unexposed]
     public function form(Schema $schema): Schema
     {
         return static::getResource()::form($schema);
     }
 
+    #[Unexposed]
     public function infolist(Schema $schema): Schema
     {
         return static::getResource()::infolist($schema);
     }
 
+    #[Unexposed]
     public function getDefaultActionSchemaResolver(Action $action): ?Closure
     {
         return match (true) {
-            $action instanceof CreateAction, $action instanceof EditAction => fn (Schema $schema): Schema => $this->form($schema->columns(2)),
-            $action instanceof ViewAction => fn (Schema $schema): Schema => $this->infolist($this->form($schema->columns(2))),
+            $action instanceof CreateAction, $action instanceof EditAction => fn (Schema $schema): Schema => $this->form($schema->hasCustomColumns() ? $schema : $schema->columns(2)),
+            $action instanceof ViewAction => fn (Schema $schema): Schema => $this->infolist($this->form($schema->hasCustomColumns() ? $schema : $schema->columns(2))),
             default => null,
         };
     }
@@ -108,6 +118,7 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
     /**
      * @deprecated Override the `table()` method to configure the table.
      */
+    #[Unexposed]
     public function getPluralModelLabel(): ?string
     {
         return null;
@@ -134,8 +145,21 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
                         continue;
                     }
 
+                    if ($actionGroup = $action->getRootGroup()) {
+                        $action = $actionGroup->getClone()->getFlatActions()[$action->getName()];
+                    } else {
+                        $action = clone $action;
+                    }
+
                     $action->record($record);
-                    $action->getGroup()?->record($record);
+
+                    $actionGroup = $action->getGroup();
+
+                    while ($actionGroup) {
+                        $actionGroup->record($record);
+
+                        $actionGroup = $actionGroup->getGroup();
+                    }
 
                     if ($action->isHidden()) {
                         continue;
@@ -149,8 +173,10 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
                 }
 
                 return null;
-            })
-            ->recordUrl(function (Model $record, Table $table): ?string {
+            });
+
+        if (! $table->hasCustomRecordUrl()) {
+            $table->recordUrl(function (Model $record, Table $table): ?string {
                 foreach (['view', 'edit'] as $action) {
                     $action = $table->getAction($action);
 
@@ -158,10 +184,21 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
                         continue;
                     }
 
-                    $action = clone $action;
+                    if ($actionGroup = $action->getRootGroup()) {
+                        $action = $actionGroup->getClone()->getFlatActions()[$action->getName()];
+                    } else {
+                        $action = clone $action;
+                    }
 
                     $action->record($record);
-                    $action->getGroup()?->record($record);
+
+                    $actionGroup = $action->getGroup();
+
+                    while ($actionGroup) {
+                        $actionGroup->record($record);
+
+                        $actionGroup = $actionGroup->getGroup();
+                    }
 
                     if ($action->isHidden()) {
                         continue;
@@ -192,6 +229,7 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
 
                 return null;
             });
+        }
 
         static::getResource()::configureTable($table);
 
@@ -209,15 +247,17 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
     /**
      * @return array<NavigationItem | NavigationGroup>
      */
+    #[Unexposed]
     public function getSubNavigation(): array
     {
-        if (filled($cluster = static::getCluster())) {
+        if (filled($cluster = static::getCluster()) && $cluster::shouldRegisterSubNavigation()) {
             return $this->generateNavigationItems($cluster::getClusteredComponents());
         }
 
         return [];
     }
 
+    #[Unexposed]
     public function content(Schema $schema): Schema
     {
         return $schema
@@ -232,6 +272,7 @@ class ListRecords extends Page implements Tables\Contracts\HasTable
     /**
      * @return array<string>
      */
+    #[Unexposed]
     public function getPageClasses(): array
     {
         return [

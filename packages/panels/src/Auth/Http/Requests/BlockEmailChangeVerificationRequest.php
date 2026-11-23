@@ -8,6 +8,8 @@ use Illuminate\Validation\Validator;
 
 class BlockEmailChangeVerificationRequest extends FormRequest
 {
+    use Concerns\CanConsumeEmailChangeVerification;
+
     public function authorize(): bool
     {
         if (! hash_equals((string) $this->user()->getKey(), (string) $this->route('id'))) {
@@ -31,7 +33,7 @@ class BlockEmailChangeVerificationRequest extends FormRequest
 
     public function fulfill(): bool
     {
-        return (bool) cache()->pull($this->query('verificationSignature'));
+        return $this->consumeEmailChangeVerification($this->query('verificationSignature'));
     }
 
     public function withValidator(Validator $validator): Validator

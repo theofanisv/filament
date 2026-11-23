@@ -9,6 +9,8 @@ trait CanBeSearchable
 {
     protected bool | Closure | null $isSearchable = null;
 
+    protected string | Htmlable | Closure | null $noOptionsMessage = null;
+
     protected string | Htmlable | Closure | null $noSearchResultsMessage = null;
 
     protected int | Closure $searchDebounce = 1000;
@@ -24,6 +26,13 @@ trait CanBeSearchable
     public function searchable(bool | Closure | null $condition = true): static
     {
         $this->isSearchable = $condition;
+
+        return $this;
+    }
+
+    public function noOptionsMessage(string | Htmlable | Closure | null $message): static
+    {
+        $this->noOptionsMessage = $message;
 
         return $this;
     }
@@ -58,16 +67,21 @@ trait CanBeSearchable
 
     public function searchLabels(bool | Closure | null $condition = true): static
     {
-        $this->shouldSearchLabels = $condition;
+        $this->shouldSearchLabels = $condition ?? false;
 
         return $this;
     }
 
     public function searchValues(bool | Closure | null $condition = true): static
     {
-        $this->shouldSearchValues = $condition;
+        $this->shouldSearchValues = $condition ?? false;
 
         return $this;
+    }
+
+    public function getNoOptionsMessage(): string | Htmlable
+    {
+        return $this->evaluate($this->noOptionsMessage) ?? __('filament-forms::components.select.no_options_message');
     }
 
     public function getNoSearchResultsMessage(): string | Htmlable

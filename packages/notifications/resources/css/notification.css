@@ -55,6 +55,10 @@
                 var(--color-400)
             );
         }
+
+        & .fi-no-notification-body {
+            @apply text-gray-700/75 dark:text-gray-300/75;
+        }
     }
 
     &.fi-transition-enter-start {
@@ -71,7 +75,7 @@
     &.fi-align-left {
         & .fi-no-notification {
             &.fi-transition-enter-start {
-                @apply -translate-x-12;
+                @apply -translate-x-12 rtl:translate-x-12;
             }
         }
     }
@@ -80,7 +84,7 @@
     &.fi-align-right {
         & .fi-no-notification {
             &.fi-transition-enter-start {
-                @apply translate-x-12;
+                @apply translate-x-12 rtl:-translate-x-12;
             }
         }
     }

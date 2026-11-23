@@ -2,9 +2,12 @@
 
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Tests\Fixtures\Pages\AuthorizableSettings;
 use Filament\Tests\Fixtures\Pages\Settings;
 use Filament\Tests\Panels\Pages\TestCase;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 
 use function Filament\Tests\livewire;
 
@@ -14,6 +17,28 @@ it('can render page', function (): void {
     $this->get(Settings::getUrl())
         ->assertSuccessful();
 });
+
+it('allows exposed page listeners but rejects internal methods with HTTP 403 without reporting', function (bool $isDebug): void {
+    config(['app.debug' => $isDebug]);
+
+    $component = livewire(Settings::class)
+        ->dispatch('refresh-page')
+        ->assertSuccessful();
+
+    expect($component->instance()->getTitle())->toBe('Settings');
+
+    Exceptions::fake();
+
+    $this->postJson(Livewire::getUpdateUri(), [
+        'components' => [[
+            'snapshot' => json_encode($component->snapshot),
+            'updates' => [],
+            'calls' => [['method' => 'getTitle', 'params' => []]],
+        ]],
+    ], ['X-Livewire' => 'true'])->assertForbidden();
+
+    Exceptions::assertNothingReported();
+})->with([false, true]);
 
 it('can generate a slug based on the page name', function (): void {
     expect(Settings::getSlug())
@@ -34,4 +59,18 @@ it('can report validation errors', function (): void {
         ->call('save')
         ->assertHasErrors(['name' => ['required']])
         ->assertNotified();
+});
+
+it('re-authorizes a custom page on Livewire updates after the initial mount', function (): void {
+    AuthorizableSettings::$canAccess = true;
+
+    $component = livewire(AuthorizableSettings::class);
+
+    AuthorizableSettings::$canAccess = false;
+
+    $component
+        ->set('name', 'foo')
+        ->assertStatus(403);
+
+    AuthorizableSettings::$canAccess = true;
 });

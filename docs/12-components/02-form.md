@@ -1,16 +1,14 @@
 ---
 title: Rendering a form in a Blade view
 ---
-import Aside from "@components/Aside.astro"
 
-<Aside variant="warning">
-    Before proceeding, make sure `filament/forms` is installed in your project. You can check by running:
-
-    ```bash
-    composer show filament/forms
-    ```
-    If it's not installed, consult the [installation guide](../introduction/installation#installing-the-individual-components) and configure the **individual components** according to the instructions.
-</Aside>
+> [!WARNING]
+> Before proceeding, make sure `filament/forms` is installed in your project. You can check by running:
+>
+> ```bash
+> composer show filament/forms
+> ```
+> If it's not installed, consult the [installation guide](../introduction/installation#installing-the-individual-components) and configure the **individual components** according to the instructions.
 
 ## Setting up the Livewire component
 
@@ -37,15 +35,11 @@ Route::get('posts/create', CreatePost::class);
 
 ## Adding the form
 
-<Aside variant="warning">
-    Before proceeding, please ensure that the **Forms package** is installed in your project. Consult the [installation guide](../introduction/installation#installing-the-individual-components) and configure the **individual components** according to the instructions.
-</Aside>
-
 There are 5 main tasks when adding a form to a Livewire component class. Each one is essential:
 
 1) Implement the `HasSchemas` interface and use the `InteractsWithSchemas` trait.
 2) Define a public Livewire property to store your form's data. In our example, we'll call this `$data`, but you can call it whatever you want.
-3) Add a `form()` method, which is where you configure the form. [Add the form's schema](../forms/overview#form-schemas), and tell Filament to store the form data in the `$data` property (using `statePath('data')`).
+3) Add a `form()` method, which is where you configure the form. [Add the form's fields](../forms/overview#form-fields), and tell Filament to store the form data in the `$data` property (using `statePath('data')`).
 4) Initialize the form with `$this->form->fill()` in `mount()`. This is imperative for every form that you build, even if it doesn't have any initial data.
 5) Define a method to handle the form submission. In our example, we'll call this `create()`, but you can call it whatever you want. Inside that method, you can validate and get the form's data using `$this->form->getState()`. It's important that you use this method instead of accessing the `$this->data` property directly, because the form's data needs to be validated and transformed into a useful format before being returned.
 
@@ -57,6 +51,7 @@ namespace App\Livewire;
 use Filament\Forms\Components\MarkdownEditor;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
+use Filament\Schemas\Concerns\RestrictsFileUploadsToSchemaComponents;
 use Filament\Schemas\Contracts\HasSchemas;
 use Illuminate\Contracts\View\View;
 use Filament\Schemas\Schema;
@@ -65,6 +60,7 @@ use Livewire\Component;
 class CreatePost extends Component implements HasSchemas
 {
     use InteractsWithSchemas;
+    use RestrictsFileUploadsToSchemaComponents;
     
     public ?array $data = [];
     
@@ -113,9 +109,8 @@ Finally, in your Livewire component's view, render the form:
 </div>
 ```
 
-<Aside variant="info">
-    `<x-filament-actions::modals />` is used to render form component [action modals](../actions/modals). The code can be put anywhere outside the `<form>` element, as long as it's within the Livewire component.
-</Aside>
+> [!NOTE]
+> `<x-filament-actions::modals />` is used to render form component [action modals](../actions/modals). The code can be put anywhere outside the `<form>` element, as long as it's within the Livewire component.
 
 Visit your Livewire component in the browser, and you should see the form components from `components()`:
 
@@ -130,18 +125,17 @@ public function create(): void
 }
 ```
 
-<Aside variant="info">
-    `filament/forms` also includes the following packages:
-
-    - `filament/actions`
-    - `filament/schemas`
-    - `filament/support`
-    
-    These packages allow you to use their components within Livewire components.
-    For example, if your form uses [Actions](../actions), remember to implement the `HasActions` interface and use the `InteractsWithActions` trait on your Livewire component class.
-    
-    If you are using any other [Filament components](overview#package-components) in your form, make sure to install and integrate the corresponding package as well.
-</Aside>
+> [!NOTE]
+> `filament/forms` also includes the following packages:
+>
+> - `filament/actions`
+> - `filament/schemas`
+> - `filament/support`
+>
+> These packages allow you to use their components within Livewire components.
+> For example, if your form uses [Actions](../actions), remember to implement the `HasActions` interface and use the `InteractsWithActions` trait on your Livewire component class.
+>
+> If you are using any other [Filament components](overview#package-components) in your form, make sure to install and integrate the corresponding package as well.
 
 ## Initializing the form with data
 
@@ -157,6 +151,15 @@ public function mount(Post $post): void
 ```
 
 It's important that you use the `$this->form->fill()` method instead of assigning the data directly to the `$this->data` property. This is because the post's data needs to be internally transformed into a useful format before being stored.
+
+> [!WARNING]
+> The data you pass to `fill()` is exposed to JavaScript as part of the Livewire request. If your model has a column containing binary data that is not valid UTF-8, such as a `geometry`, `point`, or `blob` column, it cannot be serialized to JSON and the page will fail to load, often with a blank screen and no error in the Laravel log.
+>
+> To resolve this, add the column to [the `$hidden` array](https://laravel.com/docs/eloquent-serialization#hiding-attributes-from-json) on your model, which excludes it from `attributesToArray()`:
+>
+> ```php
+> protected $hidden = ['location'];
+> ```
 
 ## Setting a form model
 
@@ -185,6 +188,9 @@ public function form(Schema $schema): Schema
         ->model($this->post);
 }
 ```
+
+> [!WARNING]
+> `$post` is a model property on a regular Livewire component. Filament does not re-query or authorize it on later requests. Re-query and authorize the post before passing it to the form or saving it, including any tenant or ownership restrictions your application requires. See [Eloquent model restoration in Livewire](../advanced/security#understanding-eloquent-model-restoration-in-livewire) for more information.
 
 ### Passing the form model after the form has been submitted
 
@@ -336,6 +342,9 @@ By default, passing a model to the `make:livewire-form` command will result in a
 php artisan make:filament-livewire-form Products/EditProduct --edit
 ```
 
+> [!WARNING]
+> The generated component is a regular Livewire component. Filament does not re-query or authorize its `$record` property on later requests. Re-query and authorize the record before filling or saving the form. See [Eloquent model restoration in Livewire](../advanced/security#understanding-eloquent-model-restoration-in-livewire) for more information.
+
 ### Automatically generating form schemas
 
 Filament is also able to guess which form fields you want in the schema, based on the model's database columns. You can use the `--generate` flag when generating your form:
@@ -343,3 +352,7 @@ Filament is also able to guess which form fields you want in the schema, based o
 ```bash
 php artisan make:filament-livewire-form Products/CreateProduct --generate
 ```
+
+## Security considerations for file uploads
+
+The `InteractsWithSchemas` trait exposes Livewire's file upload RPC methods on every component that uses it — whether or not the form contains an upload field. If your Livewire component is reachable to users you do not want uploading arbitrary files, add the `RestrictsFileUploadsToSchemaComponents` trait. See [Restricting Livewire file uploads to schema components](../advanced/security#restricting-livewire-file-uploads-to-schema-components) for details.

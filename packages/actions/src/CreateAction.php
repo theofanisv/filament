@@ -132,6 +132,12 @@ class CreateAction extends Action
                     ...$preserveRawState ?? [],
                 ]);
 
+                // Rebuild child schemas without double-firing `afterStateHydrated()` hooks.
+                $hydratedDefaultState = null;
+                $schema->hydrateState($hydratedDefaultState, shouldCallHydrationHooks: false);
+
+                $schema->dispatchClientSideStateReset();
+
                 $this->halt();
 
                 return;
@@ -217,5 +223,13 @@ class CreateAction extends Action
     public function getRelationship(): Relation | Builder | null
     {
         return $this->evaluate($this->getRelationshipUsing) ?? $this->getTable()?->getRelationship() ?? $this->getHasActionsLivewire()?->getDefaultActionRelationship($this);
+    }
+
+    public function getSchema(Schema $schema): ?Schema
+    {
+        $model = $this->getModel();
+
+        // Prevent inherited or supplied records from receiving relationship changes before the new record exists.
+        return parent::getSchema($schema->model($model))?->model($model);
     }
 }

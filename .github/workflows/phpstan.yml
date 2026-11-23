@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -14,31 +17,68 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: [8.4, 8.3, 8.2]
-        laravel: [12.*, 11.*]
+        php: [8.6, 8.5, 8.4, 8.3]
+        laravel: [13.*, 12.*, 11.*]
         dependency-version: [prefer-stable]
         include:
+          - laravel: 13.*
+            testbench: 11.*
           - laravel: 12.*
             testbench: 10.*
           - laravel: 11.*
             testbench: 9.*
+        exclude:
+          # Analyse PHP boundaries per Laravel, retaining every PHP on Laravel 13.
+          - laravel: 12.*
+            php: 8.6
+          - laravel: 12.*
+            php: 8.4
+          - laravel: 11.*
+            php: 8.6
+          - laravel: 11.*
+            php: 8.5
     name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.dependency-version }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Cache dependencies
-        uses: actions/cache@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Cache Composer dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.composer/cache/files
-          key: dependencies-laravel-${{ matrix.laravel }}-php-${{ matrix.php }}-composer-${{ hashFiles('composer.json') }}
+          key: composer-${{ matrix.php }}-${{ matrix.laravel }}-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            composer-${{ matrix.php }}-${{ matrix.laravel }}-
+            composer-${{ matrix.php }}-
+      - name: Cache PHPStan result
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/phpstan
+          key: phpstan-${{ matrix.php }}-${{ matrix.laravel }}-${{ github.sha }}
+          restore-keys: |
+            phpstan-${{ matrix.php }}-${{ matrix.laravel }}-
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php }}
           extensions: mbstring, pdo, pdo_sqlite
           coverage: none
-      - name: Install dependencies
+      - name: Allow known Laravel 11 advisories for compatibility testing
+        if: matrix.laravel == '11.*'
+        # Laravel 11 is EOL. Allow these only in CI, without hiding audit reports.
         run: |
-          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" "filament/support" --no-interaction --no-update
-          composer update --${{ matrix.dependency-version }} --prefer-dist --no-interaction
+          composer config --json --merge policy.advisories.ignore-id '{
+            "PKSA-b41t-wbzk-9q51": {"on-audit": false},
+            "PKSA-d5tc-s1qs-h781": {"on-audit": false},
+            "PKSA-3r5d-mb8f-1qw9": {"on-audit": false},
+            "PKSA-m5cs-t1y6-qpcs": {"on-audit": false},
+            "PKSA-mdq4-51ck-6kdq": {"on-audit": false},
+            "PKSA-yxbx-3c9s-cjt9": {"on-audit": false}
+          }'
+      - name: Install dependencies
+        # Paratest releases compatible with Pest 4 currently cap PHP at 8.5.
+        run: |
+          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
+          composer update --${{ matrix.dependency-version }} --prefer-dist --no-interaction ${{ matrix.php == '8.6' && '--ignore-platform-req=php+' || '' }}
       - name: Run PHPStan
         run: ./vendor/bin/phpstan

@@ -1,0 +1,219 @@
+<?php
+
+namespace Filament\Tests\Fixtures\Pages;
+
+use BackedEnum;
+use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
+use Filament\Pages\Page;
+use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\HtmlString;
+
+class ModalBrowserTest extends Page
+{
+    protected string $view = 'pages.modal-browser-test';
+
+    public bool $didRunActionAfterClosingChild = false;
+
+    public int $loadingButtonActivations = 0;
+
+    public bool $hasScrollableContent = false;
+
+    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedBolt;
+
+    protected static ?int $navigationSort = 5;
+
+    protected static bool $shouldRegisterNavigation = false;
+
+    public function mount(): void
+    {
+        $this->hasScrollableContent = request()->boolean('scroll');
+    }
+
+    public function activateLoadingButton(): void
+    {
+        $this->loadingButtonActivations++;
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('modalFocusRestoration')
+                ->label('Modal focus restoration')
+                ->requiresConfirmation()
+                ->action(static fn () => null)
+                ->extraAttributes(['data-testid' => 'basic-trigger'])
+                ->extraModalWindowAttributes(['data-testid' => 'basic-modal']),
+            Action::make('eyebrow')
+                ->label('Eyebrow')
+                ->modalSubmitAction(false)
+                ->modalEyebrow('Edit post')
+                ->modalHeading('Getting started with Filament')
+                ->modalDescription('Update the post before publishing it.')
+                ->extraAttributes(['data-testid' => 'eyebrow-trigger'])
+                ->extraModalWindowAttributes(['data-testid' => 'eyebrow-modal']),
+            Action::make('nonOverlayFocusRestoration')
+                ->label('Non-overlay focus restoration')
+                ->requiresConfirmation()
+                ->modalContent(new HtmlString('<p>Review the changes before continuing.</p>'))
+                ->action(static fn () => null)
+                ->extraAttributes(['data-testid' => 'non-overlay-trigger'])
+                ->extraModalWindowAttributes(['data-testid' => 'non-overlay-modal'])
+                ->extraModalFooterActions([
+                    Action::make('nonOverlayNestedFocusRestoration')
+                        ->label('Open nested modal')
+                        ->requiresConfirmation()
+                        ->action(static fn () => null)
+                        ->extraAttributes(['data-testid' => 'non-overlay-nested-trigger'])
+                        ->extraModalWindowAttributes(['data-testid' => 'non-overlay-nested-modal']),
+                ]),
+            Action::make('overlayFocusRestoration')
+                ->label('Overlay focus restoration')
+                ->requiresConfirmation()
+                ->action(static fn () => null)
+                ->extraAttributes(['data-testid' => 'overlay-trigger'])
+                ->extraModalWindowAttributes(['data-testid' => 'overlay-modal'])
+                ->extraModalFooterActions([
+                    Action::make('overlayNestedFocusRestoration')
+                        ->label('Open nested modal')
+                        ->requiresConfirmation()
+                        ->overlayParentActions()
+                        ->action(static fn () => null)
+                        ->extraAttributes(['data-testid' => 'overlay-nested-trigger'])
+                        ->extraModalWindowAttributes(['data-testid' => 'overlay-nested-modal']),
+                    Action::make('overlayCancelParentFocusRestoration')
+                        ->label('Close all')
+                        ->requiresConfirmation()
+                        ->overlayParentActions()
+                        ->cancelParentActions()
+                        ->action(static fn () => null)
+                        ->extraModalWindowAttributes(['data-testid' => 'overlay-cancel-modal']),
+                ]),
+            Action::make('escapeCloseDisabled')
+                ->label('Escape close disabled')
+                ->closeModalByEscaping(false)
+                ->stickyModalHeader()
+                ->schema([
+                    TextInput::make('name'),
+                    TextInput::make('email'),
+                ])
+                ->action(static fn () => null)
+                ->extraAttributes(['data-testid' => 'escape-close-disabled-trigger'])
+                ->extraModalWindowAttributes(['data-testid' => 'escape-close-disabled-modal']),
+            Action::make('validatedParentData')
+                ->label('Validated parent data')
+                ->schema([
+                    TextInput::make('name')
+                        ->required()
+                        ->extraInputAttributes(['data-testid' => 'validated-parent-data-input'])
+                        ->extraFieldWrapperAttributes(['data-testid' => 'validated-parent-data-field'])
+                        ->suffixAction(
+                            Action::make('generateValidatedParentDataName')
+                                ->action(function (Action $parentAction): void {
+                                    $parentAction->fillData([
+                                        'name' => blank($parentAction->getRawData()['name'] ?? null)
+                                            ? 'First generated name'
+                                            : 'Second generated name',
+                                    ]);
+                                })
+                                ->extraAttributes(['data-testid' => 'validated-parent-data-suffix-action']),
+                        ),
+                ])
+                ->action(static fn () => null)
+                ->extraAttributes(['data-testid' => 'validated-parent-data-trigger'])
+                ->extraModalWindowAttributes(['data-testid' => 'validated-parent-data-modal'])
+                ->extraModalFooterActions([
+                    Action::make('validateParentDataBeforeOpening')
+                        ->label('Open nested modal')
+                        ->schema([
+                            TextInput::make('confirmation'),
+                        ])
+                        ->mountUsing(function (Action $parentAction, Schema $schema): void {
+                            $parentAction->getValidatedData();
+
+                            $schema->fill();
+                        })
+                        ->action(static fn () => null)
+                        ->extraAttributes(['data-testid' => 'validated-parent-data-nested-trigger'])
+                        ->extraModalWindowAttributes(['data-testid' => 'validated-parent-data-nested-modal']),
+                ]),
+            Action::make('scrollPreservation')
+                ->label('Scroll preservation')
+                ->modalSubmitAction(false)
+                ->stickyModalFooter()
+                ->schema(array_map(
+                    fn (int $index): TextInput => TextInput::make("scrollField{$index}")
+                        ->extraInputAttributes(['data-testid' => "scroll-field-{$index}"]),
+                    range(1, 25),
+                ))
+                ->extraModalWindowAttributes(['data-testid' => 'scroll-modal'])
+                ->extraModalFooterActions([
+                    Action::make('scrollPreservationNested')
+                        ->label('Open nested modal')
+                        ->requiresConfirmation()
+                        ->modalCancelAction(static fn (Action $action): Action => $action->extraAttributes(['data-testid' => 'scroll-nested-cancel']))
+                        ->action(static fn () => null)
+                        ->extraAttributes(['data-testid' => 'scroll-nested-trigger'])
+                        ->extraModalWindowAttributes(['data-testid' => 'scroll-nested-modal']),
+                ]),
+            Action::make('clickThrough')
+                ->label('Click through')
+                ->modalClickThrough()
+                ->modalSubmitAction(false)
+                ->modalHeading('Click-through modal')
+                ->modalContent(new HtmlString('<p>You can still scroll the page behind this modal.</p>'))
+                ->extraAttributes(['data-testid' => 'click-through-trigger'])
+                ->extraModalWindowAttributes(['data-testid' => 'click-through-modal']),
+            Action::make('cancelParentActionsOnClose')
+                ->label('Cancel parents on close')
+                ->modalSubmitAction(false)
+                ->modalDescription('Grandparent (level 1).')
+                ->extraAttributes(['data-testid' => 'cancel-on-close-trigger'])
+                ->extraModalWindowAttributes(['data-testid' => 'cancel-on-close-modal'])
+                ->extraModalFooterActions([
+                    Action::make('cancelParentActionsOnCloseParent')
+                        ->label('Open level 2')
+                        ->modalSubmitAction(false)
+                        ->modalDescription('Parent (level 2).')
+                        ->extraAttributes(['data-testid' => 'cancel-on-close-parent-trigger'])
+                        ->extraModalWindowAttributes(['data-testid' => 'cancel-on-close-parent-modal'])
+                        ->extraModalFooterActions([
+                            Action::make('cancelParentActionsOnCloseNested')
+                                ->label('Open level 3')
+                                ->requiresConfirmation()
+                                ->modalCloseButton()
+                                ->cancelParentActionsOnClose()
+                                ->action(static fn () => null)
+                                ->extraAttributes(['data-testid' => 'cancel-on-close-nested-trigger'])
+                                ->extraModalWindowAttributes(['data-testid' => 'cancel-on-close-nested-modal']),
+                        ]),
+                ]),
+        ];
+    }
+
+    public function modalLessParentWithChildAction(): Action
+    {
+        return Action::make('modalLessParentWithChild')
+            ->registerModalActions([
+                Action::make('modalLessParentChild')
+                    ->requiresConfirmation()
+                    ->color('gray')
+                    ->action(static fn () => null)
+                    ->extraModalWindowAttributes(['data-testid' => 'modal-less-parent-child-modal']),
+            ])
+            ->action(function (Action $action): void {
+                $action->getLivewire()->mountAction('modalLessParentChild');
+
+                $action->halt();
+            });
+    }
+
+    public function runAfterClosingChildAction(): Action
+    {
+        return Action::make('runAfterClosingChild')
+            ->action(function (): void {
+                $this->didRunActionAfterClosingChild = true;
+            });
+    }
+}

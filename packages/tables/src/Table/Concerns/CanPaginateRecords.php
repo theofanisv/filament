@@ -4,7 +4,13 @@ namespace Filament\Tables\Table\Concerns;
 
 use Closure;
 use Filament\Tables\Enums\PaginationMode;
+use Filament\Tables\Table;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Contracts\Pagination\Paginator;
+use Illuminate\Pagination\AbstractPaginator;
+use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Support\Arr;
+use Illuminate\View\ComponentAttributeBag;
 
 trait CanPaginateRecords
 {
@@ -13,6 +19,10 @@ trait CanPaginateRecords
     protected bool | Closure $isPaginated = true;
 
     protected bool | Closure $isPaginatedWhileReordering = false;
+
+    protected bool | Closure $persistsRecordsPerPageInSession = true;
+
+    protected bool | Closure $enforcesPaginationPageOptions = false;
 
     /**
      * @var array<int | string> | Closure | null
@@ -78,6 +88,13 @@ trait CanPaginateRecords
         return $this;
     }
 
+    public function persistRecordsPerPageInSession(bool | Closure $condition = true): static
+    {
+        $this->persistsRecordsPerPageInSession = $condition;
+
+        return $this;
+    }
+
     /**
      * @param  array<int | string> | Closure | null  $options
      */
@@ -86,6 +103,18 @@ trait CanPaginateRecords
         $this->paginationPageOptions = $options;
 
         return $this;
+    }
+
+    public function enforcePaginationPageOptions(bool | Closure $condition = true): static
+    {
+        $this->enforcesPaginationPageOptions = $condition;
+
+        return $this;
+    }
+
+    public function enforcesPaginationPageOptions(): bool
+    {
+        return (bool) $this->evaluate($this->enforcesPaginationPageOptions);
     }
 
     public function extremePaginationLinks(bool | Closure $condition = true): static
@@ -130,8 +159,59 @@ trait CanPaginateRecords
         return (bool) $this->evaluate($this->isPaginatedWhileReordering);
     }
 
+    public function persistsRecordsPerPageInSession(): bool
+    {
+        return (bool) $this->evaluate($this->persistsRecordsPerPageInSession);
+    }
+
     public function hasExtremePaginationLinks(): bool
     {
         return (bool) $this->evaluate($this->hasExtremePaginationLinks);
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    protected function hasRenderPagination(): bool
+    {
+        $records = $this->isLoaded() ? $this->getRecords() : null;
+
+        return (($records instanceof Paginator) || ($records instanceof \Illuminate\Contracts\Pagination\CursorPaginator))
+            && (($records instanceof LengthAwarePaginator) ? (bool) $records->total() : $records->isNotEmpty());
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     */
+    protected function generatePaginationContainerHtml(): string
+    {
+        $records = $this->isLoaded() ? $this->getRecords() : null;
+
+        ob_start(); ?>
+        <?= $this->generateMorphMarkerHtml(); ?>
+        <?php if ($this->hasRenderPagination()) {
+            $hasExtremePaginationLinks = $this->hasExtremePaginationLinks();
+            $paginationPageOptions = $this->getPaginationPageOptions();
+            ?>
+
+            <?= ($records instanceof AbstractPaginator) || ($records instanceof CursorPaginator)
+                ? $this->generatePaginationHtml(
+                    paginator: $records,
+                    livewireId: $this->getLivewire()->getId(),
+                    extremeLinks: $hasExtremePaginationLinks,
+                    pageOptions: $paginationPageOptions,
+                    loadingTargets: Table::LOADING_TARGETS,
+                    isRtl: __('filament-panels::layout.direction') === 'rtl',
+                )
+                : view('filament::components.pagination.index', [
+                    'paginator' => $records,
+                    'extremeLinks' => $hasExtremePaginationLinks,
+                    'pageOptions' => $paginationPageOptions,
+                    'loadingTargets' => Table::LOADING_TARGETS,
+                    'attributes' => new ComponentAttributeBag,
+                ])->render(); ?>
+        <?php } ?>
+        <?= $this->generateMorphMarkerHtml(isEnd: true); ?>
+        <?php return ob_get_clean();
     }
 }

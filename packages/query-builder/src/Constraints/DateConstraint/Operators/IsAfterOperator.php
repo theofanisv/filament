@@ -9,6 +9,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\QueryBuilder\Constraints\DateConstraint;
 use Filament\QueryBuilder\Constraints\DateConstraint\DateUnit;
+use Filament\QueryBuilder\Constraints\DateConstraint\Operators\Concerns\CanQueryDateRanges;
 use Filament\QueryBuilder\Constraints\Operators\Operator;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\FusedGroup;
@@ -18,6 +19,8 @@ use Illuminate\Support\Carbon;
 
 class IsAfterOperator extends Operator
 {
+    use CanQueryDateRanges;
+
     public function getName(): string
     {
         return 'isAfter';
@@ -55,7 +58,8 @@ class IsAfterOperator extends Operator
             );
         }
 
-        $parsedDate = Carbon::parse($settings['date']);
+        $date = $this->getDateSetting('date');
+        $parsedDate = $date === null ? null : Carbon::parse($date);
 
         return __(
             $this->isInverse() ?
@@ -63,7 +67,7 @@ class IsAfterOperator extends Operator
                 'filament-query-builder::query-builder.operators.date.is_after.summary.direct',
             [
                 'attribute' => $constraint->getAttributeLabel(),
-                'date' => $hasTime ? $parsedDate->toFormattedDayDateString() . ' ' . $parsedDate->format('H:i:s') : $parsedDate->toFormattedDateString(),
+                'date' => $parsedDate === null ? null : ($hasTime ? $parsedDate->toFormattedDayDateString() . ' ' . $parsedDate->format('H:i:s') : $parsedDate->toFormattedDateString()),
             ],
         );
     }
@@ -199,10 +203,21 @@ class IsAfterOperator extends Operator
                 return $query->where($qualifiedColumn, $this->isInverse() ? '<' : '>=', $dateTime);
             }
 
-            return $query->whereDate($qualifiedColumn, $this->isInverse() ? '<' : '>=', $dateTime);
+            return $this->whereDateUsingRange($query, $qualifiedColumn, $this->isInverse() ? '<' : '>=', $dateTime);
         }
 
-        return $query->whereDate($qualifiedColumn, $this->isInverse() ? '<' : '>=', $settings['date']);
+        $date = $this->getDateSetting('date');
+
+        // Security: skip applying the constraint when the tampered setting is not a scalar date.
+        if ($date === null) {
+            return $query;
+        }
+
+        if ($hasTime) {
+            return $query->where($qualifiedColumn, $this->isInverse() ? '<' : '>=', $date);
+        }
+
+        return $this->whereDateUsingRange($query, $qualifiedColumn, $this->isInverse() ? '<' : '>=', $date);
     }
 
     /**

@@ -43,6 +43,11 @@ return [
 
         'form' => [
 
+            'password' => [
+                'label' => '現在のパスワード',
+                'validation_attribute' => '現在のパスワード',
+            ],
+
             'code' => [
 
                 'label' => '認証アプリで生成された6桁のコードを入力',
@@ -54,6 +59,8 @@ return [
                 'messages' => [
 
                     'invalid' => '入力されたコードが無効です。',
+
+                    'rate_limited' => '試行回数が多すぎます。しばらくしてから再度お試しください。',
 
                 ],
 

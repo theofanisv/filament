@@ -4,6 +4,12 @@ return [
 
     'builder' => [
 
+        'reordering' => [
+            'item' => 'Blocco',
+            'position' => ':label, posizione :position di :count',
+            'moved' => ':label spostato in posizione :position di :count',
+        ],
+
         'actions' => [
 
             'clone' => [
@@ -104,9 +110,19 @@ return [
 
         ],
 
+        'block_picker' => [
+
+            'no_search_results_message' => 'Nessun blocco corrisponde alla ricerca.',
+
+            'search_prompt' => 'Cerca blocchi',
+
+        ],
+
     ],
 
     'checkbox_list' => [
+
+        'required_description' => "Seleziona almeno un'opzione.",
 
         'actions' => [
 
@@ -122,9 +138,55 @@ return [
 
     ],
 
+    'color_picker' => [
+
+        'panel_label' => 'Selettore colore',
+
+    ],
+
+    'date_time_picker' => [
+
+        'month_select' => [
+            'label' => 'Mese',
+        ],
+
+        'year_input' => [
+            'label' => 'Anno',
+        ],
+
+        'hour_input' => [
+            'label' => 'Ora',
+        ],
+
+        'minute_input' => [
+            'label' => 'Minuti',
+        ],
+
+        'second_input' => [
+            'label' => 'Secondi',
+        ],
+
+    ],
+
     'file_upload' => [
 
+        'placeholder' => 'Nessun file caricato',
+
+        'actions' => [
+
+            'download' => [
+                'label' => 'Scarica',
+            ],
+
+            'open' => [
+                'label' => 'Apri in una nuova scheda',
+            ],
+
+        ],
+
         'editor' => [
+
+            'label' => 'Editor immagini',
 
             'actions' => [
 
@@ -262,8 +324,28 @@ return [
                 'label' => 'Elimina riga',
             ],
 
+            'move_down' => [
+                'label' => 'Sposta giù',
+            ],
+
+            'move_up' => [
+                'label' => 'Sposta su',
+            ],
+
             'reorder' => [
                 'label' => 'Riordina riga',
+            ],
+
+        ],
+
+        'columns' => [
+
+            'actions' => [
+                'label' => 'Azioni',
+            ],
+
+            'reorder' => [
+                'label' => 'Riordina',
             ],
 
         ],
@@ -278,6 +360,12 @@ return [
                 'label' => 'Valore',
             ],
 
+        ],
+
+        'reordering' => [
+            'row' => 'Riga',
+            'position' => ':label, posizione :position di :count',
+            'moved' => ':label spostata in posizione :position di :count',
         ],
 
     ],
@@ -338,6 +426,24 @@ return [
     ],
 
     'repeater' => [
+
+        'reordering' => [
+            'item' => 'Elemento',
+            'position' => ':label, posizione :position di :count',
+            'moved' => ':label spostato in posizione :position di :count',
+        ],
+
+        'columns' => [
+
+            'actions' => [
+                'label' => 'Azioni',
+            ],
+
+            'reorder' => [
+                'label' => 'Riordina',
+            ],
+
+        ],
 
         'actions' => [
 
@@ -425,6 +531,10 @@ return [
 
                 ],
 
+            ],
+
+            'close_panel' => [
+                'label' => 'Chiudi pannello',
             ],
 
             'custom_block' => [
@@ -548,6 +658,35 @@ return [
 
                         'color' => [
                             'label' => 'Colore',
+
+                            'options' => [
+                                'slate' => 'Slate',
+                                'gray' => 'Gray',
+                                'zinc' => 'Zinc',
+                                'neutral' => 'Neutral',
+                                'stone' => 'Stone',
+                                'mauve' => 'Mauve',
+                                'olive' => 'Olive',
+                                'mist' => 'Mist',
+                                'taupe' => 'Taupe',
+                                'red' => 'Red',
+                                'orange' => 'Orange',
+                                'amber' => 'Amber',
+                                'yellow' => 'Yellow',
+                                'lime' => 'Lime',
+                                'green' => 'Green',
+                                'emerald' => 'Emerald',
+                                'teal' => 'Teal',
+                                'cyan' => 'Cyan',
+                                'sky' => 'Sky',
+                                'blue' => 'Blue',
+                                'indigo' => 'Indigo',
+                                'violet' => 'Violet',
+                                'purple' => 'Purple',
+                                'fuchsia' => 'Fuchsia',
+                                'pink' => 'Pink',
+                                'rose' => 'Rose',
+                            ],
                         ],
 
                         'custom_color' => [
@@ -562,10 +701,44 @@ return [
 
         ],
 
-        'no_merge_tag_search_results_message' => 'Nessun risultato per i tag mergiati.',
+        'custom_blocks' => [
+
+            'actions' => [
+
+                'delete' => [
+                    'label' => 'Elimina blocco',
+                ],
+
+                'edit' => [
+                    'label' => 'Modifica blocco',
+                ],
+
+            ],
+
+            'no_search_results_message' => 'Nessun blocco corrisponde alla ricerca.',
+
+            'search_label' => 'Cerca blocchi',
+
+            'search_prompt' => 'Cerca blocchi',
+
+        ],
+
         'file_attachments_accepted_file_types_message' => 'I file caricati devono essere di tipo: :values.',
 
         'file_attachments_max_size_message' => 'I file caricati non devono superare i :max kilobyte.',
+
+        'no_merge_tag_search_results_message' => 'Nessun risultato per i tag mergiati.',
+
+        'mentions' => [
+            'no_options_message' => 'Nessuna opzione disponibile.',
+            'no_search_results_message' => 'Nessun risultato corrisponde alla tua ricerca.',
+            'search_prompt' => 'Inizia a digitare per cercare...',
+            'searching_message' => 'Ricerca in corso...',
+        ],
+
+        'toolbar' => [
+            'label' => "Barra degli strumenti dell'editor",
+        ],
 
         'tools' => [
             'align_center' => 'Allinea al centro',
@@ -584,6 +757,9 @@ return [
             'h1' => 'Titolo',
             'h2' => 'Intestazione',
             'h3' => 'Sottotitolo',
+            'h4' => 'Titolo 4',
+            'h5' => 'Titolo 5',
+            'h6' => 'Titolo 6',
             'grid' => 'Griglia',
             'grid_delete' => 'Elimina griglia',
             'highlight' => 'Evidenzia',
@@ -593,6 +769,7 @@ return [
             'link' => 'Link',
             'merge_tags' => 'Merge tag',
             'ordered_list' => 'Elenco numerato',
+            'paragraph' => 'Paragrafo',
             'redo' => 'Ripristina',
             'small' => 'Testo piccolo',
             'strike' => 'Barrato',
@@ -609,6 +786,7 @@ return [
             'table_merge_cells' => 'Unisci celle',
             'table_split_cell' => 'Dividi cella',
             'table_toggle_header_row' => 'Attiva/disattiva riga intestazione',
+            'table_toggle_header_cell' => 'Attiva/disattiva cella intestazione',
             'text_color' => 'Colore testo',
             'underline' => 'Sottolineato',
             'undo' => 'Annulla',
@@ -621,6 +799,10 @@ return [
     'select' => [
 
         'actions' => [
+
+            'clear' => [
+                'label' => 'Svuota selezione',
+            ],
 
             'create_option' => [
 
@@ -666,6 +848,10 @@ return [
 
             ],
 
+            'remove_option' => [
+                'label' => 'Rimuovi :label',
+            ],
+
         ],
 
         'boolean' => [
@@ -673,22 +859,44 @@ return [
             'false' => 'No',
         ],
 
+        'error_message' => 'Non è stato possibile caricare le opzioni. Riprova.',
+
         'loading_message' => 'Caricamento...',
 
         'max_items_message' => 'È possibile selezionare solo :count.',
+
+        'no_options_message' => 'Nessuna opzione disponibile.',
 
         'no_search_results_message' => 'Nessuna opzione corrisponde alla tua ricerca.',
 
         'placeholder' => "Seleziona un'opzione",
 
+        'required_description' => "Seleziona un'opzione.",
+
         'searching_message' => 'Ricerca in corso...',
+
+        'search_label' => 'Cerca',
 
         'search_prompt' => 'Digita per cercare...',
 
     ],
 
     'tags_input' => [
+
+        'actions' => [
+
+            'delete' => [
+                'label' => 'Elimina',
+            ],
+
+        ],
+
         'placeholder' => 'Nuovo tag',
+
+        'tag_added' => 'Aggiunto: :tag',
+
+        'tag_removed' => 'Rimosso: :tag',
+
     ],
 
     'text_input' => [
@@ -713,6 +921,8 @@ return [
     ],
 
     'toggle_buttons' => [
+
+        'required_description' => "Seleziona almeno un'opzione.",
 
         'boolean' => [
             'true' => 'Si',

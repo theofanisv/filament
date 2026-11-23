@@ -1,98 +1,156 @@
-import { Select } from '../../../../support/resources/js/utilities/select.js'
+import {
+    Select,
+    createSelectOptionRequestHandler,
+} from '../../../../support/resources/js/utilities/select.js'
 
 export default function selectFormComponent({
     canOptionLabelsWrap,
     canSelectPlaceholder,
-    isHtmlAllowed,
-    getOptionLabelUsing,
-    getOptionLabelsUsing,
-    getOptionsUsing,
-    getSearchResultsUsing,
+    clearButtonLabel,
+    errorMessage,
+    hasDynamicOptions,
+    hasDynamicSearchResults,
+    hasInitialNoOptionsMessage,
+    id,
     initialOptionLabel,
     initialOptionLabels,
     initialState,
     isAutofocused,
     isDisabled,
+    isHtmlAllowed,
     isMultiple,
     isReorderable,
     isSearchable,
-    hasDynamicOptions,
-    hasDynamicSearchResults,
+    key,
     livewireId,
     loadingMessage,
     maxItems,
     maxItemsMessage,
+    noOptionsMessage,
     noSearchResultsMessage,
     options,
     optionsLimit,
     placeholder,
     position,
+    removeButtonLabel,
     searchDebounce,
     searchingMessage,
+    searchLabel,
     searchPrompt,
     searchableOptionFields,
     state,
     statePath,
 }) {
+    const optionRequests = createSelectOptionRequestHandler()
+
     return {
         select: null,
+
+        accessibilityObserver: null,
 
         state,
 
         init() {
             this.select = new Select({
-                element: this.$refs.select,
-                options,
-                placeholder,
-                state: this.state,
                 canOptionLabelsWrap,
                 canSelectPlaceholder,
+                clearButtonLabel,
+                element: this.$refs.select,
+                errorMessage,
+                getOptionLabelUsing: () => this.$getOptionLabel(),
+                getOptionLabelsUsing: () => this.$getOptionLabelsForJs(),
+                getOptionsUsing: optionRequests.wrap((request) =>
+                    request(this.$wire, 'callSchemaComponentMethod', [
+                        key,
+                        'getOptionsForJs',
+                    ]),
+                ),
+                getSearchResultsUsing: optionRequests.wrap((search, request) =>
+                    request(
+                        this.$wire,
+                        'callSchemaComponentMethod',
+                        [key, 'getSearchResultsForJs'],
+                        { search },
+                    ),
+                ),
+                hasDynamicOptions,
+                hasDynamicSearchResults,
+                hasInitialNoOptionsMessage,
+                id,
                 initialOptionLabel,
                 initialOptionLabels,
                 initialState,
-                isHtmlAllowed,
                 isAutofocused,
                 isDisabled,
+                isHtmlAllowed,
                 isMultiple,
                 isReorderable,
                 isSearchable,
-                getOptionLabelUsing,
-                getOptionLabelsUsing,
-                getOptionsUsing,
-                getSearchResultsUsing,
-                hasDynamicOptions,
-                hasDynamicSearchResults,
-                searchPrompt,
-                searchDebounce,
+                livewireId,
                 loadingMessage,
-                searchingMessage,
-                noSearchResultsMessage,
                 maxItems,
                 maxItemsMessage,
-                optionsLimit,
-                position,
-                searchableOptionFields,
-                livewireId,
-                statePath,
+                noOptionsMessage,
+                noSearchResultsMessage,
                 onStateChange: (newState) => {
                     this.state = newState
                 },
+                options,
+                optionsLimit,
+                placeholder,
+                position,
+                removeButtonLabel,
+                searchableOptionFields,
+                searchDebounce,
+                searchingMessage,
+                searchLabel,
+                searchPrompt,
+                state: this.state,
+                statePath,
             })
 
+            const attributesElement = this.$el.previousElementSibling
+            if (attributesElement?.hasAttribute('data-select-accessibility')) {
+                const syncAccessibility = () =>
+                    this.select?.setAccessibilityAttributes(
+                        JSON.parse(
+                            attributesElement.dataset.selectAccessibility,
+                        ),
+                    )
+                syncAccessibility()
+                this.accessibilityObserver = new MutationObserver(
+                    syncAccessibility,
+                )
+                this.accessibilityObserver.observe(attributesElement, {
+                    attributes: true,
+                    attributeFilter: ['data-select-accessibility'],
+                })
+            }
+
             this.$watch('state', (newState) => {
-                if (this.select && this.select.state !== newState) {
-                    this.select.state = newState
-                    this.select.updateSelectedDisplay()
-                    this.select.renderOptions()
-                }
+                this.$nextTick(() => {
+                    if (this.select && this.select.state !== newState) {
+                        this.select.state = newState
+                        this.select.updateSelectedDisplay()
+                        this.select.renderOptions()
+                    }
+                })
             })
+
+            this.$dispatch('async-component-ready')
+
+            if (isAutofocused) {
+                this.$nextTick(() => this.select?.selectButton.focus())
+            }
         },
 
         destroy() {
+            this.accessibilityObserver?.disconnect()
             if (this.select) {
                 this.select.destroy()
                 this.select = null
             }
+            optionRequests.destroy()
         },
     }
 }

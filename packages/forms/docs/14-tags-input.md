@@ -1,9 +1,6 @@
 ---
 title: Tags input
 ---
-import Aside from "@components/Aside.astro"
-import AutoScreenshot from "@components/AutoScreenshot.astro"
-import UtilityInjection from "@components/UtilityInjection.astro"
 
 ## Introduction
 
@@ -17,7 +14,7 @@ use Filament\Forms\Components\TagsInput;
 TagsInput::make('tags')
 ```
 
-<AutoScreenshot name="forms/fields/tags-input/simple" alt="Tags input" version="4.x" />
+<AutoScreenshot name="forms/fields/tags-input/simple" alt="Tags input" />
 
 If you're saving the JSON tags using Eloquent, you should be sure to add an `array` [cast](https://laravel.com/docs/eloquent-mutators#array-and-json-casting) to the model property:
 
@@ -40,9 +37,8 @@ class Post extends Model
 }
 ```
 
-<Aside variant="tip">
-    Filament also supports [`spatie/laravel-tags`](https://github.com/spatie/laravel-tags). See our [plugin documentation](https://filamentphp.com/plugins/filament-spatie-tags) for more information.
-</Aside>
+> [!TIP]
+> Filament also supports [`spatie/laravel-tags`](https://github.com/spatie/laravel-tags). See our [plugin documentation](https://filamentphp.com/plugins/filament-spatie-tags) for more information.
 
 ## Comma-separated tags
 
@@ -55,7 +51,7 @@ TagsInput::make('tags')
     ->separator(',')
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static value, the `separator()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static value, the `separator()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Autocompleting tag suggestions
 
@@ -73,7 +69,7 @@ TagsInput::make('tags')
     ])
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static array, the `suggestions()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static array, the `suggestions()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Defining split keys
 
@@ -88,7 +84,7 @@ TagsInput::make('tags')
 
 You can [read more about possible options for keys](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key).
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static array, the `splitKeys()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static array, the `splitKeys()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Adding a prefix and suffix to individual tags
 
@@ -101,7 +97,9 @@ TagsInput::make('percentages')
     ->tagSuffix('%')
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing static values, the `tagPrefix()` and `tagSuffix()` methods also accept functions to dynamically calculate them. You can inject various utilities into the functions as parameters.</UtilityInjection>
+<AutoScreenshot name="forms/fields/tags-input/tag-prefix" alt="Tags input with tag prefix" />
+
+<UtilityInjection set="formFields">As well as allowing static values, the `tagPrefix()` and `tagSuffix()` methods also accept functions to dynamically calculate them. You can inject various utilities into the functions as parameters.</UtilityInjection>
 
 ## Reordering tags
 
@@ -123,7 +121,7 @@ TagsInput::make('tags')
     ->reorderable(FeatureFlag::active())
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static value, the `reorderable()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static value, the `reorderable()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Changing the color of tags
 
@@ -136,7 +134,9 @@ TagsInput::make('tags')
     ->color('danger')
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static value, the `color()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<AutoScreenshot name="forms/fields/tags-input/color" alt="Tags input with colored tags" />
+
+<UtilityInjection set="formFields">As well as allowing a static value, the `color()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Trimming whitespace
 
@@ -158,6 +158,33 @@ TagsInput::configureUsing(function (TagsInput $component): void {
     $component->trim();
 });
 ```
+
+## Customizing the loading placeholder
+
+The tags input displays a loading placeholder while its JavaScript is loaded and initialized. You may customize it using `loadingPlaceholder()`, passing a Blade view or an `Htmlable` instance, such as an `HtmlString` containing trusted HTML:
+
+```php
+use Filament\Forms\Components\TagsInput;
+
+TagsInput::make('tags')
+    ->loadingPlaceholder(fn () => view('forms.tags-input-loading-placeholder'))
+```
+
+<UtilityInjection set="formFields">As well as allowing a static value, the `loadingPlaceholder()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+Keep your placeholder HTML decorative and noninteractive. Filament hides it from assistive technologies and supplies an accessible loading status in the surrounding wrapper. If the JavaScript fails to load or initialize, the placeholder remains visible.
+
+To customize the placeholder for all tags inputs, use [`TagsInput::configureUsing()`](overview#global-settings) in a service provider's `boot()` method:
+
+```php
+use Filament\Forms\Components\TagsInput;
+
+TagsInput::configureUsing(function (TagsInput $tagsInput): void {
+    $tagsInput->loadingPlaceholder(fn () => view('forms.tags-input-loading-placeholder'));
+});
+```
+
+You may call `loadingPlaceholder(null)` on an individual tags input to restore the default loading placeholder.
 
 ## Tags validation
 

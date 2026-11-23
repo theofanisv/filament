@@ -4,11 +4,12 @@ namespace Filament\Panel\Concerns;
 
 use Closure;
 use Filament\Support\Facades\FilamentView;
+use Filament\Support\View\ViewManager;
 
 trait HasRenderHooks
 {
     /**
-     * @var array<string, array<string, array<Closure>>>
+     * @var array<string, array<array{hook: Closure, scopes: array<string>}>>
      */
     protected array $renderHooks = [];
 
@@ -17,24 +18,26 @@ trait HasRenderHooks
      */
     public function renderHook(string $name, Closure $hook, string | array | null $scopes = null): static
     {
+        $name = ViewManager::normalizeRenderHookName($name);
+
+        if ($scopes === null) {
+            $scopes = [''];
+        }
+
         if (! is_array($scopes)) {
             $scopes = [$scopes];
         }
 
-        foreach ($scopes as $scopeName) {
-            $this->renderHooks[$name][$scopeName][] = $hook;
-        }
+        $this->renderHooks[$name][] = ['hook' => $hook, 'scopes' => $scopes];
 
         return $this;
     }
 
     protected function registerRenderHooks(): void
     {
-        foreach ($this->renderHooks as $hookName => $scopedHooks) {
-            foreach ($scopedHooks as $scope => $hooks) {
-                foreach ($hooks as $hook) {
-                    FilamentView::registerRenderHook($hookName, $hook, $scope);
-                }
+        foreach ($this->renderHooks as $hookName => $hooks) {
+            foreach ($hooks as $hook) {
+                FilamentView::registerRenderHook($hookName, $hook['hook'], $hook['scopes']);
             }
         }
     }

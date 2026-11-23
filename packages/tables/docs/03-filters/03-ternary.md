@@ -4,13 +4,15 @@ title: Ternary filters
 
 ## Introduction
 
-Ternary filters allow you to easily create a select filter which has three states - usually true, false and blank. To filter a column named `is_admin` to be `true` or `false`, you may use the ternary filter:
+Ternary filters allow you to easily create a select filter which has three states - usually true, false and blank. To filter a column named `is_featured` to be `true` or `false`, you may use the ternary filter:
 
 ```php
 use Filament\Tables\Filters\TernaryFilter;
 
-TernaryFilter::make('is_admin')
+TernaryFilter::make('is_featured')
 ```
+
+<AutoScreenshot name="tables/filters/ternary" alt="Ternary filter" />
 
 ## Using a ternary filter with a nullable column
 

@@ -1,7 +1,6 @@
 ---
 title: Grouping rows
 ---
-import AutoScreenshot from "@components/AutoScreenshot.astro"
 
 ## Introduction
 
@@ -23,7 +22,21 @@ public function table(Table $table): Table
 }
 ```
 
-<AutoScreenshot name="tables/grouping" alt="Table with grouping" version="4.x" />
+<AutoScreenshot name="tables/grouping" alt="Table with grouping" />
+
+### Setting the default grouping direction
+
+By default, groups are ordered in ascending order. To use descending order by default, pass the `direction` argument to the `defaultGroup()` method:
+
+```php
+use Filament\Tables\Table;
+
+public function table(Table $table): Table
+{
+    return $table
+        ->defaultGroup('status', direction: 'desc');
+}
+```
 
 ## Allowing users to choose between groupings
 
@@ -41,6 +54,8 @@ public function table(Table $table): Table
         ]);
 }
 ```
+
+<AutoScreenshot name="tables/grouping-selectable" alt="Table with selectable grouping" />
 
 You can use both `groups()` and `defaultGroup()` together to allow users to choose between different groupings, but have a default grouping set:
 
@@ -146,7 +161,7 @@ public function table(Table $table): Table
 }
 ```
 
-<AutoScreenshot name="tables/grouping-descriptions" alt="Table with group descriptions" version="4.x" />
+<AutoScreenshot name="tables/grouping-descriptions" alt="Table with group descriptions" />
 
 ## Setting a group key
 
@@ -184,6 +199,8 @@ public function table(Table $table): Table
 }
 ```
 
+<AutoScreenshot name="tables/grouping-date" alt="Table with date grouping" />
+
 ## Collapsible groups
 
 You can allow rows inside a group to be collapsed underneath their group title. To enable this, use a `Group` object with the `collapsible()` method:
@@ -201,6 +218,8 @@ public function table(Table $table): Table
         ]);
 }
 ```
+
+<AutoScreenshot name="tables/grouping-collapsible" alt="Table with collapsible groups" />
 
 ### Collapsing groups by default
 
@@ -249,6 +268,8 @@ public function table(Table $table): Table
         ->groupsOnly();
 }
 ```
+
+<AutoScreenshot name="tables/grouping-groups-only" alt="Table with groups only mode" />
 
 ## Customizing the Eloquent query ordering behavior
 
@@ -371,5 +392,23 @@ public function table(Table $table): Table
     return $table
 		->defaultGroup('status')
         ->groupingDirectionSettingHidden();
+}
+```
+
+## Persisting the grouping in the user's session
+
+To persist the grouping in the user's session, use the `persistGroupInSession()` method:
+
+```php
+use Filament\Tables\Table;
+
+public function table(Table $table): Table
+{
+    return $table
+        ->groups([
+            'status',
+            'category',
+        ])
+        ->persistGroupInSession();
 }
 ```

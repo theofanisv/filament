@@ -1,13 +1,12 @@
 ---
 title: Actions
 ---
-import AutoScreenshot from "@components/AutoScreenshot.astro"
 
 ## Introduction
 
 Filament's tables can use [Actions](../actions). They are buttons that can be added to the [end of any table row](#record-actions), or even in the [header](#header-actions) or [toolbar](#toolbar-actions) of a table. For instance, you may want an action to "create" a new record in the header, and then "edit" and "delete" actions on each row. [Bulk actions](#bulk-actions) can be used to execute code when records in the table are selected. Additionally, actions can be added to any [table column](#column-actions), such that each cell in that column is a trigger for your action.
 
-It's highly advised that you read the documentation about [customizing action trigger buttons](../actions/overview) and [action modals](../actions/modals) to that you are aware of the full capabilities of actions.
+For more ways to customize actions, see [action trigger buttons](../actions/overview) and [action modals](../actions/modals).
 
 ## Record actions
 
@@ -44,7 +43,9 @@ Action::make('delete')
 
 All methods on the action accept callback functions, where you can access the current table `$record` that was clicked.
 
-<AutoScreenshot name="tables/actions/simple" alt="Table with actions" version="4.x" />
+Custom actions must be [authorized explicitly](../actions/overview#authorization). For URL actions, the destination route must also authorize access.
+
+<AutoScreenshot name="tables/actions/simple" alt="Table with actions" />
 
 ### Positioning record actions before columns
 
@@ -63,7 +64,7 @@ public function table(Table $table): Table
 }
 ```
 
-<AutoScreenshot name="tables/actions/before-columns" alt="Table with actions before columns" version="4.x" />
+<AutoScreenshot name="tables/actions/before-columns" alt="Table with actions before columns" />
 
 ### Positioning record actions before the checkbox column
 
@@ -82,6 +83,8 @@ public function table(Table $table): Table
 }
 ```
 
+<AutoScreenshot name="tables/actions/before-cells" alt="Table with actions before cells" />
+
 ### Global record action settings
 
 To customize the default configuration used for ungrouped record actions, you can use `modifyUngroupedRecordActionsUsing()` from a [`Table::configureUsing()` function](overview#global-settings) in the `boot()` method of a service provider:
@@ -96,13 +99,11 @@ Table::configureUsing(function (Table $table): void {
 });
 ```
 
-<AutoScreenshot name="tables/actions/before-cells" alt="Table with actions before cells" version="4.x" />
-
 ### Accessing the selected table rows
 
-You may want an action to be able to access all the selected rows in the table. Usually, this is done with a [bulk action](#bulk-actions) in the header of the table. However, you may want to do this with a row action, where the selected rows provide context for the action.
+You may want an action to be able to access all the selected rows in the table. Usually, this is done with a [bulk action](#bulk-actions) in the header of the table. However, you may want to do this with a record action, where the selected rows provide context for the action.
 
-For example, you may want to have a row action that copies the row data to all the selected records. To force the table to be selectable, even if there aren't bulk actions defined, you need to use the `selectable()` method. To allow the action to access the selected records, you need to use the `accessSelectedRecords()` method. Then, you can use the `$selectedRecords` parameter in your action to access the selected records:
+For example, you may want to have a record action that copies the row data to all the selected records. To force the table to be selectable, even if there aren't bulk actions defined, you need to use the `selectable()` method. To allow the action to access the selected records, you need to use the `accessSelectedRecords()` method. Then, you can use the `$selectedRecords` parameter in your action to access the selected records:
 
 ```php
 use Filament\Actions\Action;
@@ -127,6 +128,8 @@ public function table(Table $table): Table
         ]);
 }
 ```
+
+Authorize access to the source record and permission to update each selected record before copying data. Selecting a record does not authorize the operation.
 
 ## Bulk actions
 
@@ -157,7 +160,12 @@ BulkAction::make('delete')
 
 The function allows you to access the current table `$records` that are selected. It is an Eloquent collection of models.
 
-<AutoScreenshot name="tables/actions/bulk" alt="Table with bulk action" version="4.x" />
+Custom bulk actions need explicit authorization. See [authorizing bulk actions](#authorizing-bulk-actions) to check each selected record's policy before processing it.
+
+> [!NOTE]
+> Bulk-action queries must return one row per selectable record key. Joins that repeat the same model key are not supported: use `whereHas()` or `whereExists()` when filtering by related records instead. Many-to-many relationships using [`allowDuplicates()`](../resources/managing-relationships#handling-duplicates) remain supported because each pivot row has its own primary key.
+
+<AutoScreenshot name="tables/actions/bulk" alt="Table with bulk action" />
 
 ### Authorizing bulk actions
 
@@ -245,6 +253,7 @@ Alongside [individual record authorization](#authorizing-bulk-actions) messages,
 ```php
 use Filament\Actions\BulkAction;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 
 BulkAction::make('delete')
     ->requiresConfirmation()
@@ -293,6 +302,7 @@ You may use a `BulkActionGroup` object to [group multiple bulk actions together]
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Collection;
 
 public function table(Table $table): Table
 {
@@ -306,16 +316,23 @@ public function table(Table $table): Table
                     ->requiresConfirmation()
                     ->action(fn (Collection $records) => $records->each->forceDelete()),
             ]),
-            BulkAction::make('export')->button()->action(fn (Collection $records) => ...),
+            BulkAction::make('export')
+                ->button()
+                ->action(function (Collection $records) {
+                    // Export the selected records...
+                }),
         ]);
 }
 ```
+
+<AutoScreenshot name="tables/actions/bulk-not-grouped" alt="Table with grouped and ungrouped bulk actions" />
 
 Alternatively, if all of your bulk actions are grouped, you can use the shorthand `groupedBulkActions()` method:
 
 ```php
 use Filament\Actions\BulkAction;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Collection;
 
 public function table(Table $table): Table
 {
@@ -364,6 +381,28 @@ public function table(Table $table): Table
 }
 ```
 
+To work out how many records can be selected across all pages, Filament has to load every filtered record and pass it to this callback. On large tables, use the `selectableRecordsQuery()` method instead. It adds the condition to the database query, so Filament can count the selectable records with a single `COUNT` query:
+
+```php
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+
+public function table(Table $table): Table
+{
+    return $table
+        ->toolbarActions([
+            // ...
+        ])
+        ->selectableRecordsQuery(
+            fn (Builder $query): Builder => $query->where('status', Status::Enabled),
+        );
+}
+```
+
+The query also limits which records a bulk action receives. If you use both methods, a record must satisfy both to be selectable.
+
+The callback is scoped to a nested `where()` clause, so you may use `orWhere()` without overriding the table's existing constraints. Use it to add `where()` conditions or relationship constraints such as `whereHas()`, not to change the selected columns, joins, ordering, or pagination.
+
 ### Limiting the number of selectable records
 
 You may restrict how many records the user can select in total:
@@ -384,7 +423,7 @@ public function table(Table $table): Table
 
 ### Preventing bulk-selection of all pages
 
-The `selectCurrentPageOnly()` method can be used to prevent the user from easily bulk-selecting all records in the table at once, and instead only allows them to select one page at a time:
+The `selectCurrentPageOnly()` method limits the table's selection controls to the current page, preventing the user from easily bulk-selecting all pages at once:
 
 ```php
 use Filament\Tables\Table;
@@ -398,6 +437,9 @@ public function table(Table $table): Table
         ->selectCurrentPageOnly();
 }
 ```
+
+> [!NOTE]
+> This only changes the selection controls, not which records a bulk-action request can select. Use [`maxSelectableRecords()`](#limiting-the-number-of-selectable-records) to enforce a maximum selection size. Selection controls do not replace [authorization](#authorizing-bulk-actions).
 
 ### Restricting bulk selection to groups only
 
@@ -418,9 +460,9 @@ public function table(Table $table): Table
 
 ### Improving the performance of bulk actions
 
-By default, a bulk action will load all Eloquent records into memory before passing them to the `action()` function.
+By default, a bulk action will load all selected Eloquent records into memory before passing them to the `action()` function. For large selections, this can exceed your PHP memory limit.
 
-If you are processing a large number of records, you may want to use the `chunkSelectedRecords()` method to fetch a smaller number of records at a time. This will reduce the memory usage of your application:
+If you are processing a large number of records, use the `chunkSelectedRecords()` method to fetch a smaller number of records at a time. This reduces the memory needed to load the selected models:
 
 ```php
 use Filament\Actions\BulkAction;
@@ -435,6 +477,10 @@ BulkAction::make()
 
 You can still loop through the `$records` collection as normal, but the collection will be a `LazyCollection` instead of a normal collection.
 
+Chunking does not limit the total number of records processed. You can combine it with [`maxSelectableRecords()`](#limiting-the-number-of-selectable-records) to limit the selection size. Avoid collecting the entire lazy collection into memory, as this removes the memory benefit of chunking.
+
+For bounded selections, Filament loads the selected keys into memory before fetching the models in chunks. Sorting determines which records fall within the limit, but chunked traversal uses primary-key or pivot-key order. If you use `checkIfRecordIsSelectableUsing()`, Filament must also load models to evaluate that callback when calculating the initial selection total. Use [`selectableRecordsQuery()`](#disabling-bulk-actions-for-some-rows) to avoid this.
+
 You can also prevent Filament from fetching the Eloquent models in the first place, and instead just pass the IDs of the selected records to the `action()` function. This is useful if you are processing a large number of records, and you don't need to load them into memory:
 
 ```php
@@ -447,6 +493,10 @@ BulkAction::make()
         // Process the records...
     })
 ```
+
+The IDs are still loaded into a collection in memory, so this uses less memory than fetching models but does not make an unlimited selection memory-safe.
+
+For bounded selections, sorting determines which records fall within the limit, but the returned IDs and selected-records query results are not guaranteed to retain that order. If your action reads from `$action->getSelectedRecordsQuery()` and depends on ordering, apply `orderBy()` to that query before reading it.
 
 ## Header actions
 
@@ -466,7 +516,7 @@ public function table(Table $table): Table
 
 This is useful for things like "create" actions, which are not related to any specific table row, or bulk actions that need to be more visible.
 
-<AutoScreenshot name="tables/actions/header" alt="Table with header actions" version="4.x" />
+<AutoScreenshot name="tables/actions/header" alt="Table with header actions" />
 
 ## Toolbar actions
 
@@ -486,7 +536,7 @@ public function table(Table $table): Table
 
 This is useful for things like "create" actions, which are not related to any specific table row, or bulk actions that need to be more visible.
 
-<AutoScreenshot name="tables/actions/toolbar" alt="Table with toolbar actions" version="4.x" />
+<AutoScreenshot name="tables/actions/toolbar" alt="Table with toolbar actions" />
 
 ## Column actions
 
@@ -519,4 +569,4 @@ public function table(Table $table): Table
 
 You may find out more about customizing action groups in the [Actions documentation](../actions/grouping-actions).
 
-<AutoScreenshot name="tables/actions/group" alt="Table with action group" version="4.x" />
+<AutoScreenshot name="tables/actions/group" alt="Table with action group" />

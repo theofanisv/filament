@@ -17,7 +17,10 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\RenderHook;
+use Filament\Schemas\Concerns\RestrictsFileUploadsToSchemaComponents;
 use Filament\Schemas\Schema;
+use Filament\Support\Components\Attributes\Exposed;
+use Filament\Support\Components\Attributes\Unexposed;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -26,15 +29,20 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Livewire\Attributes\Locked;
+use SensitiveParameter;
+
+use function Filament\Support\encode_key_segments;
 
 /**
  * @property-read Schema $form
  */
 class ResetPassword extends SimplePage
 {
+    use RestrictsFileUploadsToSchemaComponents;
     use WithRateLimiting;
 
     #[Locked]
@@ -47,7 +55,8 @@ class ResetPassword extends SimplePage
     #[Locked]
     public ?string $token = null;
 
-    public function mount(?string $email = null, ?string $token = null): void
+    #[Unexposed]
+    public function mount(?string $email = null, #[SensitiveParameter] ?string $token = null): void
     {
         if (Filament::auth()->check()) {
             redirect()->intended(Filament::getUrl());
@@ -60,6 +69,7 @@ class ResetPassword extends SimplePage
         ]);
     }
 
+    #[Exposed]
     public function resetPassword(): ?PasswordResetResponse
     {
         try {
@@ -67,6 +77,10 @@ class ResetPassword extends SimplePage
         } catch (TooManyRequestsException $exception) {
             $this->getRateLimitedNotification($exception)?->send();
 
+            return null;
+        }
+
+        if ($this->isResetPasswordRateLimited($this->email)) {
             return null;
         }
 
@@ -133,6 +147,32 @@ class ResetPassword extends SimplePage
             ->danger();
     }
 
+    protected function isResetPasswordRateLimited(?string $email): bool
+    {
+        if (blank($email)) {
+            return false;
+        }
+
+        $passwordBroker = Filament::getAuthPasswordBroker() ?? Password::getDefaultDriver();
+        $rateLimitingKey = 'filament:auth:reset_password:rate_limit:' . hash('sha256', encode_key_segments($passwordBroker, $email));
+
+        if (RateLimiter::tooManyAttempts($rateLimitingKey, maxAttempts: 2)) {
+            $this->getRateLimitedNotification(new TooManyRequestsException(
+                static::class,
+                'resetPassword',
+                request()->ip(),
+                RateLimiter::availableIn($rateLimitingKey),
+            ))?->send();
+
+            return true;
+        }
+
+        RateLimiter::hit($rateLimitingKey);
+
+        return false;
+    }
+
+    #[Unexposed]
     public function form(Schema $schema): Schema
     {
         return $schema
@@ -175,11 +215,13 @@ class ResetPassword extends SimplePage
             ->dehydrated(false);
     }
 
+    #[Unexposed]
     public function getTitle(): string | Htmlable
     {
         return __('filament-panels::auth/pages/password-reset/reset-password.title');
     }
 
+    #[Unexposed]
     public function getHeading(): string | Htmlable | null
     {
         return __('filament-panels::auth/pages/password-reset/reset-password.heading');
@@ -195,6 +237,7 @@ class ResetPassword extends SimplePage
         ];
     }
 
+    #[Unexposed]
     public function getResetPasswordFormAction(): Action
     {
         return Action::make('resetPassword')
@@ -207,6 +250,7 @@ class ResetPassword extends SimplePage
         return true;
     }
 
+    #[Unexposed]
     public function content(Schema $schema): Schema
     {
         return $schema
@@ -217,6 +261,7 @@ class ResetPassword extends SimplePage
             ]);
     }
 
+    #[Unexposed]
     public function getFormContentComponent(): Component
     {
         return Form::make([EmbeddedSchema::make('form')])
@@ -234,7 +279,7 @@ class ResetPassword extends SimplePage
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    protected function getCredentialsFromFormData(array $data): array
+    protected function getCredentialsFromFormData(#[SensitiveParameter] array $data): array
     {
         return $data;
     }

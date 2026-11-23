@@ -6,6 +6,8 @@ title: Custom pages
 
 Filament allows you to create completely custom pages for the app.
 
+<AutoScreenshot name="panels/custom-page" alt="A custom page with header actions" />
+
 ## Creating a page
 
 To create a new page, you can use:
@@ -54,6 +56,9 @@ protected function getHeaderActions(): array
 }
 ```
 
+> [!WARNING]
+> If `$post` is stored in a public Livewire property, the page's `canAccess()` method does not authorize it, and Filament does not re-query it on later requests. Re-query and authorize the post before using it in an action, including any tenant or ownership restrictions your application requires. Authorize access to the edit route separately. See [Eloquent model restoration in Livewire](../advanced/security#understanding-eloquent-model-restoration-in-livewire) for more information.
+
 #### Aligning header actions
 
 By default, header actions are aligned to the left on mobile. To change the alignment of the header actions on mobile, set `$headerActionsAlignment`:
@@ -70,7 +75,9 @@ You can also open an action when a page loads by setting the `$defaultAction` pr
 
 ```php
 use Filament\Actions\Action;
+use Livewire\Attributes\Locked;
 
+#[Locked]
 public $defaultAction = 'onboarding';
 
 public function onboardingAction(): Action
@@ -84,6 +91,9 @@ public function onboardingAction(): Action
 You can also pass an array of arguments to the default action using the `$defaultActionArguments` property:
 
 ```php
+use Livewire\Attributes\Locked;
+
+#[Locked]
 public $defaultActionArguments = ['step' => 2];
 ```
 
@@ -92,26 +102,6 @@ Alternatively, you can open an action modal when a page loads by specifying the 
 ```
 /admin/products/edit/932510?action=onboarding
 ```
-
-### Refreshing form data
-
-If you're using actions on an [Edit](../resources/editing-records) or [View](../resources/viewing-records) resource page, you can refresh data within the main form using the `refreshFormData()` method:
-
-```php
-use App\Models\Post;
-use Filament\Actions\Action;
-
-Action::make('approve')
-    ->action(function (Post $record) {
-        $record->approve();
-
-        $this->refreshFormData([
-            'status',
-        ]);
-    })
-```
-
-This method accepts an array of model attributes that you wish to refresh in the form.
 
 ## Adding widgets to pages
 
@@ -181,8 +171,13 @@ public function getWidgetData(): array
 Now, you can define a corresponding public `$stats` array property on the widget class, which will be automatically filled:
 
 ```php
+use Livewire\Attributes\Locked;
+
+#[Locked]
 public $stats = [];
 ```
+
+[`#[Locked]`](../advanced/security#protecting-server-managed-component-state) prevents client-side changes to this data.
 
 ### Passing properties to widgets on pages
 
@@ -205,9 +200,11 @@ This array of properties gets mapped to [public Livewire properties](https://liv
 
 ```php
 use Filament\Widgets\Widget;
+use Livewire\Attributes\Locked;
 
 class StatsOverviewWidget extends Widget
 {
+    #[Locked]
     public string $status;
 
     // ...
@@ -252,6 +249,8 @@ public static function getNavigationLabel(): string
 }
 ```
 
+You may also [render HTML in the navigation label](overview#rendering-html-in-navigation-item-labels) by returning an `Htmlable` object.
+
 ## Customizing the page URL
 
 By default, Filament will automatically generate a URL (slug) for your page based on its name. You may override this by defining a `$slug` property on your page class:
@@ -293,6 +292,8 @@ public function getSubheading(): ?string
     return __('Custom Page Subheading');
 }
 ```
+
+<AutoScreenshot name="panels/custom-page-subheading" alt="A custom page with a subheading" />
 
 ## Replacing the page header with a custom view
 
@@ -380,6 +381,12 @@ use Filament\Pages\Enums\SubNavigationPosition;
 
 protected static ?SubNavigationPosition $subNavigationPosition = SubNavigationPosition::End;
 ```
+
+<AutoScreenshot name="panels/cluster-end" alt="Page with end sub-navigation position" />
+
+The `SubNavigationPosition::Top` option renders the sub-navigation as tabs above the page content:
+
+<AutoScreenshot name="panels/cluster-top" alt="Page with top sub-navigation position" />
 
 ## Adding extra attributes to the body tag of a page
 

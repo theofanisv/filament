@@ -2,6 +2,8 @@
 title: Editing records
 ---
 
+<AutoScreenshot name="panels/resources/editing" alt="Resource edit page" />
+
 ## Customizing data before filling the form
 
 You may wish to modify the data from a record before it is filled into the form. To do this, you may define a `mutateFormDataBeforeFill()` method on the Edit page class to modify the `$data` array, and return the modified version before it is filled into the form:
@@ -16,6 +18,30 @@ protected function mutateFormDataBeforeFill(array $data): array
 ```
 
 Alternatively, if you're editing records in a modal action, check out the [Actions documentation](../actions/edit#customizing-data-before-filling-the-form).
+
+## Refreshing form data
+
+If an action modifies a record while you are editing it, you can refresh selected data in the form using the `refreshFormData()` method:
+
+```php
+use App\Models\Post;
+use Filament\Actions\Action;
+
+Action::make('approve')
+    ->action(function (Post $record) {
+        $record->approve();
+
+        $this->refreshFormData([
+            'status',
+        ]);
+    })
+```
+
+Pass the form state paths you want to refresh. Other fields retain their unsaved edits unless your customization code changes them. Refreshing a parent path or relationship field can replace unsaved changes within it, so prefer the narrowest paths you need rather than refilling the entire form.
+
+The refreshed data uses `mutateFormDataBeforeFill()` and the fields' hydration callbacks, but not the page's `beforeFill()` or `afterFill()` hooks.
+
+`refreshFormData()` uses the page's current record, not a fresh database query. If the record was updated elsewhere, call `$this->getRecord()->refresh()` first. Relationship fields may otherwise reuse relationships already loaded on the record.
 
 ## Customizing data before saving
 
@@ -192,9 +218,38 @@ class EditUser extends EditRecord
 
 Alternatively, if you're editing records in a modal action, check out the [Actions documentation](../actions/edit#lifecycle-hooks).
 
+### Defining lifecycle hooks in traits
+
+To define a lifecycle hook in a trait, suffix the hook name with the trait's name. This follows the `boot{TraitName}()` convention used by Eloquent and the `mount{TraitName}()` convention used by Livewire, allowing reusable traits to hook into the page lifecycle without colliding with hooks defined on the page itself:
+
+```php
+use Filament\Resources\Pages\EditRecord;
+
+trait HandlesDrafts
+{
+    protected function afterSaveHandlesDrafts(): void
+    {
+        // Runs after the form fields are saved to the database, in addition
+        // to the hook on the page.
+    }
+}
+
+class EditUser extends EditRecord
+{
+    use HandlesDrafts;
+
+    protected function afterSave(): void
+    {
+        // Both lifecycle hooks are called.
+    }
+}
+```
+
+The page's own hook is called first, followed by each trait hook. Hooks from traits used by other traits are also called. Trait hooks are called automatically, so you should not also call them from the page's own hook.
+
 ## Saving a part of the form independently
 
-You may want to allow the user to save a part of the form independently of the rest of the form. One way to do this is with a [section action in the header or footer](../schemas/sections#adding-actions-to-the-sections-header-or-footer). From the `action()` method, you can call `saveFormComponentOnly()`, passing in the `Section` component that you want to save:
+You may want to allow the user to save a part of the form independently of the rest of the form. One way to do this is with a [section action in the header or footer](../schemas/sections#inserting-actions-and-other-components-in-the-footer-of-a-section). From the `action()` method, you can call `saveFormComponentOnly()`, passing in the `Section` component that you want to save:
 
 ```php
 use Filament\Actions\Action;
@@ -222,6 +277,8 @@ Section::make('Rate limiting')
 ```
 
 The `$operation` helper is available, to ensure that the action is only visible when the form is being edited.
+
+<AutoScreenshot name="panels/resources/editing-section-actions" alt="Resource edit page with section footer save action" />
 
 ## Halting the saving process
 
@@ -270,7 +327,8 @@ On resource pages, actions are usually in 2 places: in the top right of the page
 For example, you may add a new button action next to "Delete" on the Edit page:
 
 ```php
-use Filament\Actions;
+use Filament\Actions\Action;
+use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
 
 class EditUser extends EditRecord
@@ -280,15 +338,17 @@ class EditUser extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('impersonate')
+            Action::make('impersonate')
                 ->action(function (): void {
                     // ...
                 }),
-            Actions\DeleteAction::make(),
+            DeleteAction::make(),
         ];
     }
 }
 ```
+
+<AutoScreenshot name="panels/resources/editing-header-actions" alt="Resource edit page with custom header actions" />
 
 Or, a new button next to "Save" below the form:
 
@@ -340,6 +400,8 @@ protected function getFormActions(): array
 }
 ```
 
+<AutoScreenshot name="panels/resources/editing-save-in-header" alt="Resource edit page with save action in the header" />
+
 ## Creating another Edit page
 
 One Edit page may not be enough space to allow users to navigate many form fields. You can create as many Edit pages for a resource as you want. This is especially useful if you are using [resource sub-navigation](overview#resource-sub-navigation), as you are then easily able to switch between the different Edit pages.
@@ -384,14 +446,14 @@ public function form(Schema $schema): Schema
 If you're using [resource sub-navigation](overview#resource-sub-navigation), you can register this page as normal in `getRecordSubNavigation()` of the resource:
 
 ```php
-use App\Filament\Resources\Customers\Pages;
+use App\Filament\Resources\Customers\Pages\EditCustomerContact;
 use Filament\Resources\Pages\Page;
 
 public static function getRecordSubNavigation(Page $page): array
 {
     return $page->generateNavigationItems([
         // ...
-        Pages\EditCustomerContact::class,
+        EditCustomerContact::class,
     ]);
 }
 ```
@@ -417,7 +479,7 @@ Inside the `components()` array, you can insert any [schema component](../schema
 
 ### Using a custom Blade view
 
-For further customization opportunities, you can override the static `$view` property on the page class to a custom view in your app:
+For further customization opportunities, you can override the `$view` property on the page class to a custom view in your app:
 
 ```php
 protected string $view = 'filament.resources.users.pages.edit-user';

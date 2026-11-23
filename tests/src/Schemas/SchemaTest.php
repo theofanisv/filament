@@ -1,0 +1,638 @@
+<?php
+
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Group;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Text;
+use Filament\Schemas\Schema;
+use Filament\Support\Enums\Alignment;
+use Filament\Tests\Fixtures\Livewire\Livewire;
+use Filament\Tests\Fixtures\Models\User;
+use Filament\Tests\TestCase;
+use Illuminate\Support\HtmlString;
+
+uses(TestCase::class);
+
+it('can be constructed with `make()`', function (): void {
+    $schema = Schema::make(Livewire::make());
+
+    expect($schema)->toBeInstanceOf(Schema::class);
+});
+
+it('can be constructed without a Livewire component', function (): void {
+    $schema = Schema::make();
+
+    expect($schema)->toBeInstanceOf(Schema::class);
+});
+
+it('belongs to a `Livewire` component', function (): void {
+    $schema = Schema::make($livewire = Livewire::make());
+
+    expect($schema)
+        ->getLivewire()->toBe($livewire);
+});
+
+it('belongs to a parent component', function (): void {
+    $schema = Schema::make(Livewire::make())
+        ->parentComponent($component = new Component);
+
+    expect($schema)
+        ->getParentComponent()->toBe($component);
+});
+
+describe('alignment factory methods', function (): void {
+    it('creates a start-aligned schema with `start()`', function (): void {
+        $schema = Schema::start([]);
+
+        expect($schema->getAlignment())->toBe(Alignment::Start);
+    });
+
+    it('creates an end-aligned schema with `end()`', function (): void {
+        $schema = Schema::end([]);
+
+        expect($schema->getAlignment())->toBe(Alignment::End);
+    });
+
+    it('creates a center-aligned schema with `center()`', function (): void {
+        $schema = Schema::center([]);
+
+        expect($schema->getAlignment())->toBe(Alignment::Center);
+    });
+
+    it('creates a between-aligned schema with `between()`', function (): void {
+        $schema = Schema::between([]);
+
+        expect($schema->getAlignment())->toBe(Alignment::Between);
+    });
+});
+
+describe('`toEmbeddedHtml()` rendering', function (): void {
+    it('returns empty string when schema is hidden', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->components([])
+            ->hidden();
+
+        expect($schema->toEmbeddedHtml())->toBe('');
+    });
+
+    it('returns empty string when no visible components exist', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->components([
+                (new Component)->hidden(),
+            ]);
+
+        expect($schema->toEmbeddedHtml())->toBe('');
+    });
+
+    it('renders HTML with visible components', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                Text::make('Hello'),
+            ]);
+
+        $html = $schema->toEmbeddedHtml();
+
+        expect($html)->toContain('<div');
+        expect($html)->toContain('fi-sc');
+    });
+
+    it('includes alignment class in rendered HTML', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->components([
+                Text::make('Hello'),
+            ])
+            ->alignStart();
+
+        $html = $schema->toEmbeddedHtml();
+
+        expect($html)->toContain('fi-align-start');
+    });
+
+    it('includes inline class when schema is inline', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->components([
+                Text::make('Hello'),
+            ])
+            ->inline();
+
+        $html = $schema->toEmbeddedHtml();
+
+        expect($html)->toContain('fi-inline');
+    });
+
+    it('adds `fi-growable` to components with `grow()` in inline schemas', function (): void {
+        $growableSchema = Schema::make(Livewire::make())
+            ->components([
+                Text::make('Grows')->grow(),
+            ])
+            ->inline();
+
+        $schema = Schema::make(Livewire::make())
+            ->components([
+                Text::make('Does not grow'),
+            ])
+            ->inline();
+
+        expect($growableSchema->toEmbeddedHtml())->toContain('fi-growable')
+            ->and($schema->toEmbeddedHtml())->not->toContain('fi-growable');
+    });
+
+    it('includes gap class when schema has gap', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->components([
+                Text::make('Hello'),
+            ])
+            ->gap();
+
+        $html = $schema->toEmbeddedHtml();
+
+        expect($html)->toContain('fi-sc-has-gap');
+    });
+});
+
+describe('lazy loading', function (): void {
+    it('preserves `lazy()` as the blur binding alias without enabling lazy loading', function (): void {
+        $schema = Schema::make()->lazy();
+
+        expect($schema->getStateBindingModifiers())->toBe(['blur'])
+            ->and($schema->isLazy())->toBeTrue()
+            ->and($schema->isLazyLoaded())->toBeFalse();
+    });
+
+    it('renders a loading indicator instead of components with lazy loading', function (string $method): void {
+        $livewire = Livewire::make();
+
+        $schema = Schema::make($livewire)
+            ->key('form')
+            ->components([
+                Text::make('Loaded content'),
+            ])
+            ->extraAttributes([
+                'data-testid' => 'lazy-loaded-schema',
+            ])
+            ->{$method}();
+
+        expect($schema->toEmbeddedHtml())
+            ->toContain('fi-sc-loading')
+            ->toContain('data-testid="lazy-loaded-schema"')
+            ->toContain('wire:partial="schema.form"')
+            ->not->toContain('Loaded content');
+    })->with(['lazyLoaded', 'deferLoading']);
+
+    it('renders custom loading content without rendering the lazy schema and can reset it', function (string $contentType): void {
+        $schema = Schema::make(Livewire::make())
+            ->key('form')
+            ->components([Text::make('Loaded content')])
+            ->lazyLoaded()
+            ->loadingPlaceholder(loadingPlaceholder: static fn (Schema $schema) => $contentType === 'view'
+                ? view('loading-placeholder', ['label' => $schema->getKey() . ' <loading>'])
+                : new HtmlString('<div data-testid="custom-loading-placeholder">' . e($schema->getKey() . ' <loading>') . '</div>'));
+
+        expect($schema->toEmbeddedHtml())
+            ->toContain('data-testid="custom-loading-placeholder"', 'form &lt;loading&gt;', 'role="status"', 'aria-busy="true"')
+            ->not->toContain('Loaded content');
+
+        expect($schema->loadingPlaceholder(null)->livewire(Livewire::make())->toEmbeddedHtml())
+            ->not->toContain('data-testid="custom-loading-placeholder"')
+            ->toContain(e(__('filament::loading.label')));
+    })->with(['view', 'html']);
+
+    it('can conditionally use lazy loading', function (string $method): void {
+        $schema = Schema::make(Livewire::make())
+            ->components([
+                Text::make('Loaded content'),
+            ])
+            ->{$method}(static fn (): bool => false);
+
+        expect($schema->isLoadingDeferred())->toBeFalse()
+            ->and($schema->isLazyLoaded())->toBeFalse()
+            ->and($schema->toEmbeddedHtml())->toContain('Loaded content');
+    })->with(['lazyLoaded', 'deferLoading']);
+
+    it('shares configuration between `lazyLoaded()` and `deferLoading()` without changing state binding', function (): void {
+        $schema = Schema::make()->lazyLoaded();
+
+        expect($schema->isLoadingDeferred())->toBeTrue()
+            ->and($schema->isLazy())->toBeFalse()
+            ->and($schema->getStateBindingModifiers())->toBe([])
+            ->and($schema->deferLoading(false)->isLazyLoaded())->toBeFalse()
+            ->and($schema->deferLoading()->lazyLoaded(false)->isLoadingDeferred())->toBeFalse();
+    });
+
+    it('renders lazily with `isLazyLoaded()` overridden', function (): void {
+        $schema = new class(Livewire::make()) extends Schema
+        {
+            public function isLazyLoaded(): bool
+            {
+                return true;
+            }
+        };
+
+        $schema->key('form')->components([Text::make('Loaded content')]);
+
+        expect($schema->toEmbeddedHtml())->not->toContain('Loaded content')
+            ->and($schema->isLoadingDeferred())->toBeTrue();
+    });
+
+    it('requires lazy-loaded child schemas to have a unique key', function (): void {
+        $group = Group::make()
+            ->schema(
+                Schema::make()
+                    ->components([
+                        Text::make('Loaded content'),
+                    ])
+                    ->lazyLoaded(),
+            );
+
+        $schema = Schema::make(Livewire::make())
+            ->key('form')
+            ->components([$group]);
+
+        $schema->getComponents();
+
+        expect($group->getChildSchema()->toEmbeddedHtml(...))
+            ->toThrow(LogicException::class, 'A lazy-loaded schema must have a unique key.');
+    });
+
+    it('requires sibling lazy-loaded schemas to have unique keys', function (): void {
+        $section = Section::make('Details')
+            ->key('details')
+            ->schema(
+                Schema::make()
+                    ->components([
+                        Text::make('Content'),
+                    ])
+                    ->lazyLoaded(),
+            )
+            ->footer(
+                Schema::make()
+                    ->components([
+                        Text::make('Footer'),
+                    ])
+                    ->lazyLoaded(),
+            );
+
+        $schema = Schema::make(Livewire::make())
+            ->key('form')
+            ->components([$section]);
+
+        $schema->getComponents();
+        $section->getChildSchema(Section::FOOTER_SCHEMA_KEY)->toEmbeddedHtml();
+
+        expect($section->getChildSchema()->toEmbeddedHtml(...))
+            ->toThrow(LogicException::class, 'Multiple lazy-loaded schemas are using the key [form.details].');
+    });
+
+    it('requires reused lazy-loaded schemas to have unique keys', function (): void {
+        $childSchema = Schema::make()
+            ->components([
+                Text::make('Content'),
+            ])
+            ->lazyLoaded();
+
+        $firstGroup = Group::make()
+            ->key('details')
+            ->schema($childSchema);
+        $secondGroup = Group::make()
+            ->key('details')
+            ->schema($childSchema);
+
+        $schema = Schema::make(Livewire::make())
+            ->key('form')
+            ->components([
+                $firstGroup,
+                $secondGroup,
+            ]);
+
+        $schema->getComponents();
+        $firstGroup->getChildSchema()->toEmbeddedHtml();
+
+        expect($secondGroup->getChildSchema()->toEmbeddedHtml(...))
+            ->toThrow(LogicException::class, 'Multiple lazy-loaded schemas are using the key [form.details].');
+    });
+
+    it('can use explicit keys for sibling lazy-loaded schemas', function (): void {
+        $section = Section::make('Details')
+            ->key('details')
+            ->schema(
+                Schema::make()
+                    ->components([
+                        Text::make('Content'),
+                    ])
+                    ->lazyLoaded(),
+            )
+            ->footer(
+                Schema::make()
+                    ->key('footer')
+                    ->components([
+                        Text::make('Footer'),
+                    ])
+                    ->lazyLoaded(),
+            );
+
+        $schema = Schema::make(Livewire::make())
+            ->key('form')
+            ->components([$section]);
+
+        expect($schema->toEmbeddedHtml())
+            ->toContain('wire:partial="schema.form.details"')
+            ->toContain('wire:partial="schema.form.details.footer"');
+    });
+});
+
+it('can pass a `Schema` to a component `schema()`', function (): void {
+    $childSchema = Schema::make()
+        ->components([
+            Text::make('Child content'),
+        ]);
+
+    $group = Group::make()
+        ->key('group')
+        ->schema($childSchema);
+
+    Schema::make(Livewire::make())
+        ->key('form')
+        ->components([$group])
+        ->getComponents();
+
+    expect($group->getChildSchema())->toBe($childSchema);
+});
+
+it('clears cached default child schemas when using `getClone()`', function (): void {
+    $livewire = Livewire::make();
+    $rootSchema = Schema::make($livewire)
+        ->key('form');
+    $childSchema = Schema::make()
+        ->components([
+            Text::make('Child content'),
+        ]);
+    $group = Group::make()
+        ->schema($childSchema)
+        ->container($rootSchema);
+
+    $group->getChildSchemas();
+
+    $clonedGroup = $group
+        ->getClone()
+        ->container($rootSchema);
+    $clonedChildSchema = $clonedGroup->getChildSchema();
+
+    expect($clonedChildSchema)
+        ->not->toBe($childSchema)
+        ->toBe($clonedGroup->getChildSchemas()['default'])
+        ->and($clonedChildSchema->getParentComponent())
+        ->toBe($clonedGroup);
+});
+
+it('invalidates hierarchy caches when a supplied `Schema` is attached', function (): void {
+    $livewire = Livewire::make();
+    $field = TextInput::make('name')
+        ->key('name-field');
+    $childSchema = Schema::make($livewire)
+        ->key('content')
+        ->statePath('child')
+        ->components([$field]);
+
+    $childSchema->getComponents();
+
+    expect($childSchema->getKey())
+        ->toBe('content')
+        ->and($childSchema->getInheritanceKey())
+        ->toBe('content')
+        ->and($field->getStatePath())
+        ->toBe('child.name')
+        ->and($childSchema->getComponentByStatePath('child.name', withAbsoluteStatePath: true))
+        ->toBe($field)
+        ->and($childSchema->getFlatComponents(withAbsoluteKeys: true))
+        ->toHaveKey('content.name-field', $field)
+        ->and($field->getRootContainer())
+        ->toBe($childSchema);
+
+    $group = Group::make()
+        ->key('details')
+        ->statePath('section')
+        ->schema($childSchema);
+
+    $rootSchema = Schema::make($livewire)
+        ->key('form')
+        ->statePath('data')
+        ->components([$group]);
+
+    $rootSchema->getComponents();
+    $group->getChildSchema();
+
+    expect($childSchema->getKey())
+        ->toBe('form.details.content')
+        ->and($childSchema->getInheritanceKey())
+        ->toBe('form.details.content')
+        ->and($field->getStatePath())
+        ->toBe('data.section.child.name')
+        ->and($childSchema->getComponentByStatePath('child.name', withAbsoluteStatePath: true))
+        ->toBeNull()
+        ->and($childSchema->getComponentByStatePath('data.section.child.name', withAbsoluteStatePath: true))
+        ->toBe($field)
+        ->and($childSchema->getFlatComponents(withAbsoluteKeys: true))
+        ->not->toHaveKey('content.name-field')
+        ->toHaveKey('form.details.content.name-field', $field)
+        ->and($field->getRootContainer())
+        ->toBe($rootSchema);
+});
+
+describe('state paths', function (): void {
+    it('can set `statePath()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->statePath('data');
+
+        expect($schema->getStatePath())->toBe('data');
+    });
+
+    it('returns empty string for `getStatePath()` by default', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->getStatePath())->toBe('');
+    });
+});
+
+describe('model', function (): void {
+    it('returns `null` for `getModel()` by default', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->getModel())->toBeNull();
+    });
+
+    it('can set `model()` with a class string', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->model(User::class);
+
+        expect($schema->getModel())->toBe(User::class);
+    });
+});
+
+describe('operation', function (): void {
+    it('can set `operation()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->operation('create');
+
+        expect($schema->getOperation())->toBe('create');
+    });
+});
+
+describe('disabled state', function (): void {
+    it('defaults `isDisabled()` to `false`', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->isDisabled())->toBeFalse();
+    });
+
+    it('can set `disabled()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->disabled();
+
+        expect($schema->isDisabled())->toBeTrue();
+    });
+
+    it('can inherit `isDisabled()` from a parent component', function (): void {
+        $livewire = Livewire::make();
+        $parentComponent = (new Component)
+            ->container(Schema::make($livewire))
+            ->disabled();
+        $schema = Schema::make($livewire)
+            ->parentComponent($parentComponent);
+
+        expect($schema->isDisabled())->toBeTrue();
+    });
+});
+
+describe('columns', function (): void {
+    it('can set `columns()` with an int (maps to `lg` breakpoint)', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->columns(3);
+
+        expect($schema->getColumns('lg'))->toBe(3);
+    });
+
+    it('can set `columns()` with a responsive array', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->columns(['sm' => 1, 'lg' => 3]);
+
+        expect($schema->getColumns('sm'))->toBe(1);
+        expect($schema->getColumns('lg'))->toBe(3);
+    });
+
+    it('reports `hasCustomColumns()` as `false` by default', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->hasCustomColumns())->toBeFalse();
+    });
+
+    it('reports `hasCustomColumns()` as `true` after `columns()` is set', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->columns(2);
+
+        expect($schema->hasCustomColumns())->toBeTrue();
+    });
+});
+
+describe('inline labels', function (): void {
+    it('returns `null` for `hasInlineLabel()` by default', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->hasInlineLabel())->toBeNull();
+    });
+
+    it('can set `inlineLabel()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->inlineLabel();
+
+        expect($schema->hasInlineLabel())->toBeTrue();
+    });
+
+    it('can set `inlineLabel()` to `false`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->inlineLabel(false);
+
+        expect($schema->hasInlineLabel())->toBeFalse();
+    });
+});
+
+describe('key', function (): void {
+    it('can set `key()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->key('my-form');
+
+        expect($schema->getKey())->toBe('my-form');
+    });
+});
+
+describe('extra attributes', function (): void {
+    it('returns empty array for `getExtraAttributes()` by default', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->getExtraAttributes())->toBe([]);
+    });
+
+    it('can set `extraAttributes()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->extraAttributes(['data-test' => 'value']);
+
+        expect($schema->getExtraAttributes())->toBe(['data-test' => 'value']);
+    });
+
+    it('can merge `extraAttributes()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->extraAttributes(['data-a' => '1'])
+            ->extraAttributes(['data-b' => '2'], merge: true);
+
+        $attributes = $schema->getExtraAttributes();
+
+        expect($attributes)->toHaveKey('data-a', '1');
+        expect($attributes)->toHaveKey('data-b', '2');
+    });
+});
+
+describe('alignment', function (): void {
+    it('returns `null` for `getAlignment()` by default', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->getAlignment())->toBeNull();
+    });
+
+    it('can set `alignment()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->alignment(Alignment::Center);
+
+        expect($schema->getAlignment())->toBe(Alignment::Center);
+    });
+});
+
+describe('gap', function (): void {
+    it('defaults `hasGap()` to `true`', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->hasGap())->toBeTrue();
+    });
+
+    it('can set `gap()` to `false`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->gap(false);
+
+        expect($schema->hasGap())->toBeFalse();
+    });
+});
+
+describe('inline', function (): void {
+    it('defaults `isInline()` to `false`', function (): void {
+        $schema = Schema::make(Livewire::make());
+
+        expect($schema->isInline())->toBeFalse();
+    });
+
+    it('can set `inline()`', function (): void {
+        $schema = Schema::make(Livewire::make())
+            ->inline();
+
+        expect($schema->isInline())->toBeTrue();
+    });
+});

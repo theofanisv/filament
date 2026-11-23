@@ -1,50 +1,19 @@
-import { computePosition, flip, shift } from '@floating-ui/dom'
-
-const updatePosition = (editor, element) => {
-    const referenceElement = {
-        getBoundingClientRect: () => {
-            const { from, to } = editor.state.selection
-            const start = editor.view.coordsAtPos(from)
-            const end = editor.view.coordsAtPos(to)
-
-            return {
-                top: Math.min(start.top, end.top),
-                bottom: Math.max(start.bottom, end.bottom),
-                left: Math.min(start.left, end.left),
-                right: Math.max(start.right, end.right),
-                width: Math.abs(end.right - start.left),
-                height: Math.abs(end.bottom - start.top),
-                x: Math.min(start.left, end.left),
-                y: Math.min(start.top, end.top),
-            }
-        },
-    }
-
-    computePosition(referenceElement, element, {
-        placement: 'bottom-start',
-        strategy: 'absolute',
-        middleware: [shift(), flip()],
-    }).then(({ x, y, strategy }) => {
-        element.style.width = 'max-content'
-        element.style.position = strategy
-        element.style.left = `${x}px`
-        element.style.top = `${y}px`
-    })
-}
+import updatePosition from './suggestion-position.js'
+import normalizeSearchString from '../../../../../support/resources/js/utilities/normalize-search-string.js'
 
 export default ({ mergeTags, noMergeTagSearchResultsMessage }) => ({
     items: ({ query }) => {
+        const search = normalizeSearchString(query)
+
         return Object.entries(mergeTags)
             .filter(
                 ([id, label]) =>
-                    id
-                        .toLowerCase()
+                    normalizeSearchString(id)
                         .replace(/\s/g, '')
-                        .includes(query.toLowerCase()) ||
-                    label
-                        .toLowerCase()
+                        .includes(search) ||
+                    normalizeSearchString(label)
                         .replace(/\s/g, '')
-                        .includes(query.toLowerCase()),
+                        .includes(search),
             )
             .map(([id, label]) => ({ id, label }))
     },
@@ -57,6 +26,7 @@ export default ({ mergeTags, noMergeTagSearchResultsMessage }) => ({
         const createDropdown = () => {
             const dropdown = document.createElement('div')
             dropdown.className = 'fi-dropdown-panel fi-dropdown-list'
+            dropdown.style.minWidth = '12rem'
 
             return dropdown
         }
@@ -66,7 +36,6 @@ export default ({ mergeTags, noMergeTagSearchResultsMessage }) => ({
 
             const items = currentProps.items || []
 
-            // Clear existing items
             element.innerHTML = ''
 
             if (items.length) {
@@ -79,11 +48,15 @@ export default ({ mergeTags, noMergeTagSearchResultsMessage }) => ({
                     element.appendChild(button)
                 })
             } else {
-                const noSearchResultsMessage = document.createElement('div')
-                noSearchResultsMessage.className = 'fi-dropdown-header'
-                noSearchResultsMessage.textContent =
-                    noMergeTagSearchResultsMessage
-                element.appendChild(noSearchResultsMessage)
+                const messageElement = document.createElement('div')
+                messageElement.className = 'fi-dropdown-header'
+
+                const messageSpan = document.createElement('span')
+                messageSpan.style.whiteSpace = 'normal'
+                messageSpan.textContent = noMergeTagSearchResultsMessage
+                messageElement.appendChild(messageSpan)
+
+                element.appendChild(messageElement)
             }
         }
 
@@ -144,20 +117,15 @@ export default ({ mergeTags, noMergeTagSearchResultsMessage }) => ({
 
         return {
             onStart: (props) => {
-                // Store current props
                 currentProps = props
-
-                // Reset selected index when items change
                 selectedIndex = 0
 
-                // Create dropdown element
                 element = createDropdown()
                 element.style.position = 'absolute'
+                element.style.zIndex = '50'
 
-                // Render initial items
                 renderItems()
 
-                // Append to DOM
                 document.body.appendChild(element)
 
                 if (!props.clientRect) {
@@ -168,13 +136,9 @@ export default ({ mergeTags, noMergeTagSearchResultsMessage }) => ({
             },
 
             onUpdate: (props) => {
-                // Store current props
                 currentProps = props
-
-                // Reset selected index when items change
                 selectedIndex = 0
 
-                // Update dropdown items
                 renderItems()
                 scrollToSelected()
 

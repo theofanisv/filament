@@ -13,8 +13,20 @@ trait CanGenerateUrls
     /**
      * @param  array<mixed>  $parameters
      */
-    public static function getUrl(?string $name = null, array $parameters = [], bool $isAbsolute = true, ?string $panel = null, ?Model $tenant = null, bool $shouldGuessMissingParameters = false): string
+    public static function getUrl(?string $name = null, array $parameters = [], bool $isAbsolute = true, ?string $panel = null, ?Model $tenant = null, bool $shouldGuessMissingParameters = false, ?string $configuration = null): string
     {
+        if (filled($configuration)) {
+            return static::withConfiguration($configuration, static fn (): string => static::getUrl(
+                $name,
+                $parameters,
+                $isAbsolute,
+                $panel,
+                $tenant,
+                $shouldGuessMissingParameters,
+                configuration: null,
+            ));
+        }
+
         if ($shouldGuessMissingParameters) {
             $originalRequestRoute = null;
             $parentResources = [];
@@ -34,9 +46,9 @@ trait CanGenerateUrls
                 }
 
                 if (str(original_request()->getUri())->contains('/livewire-unit-test-endpoint/')) {
-                    // In the future, Filament will support generating URLs for nested resources.
-                    // within tests. For now, it is unable to resolve the missing URL parameters
-                    // from the parent records as it does not have access to the original request.
+                    // In the future, Filament will support generating URLs for nested resources within tests.
+                    // For now, it is unable to resolve the missing URL parameters from the parent records
+                    // as it does not have access to the original request.
                     return '';
                 }
 
@@ -79,8 +91,10 @@ trait CanGenerateUrls
             $record = $parameters[$parentRouteParameterName] ?? null;
             unset($parameters[$parentRouteParameterName]);
 
-            if ($parentResource::hasPage($relationshipPageName = $parentResourceRegistration->getRouteName())) {
-                return $parentResource::getUrl($relationshipPageName, [
+            $pageName = $parentResourceRegistration->getPageName();
+
+            if ($parentResource::hasPage($pageName)) {
+                return $parentResource::getUrl($pageName, [
                     ...$parameters,
                     'record' => $record,
                 ], $isAbsolute, $panel, $tenant, $shouldGuessMissingParameters);

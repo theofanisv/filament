@@ -6,6 +6,8 @@ use Filament\Schemas\Components\Component;
 
 class Set
 {
+    protected bool $shouldSkipComponentsChildSchemasWhileSearching = true;
+
     public function __construct(
         protected Component $component,
     ) {}
@@ -22,7 +24,7 @@ class Set
                 $path,
                 withHidden: true,
                 withAbsoluteStatePath: true,
-                skipComponentsChildContainersWhileSearching: [$this->component],
+                skipComponentsChildContainersWhileSearching: $this->shouldSkipComponentsChildSchemasWhileSearching ? [$this->component] : [],
             );
 
         $state = $this->component->evaluate($state);
@@ -32,8 +34,25 @@ class Set
             $shouldCallUpdatedHooks && $component->callAfterStateUpdated();
         } else {
             data_set($livewire, $path, $state);
+
+            $this->component->getRootContainer()->clearCachedChildSchemas();
         }
 
         return $state;
+    }
+
+    public function skipComponentsChildSchemasWhileSearching(bool $condition = true): static
+    {
+        $this->shouldSkipComponentsChildSchemasWhileSearching = $condition;
+
+        return $this;
+    }
+
+    /**
+     * @deprecated Use `skipComponentsChildSchemasWhileSearching()` instead.
+     */
+    public function skipComponentsChildContainersWhileSearching(bool $condition = true): static
+    {
+        return $this->skipComponentsChildSchemasWhileSearching($condition);
     }
 }

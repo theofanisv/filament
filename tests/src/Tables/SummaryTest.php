@@ -1,153 +1,322 @@
 <?php
 
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
+use Filament\Schemas\Concerns\InteractsWithSchemas;
+use Filament\Schemas\Contracts\HasSchemas;
+use Filament\Tables;
+use Filament\Tables\Table;
 use Filament\Tests\Fixtures\Livewire\PostsTable;
+use Filament\Tests\Fixtures\Livewire\PostsTableWithCursorPagination;
 use Filament\Tests\Fixtures\Models\Post;
+use Filament\Tests\Fixtures\Models\User;
 use Filament\Tests\Tables\TestCase;
+use Illuminate\Contracts\View\View;
+use Livewire\Component;
 
 use function Filament\Tests\livewire;
 
 uses(TestCase::class);
 
-it('can average values in a column', function (): void {
-    $posts = Post::factory()->count(20)->create();
+describe('averages', function (): void {
+    it('can average values in a column', function (): void {
+        $posts = Post::factory()->count(20)->create();
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'average', $posts->avg('rating'));
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'average', $posts->avg('rating'));
+    });
+
+    it('can average values in a column on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'average', $posts->take(10)->avg('rating'), isCurrentPaginationPageOnly: true);
+    });
+
+    it('can average subset of values in a column', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'published_average', $posts->where('is_published', true)->avg('rating'));
+    });
+
+    it('can average subset of values in a column on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'published_average', $posts->take(10)->where('is_published', true)->avg('rating'), isCurrentPaginationPageOnly: true);
+    });
 });
 
-it('can average values in a column on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
+describe('counts', function (): void {
+    it('can count rows', function (): void {
+        $posts = Post::factory()->count(20)->create();
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'average', $posts->take(10)->avg('rating'), isCurrentPaginationPageOnly: true);
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'count', $posts->count());
+    });
+
+    it('can count rows on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'count', $posts->take(10)->count(), isCurrentPaginationPageOnly: true);
+    });
+
+    it('can count subset of rows', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('is_published', 'published_count', $posts->where('is_published', true)->count());
+    });
+
+    it('can count subset of rows on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('is_published', 'published_count', $posts->take(10)->where('is_published', true)->count(), isCurrentPaginationPageOnly: true);
+    });
 });
 
-it('can average subset of values in a column', function (): void {
-    $posts = Post::factory()->count(20)->create();
+describe('ranges', function (): void {
+    it('can get the range of values in a column', function (): void {
+        $posts = Post::factory()->count(20)->create();
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'published_average', $posts->where('is_published', true)->avg('rating'));
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'range', [$posts->min('rating'), $posts->max('rating')]);
+    });
+
+    it('can get the range of values in a column on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'range', [$posts->take(10)->min('rating'), $posts->take(10)->max('rating')], isCurrentPaginationPageOnly: true);
+    });
+
+    it('can get the range of a subset of values in a column', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'published_range', [$posts->where('is_published', true)->min('rating'), $posts->where('is_published', true)->max('rating')]);
+    });
+
+    it('can get the range of a subset of values in a column on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'published_range', [$posts->take(10)->where('is_published', true)->min('rating'), $posts->take(10)->where('is_published', true)->max('rating')], isCurrentPaginationPageOnly: true);
+    });
+
+    it('can get the range of values from a relationship in a column', function (): void {
+        $posts = Post::factory()->count(20)->create();
+        $posts->each(
+            static fn (Post $post, int $index) => $post->author()->update(['name' => sprintf('Author %02d', $index)]),
+        );
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('author.name', 'range', [$posts->min('author.name'), $posts->max('author.name')]);
+    });
+
+    it('can get the range of values from a relationship in a column on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+        $posts->each(
+            static fn (Post $post, int $index) => $post->author()->update(['name' => sprintf('Author %02d', $index)]),
+        );
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('author.name', 'range', [$posts->take(10)->min('author.name'), $posts->take(10)->max('author.name')], isCurrentPaginationPageOnly: true);
+    });
+
+    it('can scope relationship summaries with `query()` on soft-deletable models', function (): void {
+        Post::factory()
+            ->for(User::factory()->state(['name' => 'Published author']), 'author')
+            ->create(['is_published' => true]);
+        Post::factory()
+            ->for(User::factory()->state(['name' => 'Draft author']), 'author')
+            ->create(['is_published' => false]);
+        Post::factory()
+            ->for(User::factory()->state(['name' => 'Deleted author']), 'author')
+            ->trashed()
+            ->create(['is_published' => true]);
+
+        $livewire = livewire(PostsTable::class);
+
+        // Keep `SoftDeletingScope` active instead of letting `TrashedFilter` remove it.
+        $livewire->instance()->getTable()->filters([]);
+
+        $livewire->assertTableColumnSummarySet('author.name', 'published_range', ['Published author', 'Published author']);
+    });
 });
 
-it('can average subset of values in a column on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
+describe('sums', function (): void {
+    it('can sum values in a column', function (): void {
+        $posts = Post::factory()->count(20)->create();
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'published_average', $posts->take(10)->where('is_published', true)->avg('rating'), isCurrentPaginationPageOnly: true);
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'sum', $posts->sum('rating'));
+    });
+
+    it('can sum values in a column on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'sum', $posts->take(10)->sum('rating'), isCurrentPaginationPageOnly: true);
+    });
+
+    it('can sum subset of values in a column', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'published_sum', $posts->where('is_published', true)->sum('rating'));
+    });
+
+    it('can sum subset of values in a column on this pagination page', function (): void {
+        $posts = Post::factory()->count(20)->create();
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts->take(10))
+            ->assertTableColumnSummarySet('rating', 'published_sum', $posts->take(10)->where('is_published', true)->sum('rating'), isCurrentPaginationPageOnly: true);
+    });
 });
 
-it('can count rows', function (): void {
-    $posts = Post::factory()->count(20)->create();
+describe('group summary rendering', function (): void {
+    it('renders group summaries when page and all-table summaries are disabled', function (): void {
+        Post::factory()->count(5)->create(['is_published' => true]);
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'count', $posts->count());
+        livewire(TestTableWithGroupSummariesOnly::class)
+            ->assertSeeHtml('fi-ta-summary-row')
+            ->assertDontSeeHtml('fi-ta-summary-header-row');
+    });
+
+    it('renders the trailing group summary when the next page starts a different group', function (): void {
+        Post::factory()->count(10)->create(['title' => 'A']);
+        Post::factory()->create(['title' => 'B']);
+
+        livewire(PostsTable::class)
+            ->set('tableRecordsPerPage', 10)
+            ->set('tableGrouping', 'title')
+            ->assertSee('A summary')
+            ->assertDontSee('B summary');
+    });
+
+    it('does not render the trailing group summary when the next page continues the same group', function (): void {
+        Post::factory()->count(15)->create(['title' => 'A']);
+
+        livewire(PostsTable::class)
+            ->set('tableRecordsPerPage', 10)
+            ->set('tableGrouping', 'title')
+            ->assertDontSee('A summary');
+    });
+
+    it('renders the trailing group summary with cursor pagination when the next page starts a different group', function (): void {
+        Post::factory()->count(10)->create(['title' => 'A']);
+        Post::factory()->create(['title' => 'B']);
+
+        livewire(PostsTableWithCursorPagination::class)
+            ->set('tableRecordsPerPage', 10)
+            ->set('tableGrouping', 'title')
+            ->assertSee('A summary')
+            ->assertDontSee('B summary');
+    });
+
+    it('does not render the trailing group summary with cursor pagination when the next page continues the same group', function (): void {
+        Post::factory()->count(15)->create(['title' => 'A']);
+
+        livewire(PostsTableWithCursorPagination::class)
+            ->set('tableRecordsPerPage', 10)
+            ->set('tableGrouping', 'title')
+            ->assertDontSee('A summary');
+    });
 });
 
-it('can count rows on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
+describe('responsive summary rendering', function (): void {
+    it('renders summaries with unsupported responsive breakpoints', function (): void {
+        Post::factory()->create();
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'count', $posts->take(10)->count(), isCurrentPaginationPageOnly: true);
+        livewire(TestTableWithResponsiveSummaryFallbacks::class)
+            ->assertOk();
+    });
+
+    it('renders summaries when all columns use `hidden()`', function (): void {
+        Post::factory()->create();
+
+        livewire(TestTableWithResponsiveSummaryFallbacks::class)
+            ->set('hideAllColumns', true)
+            ->assertOk();
+    });
 });
 
-it('can count subset of rows', function (): void {
-    $posts = Post::factory()->count(20)->create();
+class TestTableWithResponsiveSummaryFallbacks extends Component implements HasActions, HasSchemas, Tables\Contracts\HasTable
+{
+    use InteractsWithActions;
+    use InteractsWithSchemas;
+    use Tables\Concerns\InteractsWithTable;
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('is_published', 'published_count', $posts->where('is_published', true)->count());
-});
+    public bool $hideAllColumns = false;
 
-it('can count subset of rows on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
+    public function table(Table $table): Table
+    {
+        return $table
+            ->query(Post::query())
+            ->columns([
+                Tables\Columns\TextColumn::make('title')
+                    ->hidden(fn (): bool => $this->hideAllColumns)
+                    ->visibleFrom('unknown'),
+                Tables\Columns\TextColumn::make('rating')
+                    ->hidden(fn (): bool => $this->hideAllColumns)
+                    ->hiddenFrom('base')
+                    ->summarize(Tables\Columns\Summarizers\Count::make()),
+            ]);
+    }
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('is_published', 'published_count', $posts->take(10)->where('is_published', true)->count(), isCurrentPaginationPageOnly: true);
-});
+    public function render(): View
+    {
+        return view('livewire.table');
+    }
+}
 
-it('can get the range of values in a column', function (): void {
-    $posts = Post::factory()->count(20)->create();
+class TestTableWithGroupSummariesOnly extends Component implements HasActions, HasSchemas, Tables\Contracts\HasTable
+{
+    use InteractsWithActions;
+    use InteractsWithSchemas;
+    use Tables\Concerns\InteractsWithTable;
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'range', [$posts->min('rating'), $posts->max('rating')]);
-});
+    public function table(Table $table): Table
+    {
+        return $table
+            ->query(Post::query())
+            ->columns([
+                Tables\Columns\TextColumn::make('title'),
+                Tables\Columns\TextColumn::make('rating')
+                    ->summarize([
+                        Tables\Columns\Summarizers\Sum::make('sum'),
+                    ]),
+            ])
+            ->defaultGroup(
+                Tables\Grouping\Group::make('is_published'),
+            )
+            ->summaries(pageCondition: false, allTableCondition: false);
+    }
 
-it('can get the range of values in a column on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'range', [$posts->take(10)->min('rating'), $posts->take(10)->max('rating')], isCurrentPaginationPageOnly: true);
-});
-
-it('can get the range of a subset of values in a column', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'published_range', [$posts->where('is_published', true)->min('rating'), $posts->where('is_published', true)->max('rating')]);
-});
-
-it('can get the range of a subset of values in a column on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'published_range', [$posts->take(10)->where('is_published', true)->min('rating'), $posts->take(10)->where('is_published', true)->max('rating')], isCurrentPaginationPageOnly: true);
-});
-
-it('can get the range of values from a relationship in a column', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('author.name', 'range', [$posts->min('author.name'), $posts->max('author.name')]);
-});
-
-it('can get the range of values from a relationship in a column on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('author.name', 'range', [$posts->take(10)->min('author.name'), $posts->take(10)->max('author.name')], isCurrentPaginationPageOnly: true);
-});
-
-it('can sum values in a column', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'sum', $posts->sum('rating'));
-});
-
-it('can sum values in a column on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'sum', $posts->take(10)->sum('rating'), isCurrentPaginationPageOnly: true);
-});
-
-it('can sum subset of values in a column', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'published_sum', $posts->where('is_published', true)->sum('rating'));
-});
-
-it('can sum subset of values in a column on this pagination page', function (): void {
-    $posts = Post::factory()->count(20)->create();
-
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts->take(10))
-        ->assertTableColumnSummarySet('rating', 'published_sum', $posts->take(10)->where('is_published', true)->sum('rating'), isCurrentPaginationPageOnly: true);
-});
+    public function render(): View
+    {
+        return view('livewire.table');
+    }
+}

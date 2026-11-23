@@ -1,9 +1,6 @@
 ---
 title: Overview
 ---
-import Aside from "@components/Aside.astro"
-import AutoScreenshot from "@components/AutoScreenshot.astro"
-import UtilityInjection from "@components/UtilityInjection.astro"
 
 ## Introduction
 
@@ -72,7 +69,7 @@ TextColumn::make('title')
     ->state('Hello, world!')
 ```
 
-<UtilityInjection set="tableColumns" except="$state" version="4.x">The `state()` method also accepts a function to dynamically calculate the state. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns" except="$state">The `state()` method also accepts a function to dynamically calculate the state. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ### Setting the default state of a column
 
@@ -87,7 +84,7 @@ TextColumn::make('title')
 
 #### Adding placeholder text if a column is empty
 
-Sometimes you may want to display placeholder text for columns with an empty state, which is styled as a lighter gray text. This differs from the [default value](#setting-the-default-state-of-an-column), as the placeholder is always text and not treated as if it were real state.
+Sometimes you may want to display placeholder text for columns with an empty state, which is styled as a lighter gray text. This differs from the [default value](#setting-the-default-state-of-a-column), as the placeholder is always text and not treated as if it were real state.
 
 ```php
 use Filament\Tables\Columns\TextColumn;
@@ -96,7 +93,7 @@ TextColumn::make('title')
     ->placeholder('Untitled')
 ```
 
-<AutoScreenshot name="tables/columns/placeholder" alt="Column with a placeholder for empty state" version="4.x" />
+<AutoScreenshot name="tables/columns/placeholder" alt="Column with a placeholder for empty state" />
 
 ### Displaying data from relationships
 
@@ -143,6 +140,9 @@ TextColumn::make('users_exists')->exists('users')
 
 In this example, `users` is the name of the relationship to check for existence. The name of the column must be `users_exists`, as this is the convention that [Laravel uses](https://laravel.com/docs/eloquent-relationships#other-aggregate-functions) for storing the result.
 
+> [!NOTE]
+> `exists()` relies on Laravel's `withExists()`, which does not support SQL Server. You can use [`counts()`](#counting-relationships) instead to display the number of related records.
+
 If you'd like to scope the relationship before checking existence, you can pass an array to the method, where the key is the relationship name and the value is the function to scope the Eloquent query with:
 
 ```php
@@ -188,7 +188,7 @@ TextColumn::make('name')
     ->label('Full name')
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing a static value, the `label()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns" except="$state">As well as allowing a static value, the `label()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 Customizing the label in this way is useful if you wish to use a [translation string for localization](https://laravel.com/docs/localization#retrieving-translation-strings):
 
@@ -210,7 +210,7 @@ TextColumn::make('name')
     ->sortable()
 ```
 
-<AutoScreenshot name="tables/columns/sortable" alt="Table with sortable column" version="4.x" />
+<AutoScreenshot name="tables/columns/sortable" alt="Table with sortable column" />
 
 Using the name of the column, Filament will apply an `orderBy()` clause to the Eloquent query. This is useful for simple cases where the column name matches the database column name. It can also handle [relationships](#displaying-data-from-relationships).
 
@@ -241,7 +241,7 @@ TextColumn::make('full_name')
     })
 ```
 
-<UtilityInjection set="tableColumns" version="4.x" extras="Direction;;string;;$direction;;The direction that the column is currently being sorted on, either <code>'asc'</code> or <code>'desc'</code>.||Eloquent query builder;;Illuminate\Database\Eloquent\Builder;;$query;;The query builder to modify.">The `query` parameter's function can inject various utilities as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns" except="$state" extras="Direction;;string;;$direction;;The direction that the column is currently being sorted on, either <code>'asc'</code> or <code>'desc'</code>.||Eloquent query builder;;Illuminate\Database\Eloquent\Builder;;$query;;The query builder to modify.">The `query` parameter's function can inject various utilities as parameters.</UtilityInjection>
 
 ### Sorting by default
 
@@ -262,7 +262,9 @@ public function table(Table $table): Table
 
 The second parameter is optional and defaults to `'asc'`.
 
-If you pass the name of a table column as the first parameter, Filament will use that column's sorting behavior (custom sorting columns or query function). However, if you need to sort by a column that doesn’t exist in the table or in the database, you should pass a query function instead:
+If you pass the name of a table column as the first parameter, Filament will use that column's sorting behavior (custom sorting columns or query function). This also applies when the column is toggled off, and preserves any sort direction the user has selected for that column.
+
+If you need to sort by a column that doesn’t exist in the table or in the database, you should pass a query function instead:
 
 ```php
 use Filament\Tables\Table;
@@ -342,9 +344,11 @@ TextColumn::make('name')
     ->searchable()
 ```
 
-<AutoScreenshot name="tables/columns/searchable" alt="Table with searchable column" version="4.x" />
+<AutoScreenshot name="tables/columns/searchable" alt="Table with searchable column" />
 
 By default, Filament will apply a `where` clause to the Eloquent query, searching for the column name. This is useful for simple cases where the column name matches the database column name. It can also handle [relationships](#displaying-data-from-relationships).
+
+Search terms are treated as literal text, so characters such as `%` and `_` do not act as SQL wildcard characters.
 
 However, many columns are not as simple. The [state](#column-content-state) of the column might be customized, or using an [Eloquent accessor](https://laravel.com/docs/eloquent-mutators#accessors-and-mutators). In this case, you may need to customize the search behavior.
 
@@ -373,7 +377,7 @@ TextColumn::make('full_name')
     })
 ```
 
-<UtilityInjection set="tableColumns" version="4.x" extras="Search;;string;;$search;;The current search input value.||Eloquent query builder;;Illuminate\Database\Eloquent\Builder;;$query;;The query builder to modify.">The `query` parameter's function can inject various utilities as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns" except="$state" extras="Search;;string;;$search;;The current search input value.||Eloquent query builder;;Illuminate\Database\Eloquent\Builder;;$query;;The query builder to modify.">The `query` parameter's function can inject various utilities as parameters.</UtilityInjection>
 
 ### Adding extra searchable columns to the table
 
@@ -460,7 +464,7 @@ TextColumn::make('name')
     ->searchable(isIndividual: true)
 ```
 
-<AutoScreenshot name="tables/columns/individually-searchable" alt="Table with individually searchable column" version="4.x" />
+<AutoScreenshot name="tables/columns/individually-searchable" alt="Table with individually searchable column" />
 
 If you use the `isIndividual` parameter, you may still search that column using the main "global" search input field for the entire table.
 
@@ -509,7 +513,7 @@ public static function table(Table $table): Table
 
 ### Persisting the search in the user's session
 
-To persist the table or individual column search in the user's session, use the `persistSearchInSession()` or `persistColumnSearchInSession()` method:
+To persist the table or individual column search in the user's session, use the `persistSearchInSession()` or `persistColumnSearchesInSession()` method:
 
 ```php
 use Filament\Tables\Table;
@@ -524,6 +528,8 @@ public function table(Table $table): Table
         ->persistColumnSearchesInSession();
 }
 ```
+
+When using Filament tenancy, persisted searches are isolated to the current tenant.
 
 ### Disabling search term splitting
 
@@ -542,6 +548,19 @@ public function table(Table $table): Table
 }
 ```
 
+You can also use the `splitIndividualSearchTerms()` method on a column to override the table's setting for that column's [individual search](#searching-individually):
+
+```php
+use Filament\Tables\Columns\TextColumn;
+
+TextColumn::make('title')
+    ->searchable(isIndividual: true)
+    ->splitIndividualSearchTerms(false)
+```
+
+> [!NOTE]
+> This method only affects the column's individual search. Search term splitting for the table's global search is controlled by the table's `splitSearchTerms()` method.
+
 ## Clickable cell content
 
 When a cell is clicked, you may open a URL or trigger an "action".
@@ -557,13 +576,12 @@ TextColumn::make('title')
     ->url(fn (Post $record): string => route('posts.edit', ['post' => $record]))
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">The `url()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">The `url()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
 
-<Aside variant="tip">
-    You can also pick a URL for the entire row to open, not just a singular column. Please see the [Record URLs section](../overview#record-urls-clickable-rows).
-
-    When using a record URL and a column URL, the column URL will override the record URL for those cells only.
-</Aside>
+> [!TIP]
+> You can also pick a URL for the entire row to open, not just a singular column. Please see the [Record URLs section](../overview#record-urls-clickable-rows).
+>
+> When using a record URL and a column URL, the column URL will override the record URL for those cells only.
 
 You may also choose to open the URL in a new tab:
 
@@ -574,6 +592,9 @@ TextColumn::make('title')
     ->url(fn (Post $record): string => route('posts.edit', ['post' => $record]))
     ->openUrlInNewTab()
 ```
+
+> [!CAUTION]
+> If you are passing user-controlled data to the `url()` method, you should validate that the URL does not use a dangerous scheme such as `javascript:` or `data:`. Failing to do so could expose your application to XSS attacks. The simplest way to guard against this is to wrap the value in Filament's [`Str::sanitizeUrl()`](../../advanced/security#validating-user-input) helper, which returns `null` for any URL that does not use `http`/`https` (or a relative path).
 
 ### Triggering actions
 
@@ -590,7 +611,7 @@ TextColumn::make('title')
 
 #### Action modals
 
-You may open [action modals](../../actions#modals) by passing in an `Action` object to the `action()` method:
+You may open [action modals](../../actions/modals) by passing in an `Action` object to the `action()` method:
 
 ```php
 use Filament\Actions\Action;
@@ -632,9 +653,9 @@ TextColumn::make('title')
     ->tooltip('Title')
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing a static value, the `tooltip()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing a static value, the `tooltip()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
-<AutoScreenshot name="tables/columns/tooltips" alt="Table with column triggering a tooltip" version="4.x" />
+<AutoScreenshot name="tables/columns/tooltips" alt="Table with column triggering a tooltip" />
 
 ## Adding a header tooltip to a column
 
@@ -647,8 +668,9 @@ TextColumn::make('sku')
     ->headerTooltip('Stock Keeping Unit')
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing a static value, the `headerTooltip()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing a static value, the `headerTooltip()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
+<AutoScreenshot name="tables/columns/header-tooltips" alt="Table with header tooltip on a column" />
 
 ## Aligning column content
 
@@ -680,9 +702,9 @@ TextColumn::make('email')
     ->alignment(Alignment::End)
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing a static value, the `alignment()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing a static value, the `alignment()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
-<AutoScreenshot name="tables/columns/alignment" alt="Table with column aligned to the end" version="4.x" />
+<AutoScreenshot name="tables/columns/alignment" alt="Table with column aligned to the end" />
 
 ### Vertically aligning column content
 
@@ -711,9 +733,9 @@ TextColumn::make('name')
     ->verticalAlignment(VerticalAlignment::Start)
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing a static value, the `verticalAlignment()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing a static value, the `verticalAlignment()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
-<AutoScreenshot name="tables/columns/vertical-alignment" alt="Table with column vertically aligned to the start" version="4.x" />
+<AutoScreenshot name="tables/columns/vertical-alignment" alt="Table with column vertically aligned to the start" />
 
 ## Allowing column headers to wrap
 
@@ -735,7 +757,9 @@ TextColumn::make('name')
     ->wrapHeader(FeatureFlag::active())
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">The `wrapHeader()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">The `wrapHeader()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="tables/columns/wrap-header" alt="Table with wrapped column headers" />
 
 ## Controlling the width of columns
 
@@ -759,7 +783,9 @@ IconColumn::make('is_paid')
     ->width('1%')
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">The `width()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns" except="$state">The `width()` method also accepts a function to dynamically calculate the value. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="tables/columns/width" alt="Table with column width controls" />
 
 ## Grouping columns
 
@@ -788,7 +814,7 @@ public function table(Table $table): Table
 
 The first argument is the label of the group, and the second is an array of column objects that belong to that group.
 
-<AutoScreenshot name="tables/columns/grouping" alt="Table with grouped columns" version="4.x" />
+<AutoScreenshot name="tables/columns/grouping" alt="Table with grouped columns" />
 
 You can also control the group header [alignment](#horizontally-aligning-column-content) and [wrapping](#allowing-column-headers-to-wrap) on the `ColumnGroup` object. To improve the multi-line fluency of the API, you can chain the `columns()` onto the object instead of passing it as the second argument:
 
@@ -843,7 +869,7 @@ TextColumn::make('email')
     ->toggleable()
 ```
 
-<AutoScreenshot name="tables/columns/column-manager" alt="Table with column manager" version="4.x" />
+<AutoScreenshot name="tables/columns/column-manager" alt="Table with column manager" />
 
 ##### Making toggleable columns hidden by default
 
@@ -873,7 +899,7 @@ public function table(Table $table): Table
 }
 ```
 
-<AutoScreenshot name="tables/columns/column-manager-reorderable" alt="Table with reorderable column manager" version="4.x" />
+<AutoScreenshot name="tables/columns/column-manager-reorderable" alt="Table with reorderable column manager" />
 
 #### Live column manager
 
@@ -893,9 +919,31 @@ public function table(Table $table): Table
 }
 ```
 
-#### Customizing the column manager dropdown trigger action
+#### Displaying the column manager in a modal
 
-To customize the column manager dropdown trigger button, you may use the `columnManagerTriggerAction()` method, passing a closure that returns an action. All methods that are available to [customize action trigger buttons](../../actions/overview) can be used:
+To render the column manager in a modal instead of in a dropdown, you may use the `columnManagerLayout()` method:
+
+```php
+use Filament\Tables\Enums\ColumnManagerLayout;
+use Filament\Tables\Table;
+
+public function table(Table $table): Table
+{
+    return $table
+        ->columns([
+            // ...
+        ])
+        ->columnManagerLayout(ColumnManagerLayout::Modal);
+}
+```
+
+<AutoScreenshot name="tables/columns/column-manager-modal" alt="Table with column manager in a modal" />
+
+You may use the [trigger action API](#customizing-the-column-manager-trigger-action) to [customize the modal](../../actions/modals), including [using a `slideOver()`](../../actions/modals#using-a-slide-over-instead-of-a-modal).
+
+#### Customizing the column manager trigger action
+
+To customize the column manager trigger button, you may use the `columnManagerTriggerAction()` method, passing a closure that returns an action. All methods that are available to [customize action trigger buttons](../../actions/overview) can be used:
 
 ```php
 use Filament\Actions\Action;
@@ -904,7 +952,7 @@ use Filament\Tables\Table;
 public function table(Table $table): Table
 {
     return $table
-        ->filters([
+        ->columns([
             // ...
         ])
         ->columnManagerTriggerAction(
@@ -950,6 +998,25 @@ public function table(Table $table): Table
 }
 ```
 
+#### Changing the number of display columns in the column manager
+
+By default, the column manager displays its options in a single column. You can increase this to multiple columns using the `columnManagerColumns()` method:
+
+```php
+use Filament\Tables\Table;
+
+public function table(Table $table): Table
+{
+    return $table
+        ->columns([
+            // ...
+        ])
+        ->columnManagerColumns(2);
+}
+```
+
+<AutoScreenshot name="tables/columns/column-manager-columns" alt="Table with a 2-column column manager" />
+
 ## Adding extra HTML attributes to a column content
 
 You can pass extra HTML attributes to the column content via the `extraAttributes()` method, which will be merged onto its outer HTML element. The attributes should be represented by an array, where the key is the attribute name and the value is the attribute value:
@@ -961,9 +1028,11 @@ TextColumn::make('slug')
     ->extraAttributes(['class' => 'slug-column'])
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing a static value, the `extraAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing a static value, the `extraAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 By default, calling `extraAttributes()` multiple times will overwrite the previous attributes. If you wish to merge the attributes instead, you can pass `merge: true` to the method.
+
+When merging attributes, each callback registration is evaluated separately, even if the same callback is registered more than once.
 
 ### Adding extra HTML attributes to the cell
 
@@ -976,7 +1045,7 @@ TextColumn::make('slug')
     ->extraCellAttributes(['class' => 'slug-cell'])
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing a static value, the `extraCellAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing a static value, the `extraCellAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 By default, calling `extraCellAttributes()` multiple times will overwrite the previous attributes. If you wish to merge the attributes instead, you can pass `merge: true` to the method.
 
@@ -991,9 +1060,82 @@ TextColumn::make('slug')
     ->extraHeaderAttributes(['class' => 'slug-header-cell'])
 ```
 
-<UtilityInjection set="tableColumns" version="4.x">As well as allowing a static value, the `extraHeaderAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="tableColumns">As well as allowing a static value, the `extraHeaderAttributes()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 By default, calling `extraHeaderAttributes()` multiple times will overwrite the previous attributes. If you wish to merge the attributes instead, you can pass `merge: true` to the method.
+
+## Authorizing editable columns
+
+Editable columns do not check model policies by default, even in [strict authorization mode](../../panel-configuration#strict-authorization-mode). Use `authorize()` to check the record's `update()` policy. Denied columns are disabled, and changes are rejected on the server:
+
+```php
+use Filament\Tables\Columns\TextInputColumn;
+
+TextInputColumn::make('title')
+    ->authorize()
+```
+
+Pass a different ability name, such as `authorize('updateTitle')`, to customize the policy check. These checks use Laravel's Gate, including its authorization callbacks. Missing policies or abilities deny access unless a Gate callback grants it; strict mode does not turn these denials into exceptions.
+
+For custom authorization logic, pass a callback that returns a boolean or an `Illuminate\Auth\Access\Response`:
+
+```php
+use Filament\Tables\Columns\TextInputColumn;
+
+TextInputColumn::make('title')
+    ->authorize(fn ($record): bool => $record->user_id === auth()->id())
+```
+
+<UtilityInjection set="tableColumns">The function passed to `authorize()` can inject various utilities as parameters.</UtilityInjection>
+
+### Authorizing editable columns globally
+
+To enable policy checks globally, call `configureUsing()` in a service provider's `boot()` method for each editable column type you use:
+
+```php
+use Filament\Tables\Columns\CheckboxColumn;
+use Filament\Tables\Columns\SelectColumn;
+use Filament\Tables\Columns\TextInputColumn;
+use Filament\Tables\Columns\ToggleColumn;
+
+CheckboxColumn::configureUsing(fn (CheckboxColumn $column) => $column->authorize());
+SelectColumn::configureUsing(fn (SelectColumn $column) => $column->authorize());
+TextInputColumn::configureUsing(fn (TextInputColumn $column) => $column->authorize());
+ToggleColumn::configureUsing(fn (ToggleColumn $column) => $column->authorize());
+```
+
+Individual columns can override this configuration with their own `authorize()` call. Use `authorize(true)` or `authorize(null)` to skip authorization. An authorized column can still be disabled by `disabled()`.
+
+## Rendering only the updated cells of editable columns
+
+By default, when a user updates an [editable column](#introduction), the whole Livewire component re-renders, and the browser updates the entire table. On large tables, you may use the `partiallyRenderAfterStateUpdated()` method to re-render only the cell that was updated:
+
+```php
+use Filament\Tables\Columns\TextInputColumn;
+
+TextInputColumn::make('purchase_price')
+    ->partiallyRenderAfterStateUpdated()
+```
+
+<UtilityInjection set="tableColumns">As well as allowing a static value, the `partiallyRenderAfterStateUpdated()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+If saving the column also changes other columns of the same record, you may pass their names to `partiallyRenderColumnsAfterStateUpdated()`. The updated cell is always re-rendered too:
+
+```php
+use Filament\Tables\Columns\SelectColumn;
+use Filament\Tables\Columns\TextInputColumn;
+
+TextInputColumn::make('purchase_price')
+    ->partiallyRenderColumnsAfterStateUpdated(['purchase_currency'])
+
+SelectColumn::make('purchase_currency')
+    ->options([
+        'EUR' => 'EUR',
+        'USD' => 'USD',
+    ])
+```
+
+Anything else that depends on the updated record, such as other rows or content outside the table, is not updated until the component next renders. Columns that are not visible in the table are skipped. If the table has [summaries](../summaries) or a [content layout](../layout), the whole component is rendered instead.
 
 ## Column utility injection
 
@@ -1040,6 +1182,21 @@ function (?Model $record) {
     // ...
 }
 ```
+
+### Injecting the current related record
+
+When a column displays multiple values from a relationship, you may inject the Eloquent record that contains the current value into functions that customize each item using a `$relatedRecord` parameter:
+
+```php
+use App\Models\Tag;
+use Filament\Tables\Columns\TextColumn;
+
+TextColumn::make('tags.name')
+    ->badge()
+    ->color(fn (Tag $relatedRecord): string => $relatedRecord->color)
+```
+
+The `$record` parameter continues to contain the current table record. The `$relatedRecord` parameter is only available while an individual relationship value is being evaluated. If multiple text values are joined into a comma-separated list, item styling is evaluated for the joined list instead. Use `badge()` or `listWithLineBreaks()` to evaluate item styling for each related record.
 
 ### Injecting the row loop
 

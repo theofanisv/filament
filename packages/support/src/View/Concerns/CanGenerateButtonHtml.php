@@ -3,14 +3,17 @@
 namespace Filament\Support\View\Concerns;
 
 use BackedEnum;
+use Filament\Support\Components\ViewComponent;
 use Filament\Support\Enums\IconPosition;
 use Filament\Support\Enums\IconSize;
 use Filament\Support\Enums\Size;
+use Filament\Support\View\ComponentAttributeBag as FilamentComponentAttributeBag;
 use Filament\Support\View\Components\BadgeComponent;
 use Filament\Support\View\Components\ButtonComponent;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Js;
 use Illuminate\View\ComponentAttributeBag;
+use Illuminate\View\ComponentSlot;
 
 use function Filament\Support\generate_href_html;
 use function Filament\Support\generate_icon_html;
@@ -18,11 +21,14 @@ use function Filament\Support\generate_loading_indicator_html;
 
 trait CanGenerateButtonHtml
 {
+    use InteractsWithLivewireRendering;
+
     /**
-     * @internal This method is not part of the public API and should not be used. Its parameters may change at any time without notice.
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
      *
      * @param  string | array<string> | null  $badgeColor,
      * @param  string | array<string> | null  $color,
+     * @param  string | array<string> | null  $iconAlias
      * @param  array<string>  $keyBindings
      */
     public function generateButtonHtml(
@@ -37,10 +43,11 @@ trait CanGenerateButtonHtml
         ?bool $hasSpaMode = null,
         ?string $href = null,
         string | BackedEnum | Htmlable | null $icon = null,
-        ?string $iconAlias = null,
+        string | array | null $iconAlias = null,
         ?IconPosition $iconPosition = IconPosition::Before,
         IconSize | string | null $iconSize = null,
         bool $isDisabled = false,
+        bool $isDisabledDuringLoading = true,
         bool $isLabelSrOnly = false,
         bool $isOutlined = false,
         ?array $keyBindings = null,
@@ -51,7 +58,43 @@ trait CanGenerateButtonHtml
         ?string $target = null,
         string | Htmlable | null $tooltip = null,
         ?string $type = 'button',
+        bool $shouldCheckForPublishedView = false,
     ): string {
+        if ($shouldCheckForPublishedView && ViewComponent::hasPublishedEmbeddedViewOverride('filament::components.button.index')) {
+            if ($attributes->has('wire:key')) {
+                $this->setRenderKey($attributes->get('wire:key'));
+            }
+
+            return view('filament::components.button.index', [
+                'attributes' => $attributes,
+                'badge' => $badge,
+                'badgeColor' => $badgeColor,
+                'badgeSize' => $badgeSize,
+                'color' => $color,
+                'disabled' => $isDisabled,
+                'form' => $form,
+                'formId' => $formId,
+                'href' => $href,
+                'icon' => $icon,
+                'iconAlias' => $iconAlias,
+                'iconPosition' => $iconPosition,
+                'iconSize' => $iconSize,
+                'keyBindings' => $keyBindings,
+                'labeledFrom' => $labeledFromBreakpoint,
+                'labelSrOnly' => $isLabelSrOnly,
+                'loadingIndicator' => $hasLoadingIndicator,
+                'outlined' => $isOutlined,
+                'size' => $size,
+                'slot' => $label instanceof ComponentSlot ? $label : new ComponentSlot(e($label)),
+                'spaMode' => $hasSpaMode,
+                'tag' => $tag,
+                'target' => $target,
+                'tooltip' => $tooltip,
+                'type' => $type,
+            ])->render();
+        }
+
+        $badgeColor ??= 'primary';
         $color ??= 'primary';
 
         if (! $iconPosition instanceof IconPosition) {
@@ -84,9 +127,12 @@ trait CanGenerateButtonHtml
             $loadingIndicatorTarget = html_entity_decode($wireTarget ?: $form, ENT_QUOTES);
         }
 
+        $hasSeparateLoadingIndicatorTarget = $hasLoadingIndicator && $attributes->has('wire:target') && blank($attributes->get('wire:target'));
+
         $hasTooltip = filled($tooltip);
 
         $formAttributes = $attributes->only(['action', 'method', 'wire:submit']);
+        $iconButtonAttributes = $attributes;
 
         $attributes = $attributes
             ->when(
@@ -95,18 +141,22 @@ trait CanGenerateButtonHtml
             )
             ->merge([
                 'aria-disabled' => $isDisabled ? 'true' : null,
-                'aria-label' => $isLabelSrOnly ? trim(strip_tags(e($label))) : null,
+                // Security: These attributes are rendered without escaping, so the `aria-label` must be escaped here, otherwise an `Htmlable` label could break out of the attribute. `doubleEncode: false` preserves entities that Blade has already escaped in a string label.
+                'aria-label' => $isLabelSrOnly ? e(trim(strip_tags($label instanceof Htmlable ? $label->toHtml() : ($label ?? ''))), doubleEncode: false) : null,
                 'disabled' => $isDisabled && blank($tooltip),
                 'form' => $formId,
+                'tabindex' => (($tag === 'a') && $isDisabled && $hasTooltip) ? '0' : null,
                 'type' => match ($tag) {
                     'button' => $type,
                     'form' => 'submit',
                     default => null,
                 },
-                'wire:loading.attr' => $tag === 'button' ? 'disabled' : null,
+                'wire:loading.attr' => ($tag === 'button' && $isDisabledDuringLoading && (! $hasFormProcessingLoadingIndicator)) ? 'aria-disabled' : null,
+                'wire:loading.class' => ($tag === 'button' && $isDisabledDuringLoading) ? $attributes->prepends('fi-disabled') : null,
+                'wire:loading.class.delay.' . config('filament.livewire_loading_delay', 'default') => ($hasLoadingIndicator && (! $hasSeparateLoadingIndicatorTarget)) ? $attributes->prepends('fi-loading') : null,
                 'wire:target' => ($hasLoadingIndicator && $loadingIndicatorTarget) ? $loadingIndicatorTarget : null,
-                'x-bind:disabled' => $hasFormProcessingLoadingIndicator ? 'isProcessing' : null,
-                'x-bind:aria-label' => ($isLabelSrOnly && $hasFormProcessingLoadingIndicator) ? ('isProcessing ? processingMessage : ' . Js::from(trim(strip_tags(e($label))))) : null,
+                'x-bind:aria-disabled' => $hasFormProcessingLoadingIndicator ? ('isProcessing || isLoading || ' . Js::from($isDisabled || in_array($attributes->get('aria-disabled'), [true, 'true'], true))) : null,
+                'x-bind:aria-label' => ($isLabelSrOnly && $hasFormProcessingLoadingIndicator) ? ('isProcessing ? processingMessage : ' . Js::from(trim(strip_tags($label instanceof Htmlable ? $label->toHtml() : ($label ?? ''))))) : null,
             ], escape: false)
             ->when(
                 $isDisabled && $hasTooltip,
@@ -114,6 +164,8 @@ trait CanGenerateButtonHtml
                     fn (mixed $value, string $key): bool => ! str($key)->startsWith(['href', 'x-on:', 'wire:click']),
                 ),
             );
+
+        $buttonComponent = ButtonComponent::make($isOutlined);
 
         $buttonAttributes = $attributes
             ->class([
@@ -123,28 +175,33 @@ trait CanGenerateButtonHtml
                 ($size instanceof Size) ? "fi-size-{$size->value}" : $size,
                 is_string($labeledFromBreakpoint) ? "fi-labeled-from-{$labeledFromBreakpoint}" : null,
             ])
-            ->color(app(ButtonComponent::class, ['isOutlined' => $isOutlined]), $color);
+            ->color($buttonComponent, $color);
 
-        $iconHtml = $icon ? generate_icon_html($icon, $iconAlias, (new ComponentAttributeBag([
-            'wire:loading.remove.delay.' . config('filament.livewire_loading_delay', 'default') => $hasLoadingIndicator,
-            'wire:target' => $hasLoadingIndicator ? $loadingIndicatorTarget : false,
-        ])), size: $iconSize)->toHtml() : '';
+        if ($labeledFromBreakpoint && filled($wireKey = $iconButtonAttributes->get('wire:key'))) {
+            $iconButtonAttributes = $iconButtonAttributes
+                ->except(['wire:key'])
+                ->merge(['wire:key' => "{$wireKey}.icon-button"], escape: false);
+        }
 
-        $loadingIndicatorHtml = $hasLoadingIndicator ? generate_loading_indicator_html((new ComponentAttributeBag([
-            'wire:loading.delay.' . config('filament.livewire_loading_delay', 'default') => '',
-            'wire:target' => $loadingIndicatorTarget,
-        ])), size: $iconSize)->toHtml() : '';
+        $iconHtml = ($icon || $iconAlias) ? generate_icon_html($icon, $iconAlias, size: $iconSize)?->toHtml() ?? '' : '';
 
-        $formProcessingLoadingIndicatorHtml = $hasFormProcessingLoadingIndicator ? generate_loading_indicator_html((new ComponentAttributeBag([
+        $loadingIndicatorHtml = $hasLoadingIndicator ? generate_loading_indicator_html(new FilamentComponentAttributeBag([
+            'wire:loading.class.delay.' . config('filament.livewire_loading_delay', 'default') => $hasSeparateLoadingIndicatorTarget ? 'fi-loading' : null,
+            'wire:target' => $hasSeparateLoadingIndicatorTarget ? $loadingIndicatorTarget : null,
+        ]), size: $iconSize)->toHtml() : '';
+
+        $formProcessingLoadingIndicatorHtml = $hasFormProcessingLoadingIndicator ? generate_loading_indicator_html((new FilamentComponentAttributeBag([
+            'class' => 'fi-btn-processing-indicator',
             'x-cloak' => 'x-cloak',
             'x-show' => 'isProcessing',
         ])), size: $iconSize)->toHtml() : '';
 
         ob_start(); ?>
 
+        <?= $this->generateMorphMarkerHtml() ?>
         <?php if ($labeledFromBreakpoint) { ?>
             <?= $this->generateIconButtonHtml(
-                attributes: $attributes,
+                attributes: $iconButtonAttributes,
                 badge: $badge,
                 badgeColor: $badgeColor,
                 badgeSize: $badgeSize,
@@ -158,6 +215,7 @@ trait CanGenerateButtonHtml
                 iconAlias: $iconAlias,
                 iconSize: $iconSize,
                 isDisabled: $isDisabled,
+                isDisabledDuringLoading: $isDisabledDuringLoading,
                 keyBindings: $keyBindings,
                 label: $label,
                 size: $size,
@@ -165,8 +223,10 @@ trait CanGenerateButtonHtml
                 target: $target,
                 tooltip: $tooltip,
                 type: $type,
+                shouldCheckForPublishedView: $shouldCheckForPublishedView,
             ) ?>
         <?php } ?>
+        <?= $this->generateMorphMarkerHtml(isEnd: true) ?>
 
         <?= ($tag === 'form') ? ('<form ' . $formAttributes->toHtml() . '>' . csrf_field()) : '' ?>
 
@@ -188,15 +248,23 @@ trait CanGenerateButtonHtml
             <?php if ($hasFormProcessingLoadingIndicator) { ?>
                 x-data="filamentFormButton"
                 x-bind:class="{ 'fi-processing': isProcessing }"
+                x-bind:aria-busy="isProcessing"
             <?php } ?>
             <?= $buttonAttributes->toHtml() ?>
         >
+            <?= $this->generateMorphMarkerHtml() ?>
             <?php if ($iconPosition === IconPosition::Before) { ?>
-                <?= $iconHtml ?>
+                <?= $this->generateMorphMarkerHtml() ?>
                 <?= $loadingIndicatorHtml ?>
+                <?= $this->generateMorphMarkerHtml(isEnd: true) ?>
+                <?= $this->generateMorphMarkerHtml() ?>
+                <?= $iconHtml ?>
+                <?= $this->generateMorphMarkerHtml(isEnd: true) ?>
                 <?= $formProcessingLoadingIndicatorHtml ?>
             <?php } ?>
+            <?= $this->generateMorphMarkerHtml(isEnd: true) ?>
 
+            <?= $this->generateMorphMarkerHtml() ?>
             <?php if (! $isLabelSrOnly) { ?>
                 <?php if ($hasFormProcessingLoadingIndicator) { ?>
                     <span x-show="! isProcessing">
@@ -214,21 +282,32 @@ trait CanGenerateButtonHtml
                     x-text="processingMessage"
                 ></span>
             <?php } ?>
+            <?= $this->generateMorphMarkerHtml(isEnd: true) ?>
 
+            <?= $this->generateMorphMarkerHtml() ?>
             <?php if ($iconPosition === IconPosition::After) { ?>
-                <?= $iconHtml ?>
+                <?= $this->generateMorphMarkerHtml() ?>
                 <?= $loadingIndicatorHtml ?>
+                <?= $this->generateMorphMarkerHtml(isEnd: true) ?>
+                <?= $this->generateMorphMarkerHtml() ?>
+                <?= $iconHtml ?>
+                <?= $this->generateMorphMarkerHtml(isEnd: true) ?>
                 <?= $formProcessingLoadingIndicatorHtml ?>
             <?php } ?>
+            <?= $this->generateMorphMarkerHtml(isEnd: true) ?>
 
             <?php if (filled($badge)) { ?>
                 <div class="fi-btn-badge-ctn">
-                    <span <?= (new ComponentAttributeBag)->color(BadgeComponent::class, $badgeColor)->class([
+                    <?php if ($badge instanceof ComponentSlot) { ?>
+                        <?= e($badge) ?>
+                    <?php } else { ?>
+                    <span <?= (new FilamentComponentAttributeBag)->color(BadgeComponent::class, $badgeColor)->class([
                         'fi-badge',
                         ($badgeSize instanceof Size) ? "fi-size-{$badgeSize->value}" : $badgeSize,
                     ])->toHtml() ?>>
                         <?= e($badge) ?>
                     </span>
+                    <?php } ?>
                 </div>
             <?php } ?>
         </<?= ($tag === 'form') ? 'button' : $tag ?>>

@@ -2,6 +2,7 @@
 
 namespace Filament\Tables\Contracts;
 
+use Closure;
 use Filament\Actions\Action;
 use Filament\Schemas\Schema;
 use Filament\Support\Contracts\TranslatableContentDriver;
@@ -15,7 +16,15 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\LazyCollection;
+use Livewire\Component;
 
+/**
+ * @mixin Component
+ *
+ * @method array<string> getGroupedSelectableTableRecordKeys(?string $group)
+ * @method array<array-key, array<string, mixed>> getTableSummarySelectedState(?Builder $query = null, ?Closure $modifyQueryUsing = null)
+ * @method bool shouldRenderTrailingGroupedTableSummary(Model | array<string, mixed> | null $lastRecord)
+ */
 interface HasTable
 {
     public function callTableColumnAction(string $name, string $recordKey): mixed;
@@ -32,6 +41,8 @@ interface HasTable
     public function getAllTableRecordsCount(): int;
 
     public function getAllSelectableTableRecordsCount(): int;
+
+    public function isTableRecordSelectableUsingQuery(Model $record): bool;
 
     /**
      * @return array<string, mixed> | null
@@ -51,14 +62,31 @@ interface HasTable
 
     public function getTableGrouping(): ?Group;
 
+    /**
+     * @deprecated Use `getMountedAction()` instead.
+     */
     public function getMountedTableAction(): ?Action;
 
+    /**
+     * @deprecated Use `getMountedActionSchema()` instead.
+     */
     public function getMountedTableActionForm(): ?Schema;
 
-    public function getMountedTableActionRecord(): ?Model;
+    /**
+     * @deprecated Use `getMountedAction()?->getRecord()` instead.
+     *
+     * @return Model | array<string, mixed> | null
+     */
+    public function getMountedTableActionRecord(): Model | array | null;
 
+    /**
+     * @deprecated Use `getMountedAction()` instead.
+     */
     public function getMountedTableBulkAction(): ?Action;
 
+    /**
+     * @deprecated Use `getMountedActionSchema()` instead.
+     */
     public function getMountedTableBulkActionForm(): ?Schema;
 
     public function getTable(): Table;
@@ -119,26 +147,36 @@ interface HasTable
     public function makeFilamentTranslatableContentDriver(): ?TranslatableContentDriver;
 
     /**
+     * @deprecated Use `callMountedAction()` instead.
+     *
      * @param  array<string, mixed>  $arguments
      */
     public function callMountedTableAction(array $arguments = []): mixed;
 
     /**
+     * @deprecated Use `mountAction()` instead.
+     *
      * @param  array<string, mixed>  $arguments
      */
     public function mountTableAction(string $name, ?string $record = null, array $arguments = []): mixed;
 
     /**
+     * @deprecated Use `mountAction()` instead.
+     *
      * @param  array<string, mixed>  $arguments
      */
     public function replaceMountedTableAction(string $name, ?string $record = null, array $arguments = []): void;
 
     /**
+     * @deprecated Use `mountAction()` instead.
+     *
      * @param  array<int | string> | null  $selectedRecords
      */
     public function mountTableBulkAction(string $name, ?array $selectedRecords = null): mixed;
 
     /**
+     * @deprecated Use `replaceMountedAction()` instead.
+     *
      * @param  array<int | string> | null  $selectedRecords
      */
     public function replaceMountedTableBulkAction(string $name, ?array $selectedRecords = null): void;

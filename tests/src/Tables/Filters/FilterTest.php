@@ -1,121 +1,617 @@
 <?php
 
+use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Enums\FiltersResetActionPosition;
+use Filament\Tables\Filters\BaseFilter;
+use Filament\Tables\Filters\Concerns\HasSchema;
 use Filament\Tables\Filters\Filter;
 use Filament\Tests\Fixtures\Livewire\PostsTable;
+use Filament\Tests\Fixtures\Livewire\PostsTableWithCustomFiltersApplyAction;
+use Filament\Tests\Fixtures\Livewire\PostsTableWithCustomFiltersRemoveAllAction;
+use Filament\Tests\Fixtures\Livewire\PostsTableWithCustomFiltersResetAction;
+use Filament\Tests\Fixtures\Livewire\PostsTableWithCustomFiltersTriggerAction;
 use Filament\Tests\Fixtures\Models\Post;
+use Filament\Tests\Fixtures\Models\User;
 use Filament\Tests\Tables\TestCase;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Blade;
 
 use function Filament\Tests\livewire;
 
 uses(TestCase::class);
 
-it('can filter records by boolean column', function (): void {
-    $posts = Post::factory()->count(10)->create();
+describe('form component configuration', function (): void {
+    it('can set `toggle()` as the form component', function (): void {
+        $filter = Filter::make('is_published')->toggle();
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts)
-        ->filterTable('is_published')
-        ->assertCanSeeTableRecords($posts->where('is_published', true))
-        ->assertCanNotSeeTableRecords($posts->where('is_published', false));
+        expect($filter->getFormField())->toBeInstanceOf(Toggle::class);
+    });
+
+    it('can set `checkbox()` as the form component', function (): void {
+        $filter = Filter::make('is_published')->toggle()->checkbox();
+
+        expect($filter->getFormField())->toBeInstanceOf(Checkbox::class);
+    });
+
+    it('defaults form component to `Checkbox`', function (): void {
+        $filter = Filter::make('is_published');
+
+        expect($filter->getFormField())->toBeInstanceOf(Checkbox::class);
+    });
+
+    it('can set a custom `formComponent()`', function (): void {
+        $filter = Filter::make('is_published')->formComponent(Toggle::class);
+
+        expect($filter->getFormField())->toBeInstanceOf(Toggle::class);
+    });
+
+    it('shares custom form configuration with legacy APIs', function (string $method): void {
+        $filter = Filter::make('custom');
+        $field = TextInput::make('value');
+
+        expect($filter->{$method}(schema: static fn (Filter $filter): array => ($filter->getName() === 'custom') ? [$field] : []))->toBe($filter)
+            ->and($filter->hasForm())->toBeTrue()
+            ->and($filter->hasSchema())->toBeTrue()
+            ->and($filter->getFormSchema())->toBe([$field])
+            ->and($filter->getSchemaComponents())->toBe([$field])
+            ->and($filter->getResetState())->toBe([]);
+
+        $filter->form(schema: []);
+
+        expect($filter->hasForm())->toBeTrue()
+            ->and($filter->getFormSchema())->toBe([]);
+
+        $filter->schema(schema: null)
+            ->modifyFormFieldUsing(static fn (Checkbox $field): Checkbox => $field->label('Modified'));
+
+        expect($filter->hasForm())->toBeFalse()
+            ->and($filter->hasSchema())->toBeFalse()
+            ->and($filter->getFormSchema()[0]->getLabel())->toBe('Modified')
+            ->and($filter->getResetState())->toBe(['isActive' => false]);
+
+        $legacyFilter = new class('legacy') extends BaseFilter
+        {
+            use HasSchema;
+        };
+
+        expect($legacyFilter->{$method}(schema: [$field])->getFormSchema())->toBe([$field]);
+    })->with(['form', 'schema']);
 });
 
-it('can filter records by relationship', function (): void {
-    $posts = Post::factory()->count(10)->create();
+describe('filtering and resetting records', function (): void {
+    it('can filter records by boolean column', function (): void {
+        $posts = Post::factory()->count(10)->create();
 
-    $author = $posts->first()->author;
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts)
+            ->filterTable('is_published')
+            ->assertCanSeeTableRecords($posts->where('is_published', true))
+            ->assertCanNotSeeTableRecords($posts->where('is_published', false));
+    });
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts)
-        ->filterTable('author', $author)
-        ->assertCanSeeTableRecords($posts->where('author_id', $author->getKey()))
-        ->assertCanNotSeeTableRecords($posts->where('author_id', '!=', $author->getKey()));
+    it('can filter records by relationship', function (): void {
+        $posts = Post::factory()->count(10)->create();
+
+        $author = $posts->first()->author;
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts)
+            ->filterTable('author', $author)
+            ->assertCanSeeTableRecords($posts->where('author_id', $author->getKey()))
+            ->assertCanNotSeeTableRecords($posts->where('author_id', '!=', $author->getKey()));
+    });
+
+    it('can persist filters in the user\'s session', function (): void {
+        $posts = Post::factory()->count(10)->create();
+
+        $unpublishedPosts = $posts->where('is_published', false);
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts)
+            ->filterTable('is_published')
+            ->assertCanNotSeeTableRecords($unpublishedPosts);
+
+        livewire(PostsTable::class)
+            ->assertCanNotSeeTableRecords($unpublishedPosts);
+
+        livewire(PostsTable::class)
+            ->resetTableFilters()
+            ->assertCanSeeTableRecords($unpublishedPosts);
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($unpublishedPosts);
+    });
+
+    it('can reset filters', function (): void {
+        $posts = Post::factory()->count(10)->create();
+
+        $unpublishedPosts = $posts->where('is_published', false);
+
+        livewire(PostsTable::class)
+            ->filterTable('is_published')
+            ->assertCanNotSeeTableRecords($unpublishedPosts)
+            ->resetTableFilters()
+            ->assertCanSeeTableRecords($unpublishedPosts);
+    });
+
+    it('can remove a filter', function (): void {
+        $posts = Post::factory()->count(10)->create();
+
+        $unpublishedPosts = $posts->where('is_published', false);
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts)
+            ->filterTable('is_published')
+            ->assertCanNotSeeTableRecords($unpublishedPosts)
+            ->removeTableFilter('is_published')
+            ->assertCanSeeTableRecords($posts);
+    });
+
+    it('can remove all table filters', function (): void {
+        $posts = Post::factory()->count(10)->create();
+
+        $unpublishedPosts = $posts->where('is_published', false);
+
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts)
+            ->filterTable('is_published')
+            ->assertDontSee('Clear filters')
+            ->assertCanNotSeeTableRecords($unpublishedPosts)
+            ->removeTableFilters()
+            ->assertCanSeeTableRecords($posts);
+    });
+
 });
 
-it('can persist filters in the user\'s session', function (): void {
-    $posts = Post::factory()->count(10)->create();
+describe('action configuration and rendering', function (): void {
+    it('can customize the `filtersRemoveAllAction()`', function (): void {
+        $posts = Post::factory()->count(10)->create();
 
-    $unpublishedPosts = $posts->where('is_published', false);
+        livewire(PostsTableWithCustomFiltersRemoveAllAction::class)
+            ->filterTable('is_published')
+            ->assertSee('Clear filters')
+            ->assertCanNotSeeTableRecords($posts->where('is_published', false));
+    });
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts)
-        ->filterTable('is_published')
-        ->assertCanNotSeeTableRecords($unpublishedPosts);
+    it('can customize the `filtersTriggerAction()`', function (): void {
+        livewire(PostsTableWithCustomFiltersTriggerAction::class)
+            ->assertSee('Show filters');
+    });
 
-    livewire(PostsTable::class)
-        ->assertCanNotSeeTableRecords($unpublishedPosts);
+    it('can customize the `filtersApplyAction()`', function (): void {
+        livewire(PostsTableWithCustomFiltersApplyAction::class)
+            ->assertSee('Apply filters');
+    });
 
-    livewire(PostsTable::class)
-        ->resetTableFilters()
-        ->assertCanSeeTableRecords($unpublishedPosts);
+    it('can render the filters component without a reset action', function (FiltersResetActionPosition $position): void {
+        $html = Blade::render(<<<'BLADE'
+        <x-filament-tables::filters
+            :apply-action="$applyAction"
+            form=""
+            :reset-action-position="$position"
+        />
+        BLADE, [
+            'applyAction' => Action::make('apply')->hidden(),
+            'position' => $position,
+        ]);
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($unpublishedPosts);
+        expect($html)->not->toContain('resetTableFiltersForm');
+    })->with(FiltersResetActionPosition::cases());
+
+    it('can customize the `filtersResetAction()`', function (): void {
+        $action = livewire(PostsTableWithCustomFiltersResetAction::class)
+            ->instance()
+            ->getTable()
+            ->getFiltersResetAction();
+
+        expect($action)
+            ->getLabel()->toBe('Custom reset filters')
+            ->getIcon()->toBe(Heroicon::XMark)
+            ->isButton()->toBeTrue();
+    });
+
+    it('can render a customized `filtersResetAction()` in each position', function (string $position, string $view): void {
+        $component = livewire(PostsTableWithCustomFiltersResetAction::class, [
+            'resetActionPosition' => $position,
+            'resetActionView' => $view,
+        ]);
+
+        expect($component->html())->toContain('data-testid="filters-reset-action"');
+    })->with([
+        'header' => ['header', 'button'],
+        'footer' => ['footer', 'link'],
+        'modal' => ['modal', 'link'],
+    ]);
+
+    it('does not execute a guarded `filtersResetAction()`', function (string $state): void {
+        Post::factory()->create(['is_published' => true]);
+        $unpublishedPost = Post::factory()->create(['is_published' => false]);
+
+        livewire(PostsTableWithCustomFiltersResetAction::class, [
+            'resetActionState' => $state,
+        ])
+            ->filterTable('is_published')
+            ->assertCanNotSeeTableRecords([$unpublishedPost])
+            ->call('resetTableFiltersForm')
+            ->assertCanNotSeeTableRecords([$unpublishedPost]);
+    })->with([
+        'hidden',
+        'invisible',
+        'disabled',
+        'unauthorized',
+    ]);
+
+    it('does not reset filters when the `filtersResetAction()` is unauthorized', function (): void {
+        Post::factory()->create(['is_published' => true]);
+        $unpublishedPost = Post::factory()->create(['is_published' => false]);
+
+        livewire(PostsTableWithCustomFiltersResetAction::class, [
+            'resetActionState' => 'unauthorizedWithNotification',
+        ])
+            ->filterTable('is_published')
+            ->assertCanNotSeeTableRecords([$unpublishedPost])
+            ->call('resetTableFiltersForm')
+            ->assertCanNotSeeTableRecords([$unpublishedPost])
+            ->assertNotified('You cannot reset filters');
+    });
+
 });
 
-it('can reset filters', function (): void {
-    $posts = Post::factory()->count(10)->create();
+describe('browser interactions', function (): void {
+    it('renders a customized `filtersResetAction()` accessibly', function (): void {
+        Artisan::call('filament:assets');
 
-    $unpublishedPosts = $posts->where('is_published', false);
+        $this->actingAs(User::factory()->create());
 
-    livewire(PostsTable::class)
-        ->filterTable('is_published')
-        ->assertCanNotSeeTableRecords($unpublishedPosts)
-        ->resetTableFilters()
-        ->assertCanSeeTableRecords($unpublishedPosts);
+        visit('/filters-reset-action-browser-test')
+            ->click('[data-testid="filters-trigger"]')
+            ->assertVisible('[data-testid="filters-reset-action"]')
+            ->assertAttribute('[data-testid="published-filter"]', 'aria-checked', 'false')
+            ->click('[data-testid="published-filter"]')
+            ->assertAttribute('[data-testid="published-filter"]', 'aria-checked', 'true')
+            ->click('[data-testid="filters-reset-action"]')
+            ->assertAttribute('[data-testid="published-filter"]', 'aria-checked', 'false')
+            ->assertNoSmoke()
+            ->assertNoAccessibilityIssues();
+
+        visit('/filters-reset-action-browser-test')
+            ->inDarkMode()
+            ->click('[data-testid="filters-trigger"]')
+            ->assertVisible('[data-testid="filters-reset-action"]')
+            ->assertNoAccessibilityIssues();
+    });
+
+    it('manages focus for the filters dropdown on mobile', function (): void {
+        Artisan::call('filament:assets');
+
+        $this->actingAs(User::factory()->create());
+
+        $filtersTrigger = '[data-testid="filters-trigger"]';
+        $publishedFilter = '[data-testid="published-filter"]';
+        $selectFilter = '[data-testid="status-filter"] button[aria-haspopup="listbox"]';
+        $selectSearch = '[data-testid="status-filter"] input[role="combobox"]';
+        $dateFilter = '[data-testid="published-at-filter"] input[aria-haspopup="dialog"]';
+        $datePanel = '[data-testid="published-at-filter"] [role="dialog"]';
+        $colorFilter = '[data-testid="color-filter"] input';
+        $colorPanel = '[data-testid="color-filter"] [role="dialog"]';
+
+        $page = visit('/filters-reset-action-browser-test?focus=1');
+
+        $page
+            ->resize(375, 812)
+            ->keys($filtersTrigger, 'Enter')
+            ->assertPresent($publishedFilter . ':focus')
+            ->keys($publishedFilter, 'Escape')
+            ->assertMissing($publishedFilter)
+            ->assertPresent($filtersTrigger . ':focus')
+            ->click($filtersTrigger)
+            ->assertVisible($publishedFilter)
+            ->assertPresent($filtersTrigger . ':focus');
+
+        $page
+            ->click($selectFilter)
+            ->type($selectSearch, 'Draft')
+            ->keys($selectSearch, 'Escape')
+            ->assertAttribute($selectFilter, 'aria-expanded', 'false')
+            ->assertVisible($publishedFilter)
+            ->assertPresent($selectFilter . ':focus')
+            ->keys($selectFilter, 'Escape')
+            ->assertMissing($publishedFilter)
+            ->keys($filtersTrigger, 'Enter')
+            ->assertAttribute($selectFilter, 'aria-expanded', 'false')
+            ->click($dateFilter)
+            ->assertVisible($datePanel)
+            ->click("{$datePanel} [role=\"gridcell\"][tabindex=\"0\"][aria-disabled=\"false\"]")
+            ->assertValueIsNot($dateFilter, '')
+            ->assertVisible($datePanel)
+            ->click($dateFilter)
+            ->assertMissing($datePanel)
+            ->click($dateFilter)
+            ->assertVisible($datePanel)
+            ->assertPresent($datePanel . ' [role="gridcell"]:focus')
+            ->keys($dateFilter, 'Shift+Tab')
+            ->assertPresent($selectFilter . ':focus')
+            ->assertMissing($datePanel)
+            ->click($dateFilter)
+            ->assertVisible($datePanel)
+            ->assertPresent($datePanel . ' [role="gridcell"]:focus')
+            ->keys($dateFilter, 'Escape')
+            ->assertMissing($datePanel)
+            ->assertVisible($publishedFilter)
+            ->assertPresent($dateFilter . ':focus')
+            ->keys($dateFilter, 'Escape')
+            ->assertMissing($publishedFilter)
+            ->keys($filtersTrigger, 'Enter')
+            ->assertMissing($datePanel)
+            ->click($colorFilter)
+            ->assertVisible($colorPanel);
+
+        $page->keys($colorPanel . ' [part="hue"]', 'Escape');
+
+        $page
+            ->assertMissing($colorPanel)
+            ->assertVisible($publishedFilter)
+            ->assertPresent($colorFilter . ':focus')
+            ->keys($colorFilter, 'Escape')
+            ->assertMissing($publishedFilter)
+            ->keys($filtersTrigger, 'Enter')
+            ->assertVisible($publishedFilter)
+            ->assertMissing($colorPanel);
+
+        $page
+            ->keys($filtersTrigger, 'Escape')
+            ->assertMissing($publishedFilter)
+            ->keys($filtersTrigger, 'Enter')
+            ->click('nav[aria-label="Topbar"]')
+            ->assertMissing($publishedFilter)
+            ->assertNoSmoke()
+            ->assertNoAccessibilityIssues();
+
+        foreach ([false, true] as $isDarkMode) {
+            if ($isDarkMode) {
+                $page = $page->inDarkMode();
+                $page->resize(375, 812);
+            }
+
+            $page
+                ->keys($filtersTrigger, 'Enter')
+                ->click($selectFilter)
+                ->assertVisible($selectSearch)
+                ->assertNoAccessibilityIssues()
+                ->keys($selectSearch, 'Escape')
+                ->click($dateFilter)
+                ->assertPresent($datePanel . ' [role="gridcell"]:focus')
+                ->assertNoAccessibilityIssues()
+                ->keys($dateFilter, 'Escape')
+                ->click($colorFilter)
+                ->assertVisible($colorPanel)
+                ->assertNoAccessibilityIssues()
+                ->keys($colorPanel . ' [part="hue"]', 'Escape')
+                ->keys($colorFilter, 'Escape');
+        }
+    });
+
+    it('focuses available controls and empty filter configurations', function (string $focusScenario, string $focusedSelector): void {
+        Artisan::call('filament:assets');
+
+        $this->actingAs(User::factory()->create());
+
+        visit("/filters-reset-action-browser-test?focusScenario={$focusScenario}")
+            ->assertPresent($focusedSelector)
+            ->keys('[data-testid="filters-trigger"]', 'Enter')
+            ->assertPresent($focusedSelector . ':focus')
+            ->keys($focusedSelector, 'Escape')
+            ->assertMissing($focusedSelector)
+            ->assertPresent('[data-testid="filters-trigger"]:focus')
+            ->assertNoSmoke();
+    })->with([
+        'custom select first' => ['selectFirst', '[data-testid="status-filter"] button[aria-haspopup="listbox"]'],
+        'disabled focusable control first' => ['disabledFirst', '[data-testid="published-filter"]'],
+        'hidden control first' => ['hiddenFirst', '[data-testid="published-filter"]'],
+        'disabled control fallback' => ['disabled', 'div[tabindex="-1"]:has(> div [data-testid="filters-reset-action"])'],
+        'empty schema fallback' => ['empty', 'div[tabindex="-1"]:has(> div [data-testid="filters-reset-action"])'],
+    ]);
+
+    it('closes the filters dropdown after applying with pointer or keyboard', function (): void {
+        Artisan::call('filament:assets');
+
+        $this->actingAs(User::factory()->create());
+
+        Post::factory()->create(['title' => 'Published post', 'is_published' => true]);
+        Post::factory()->create(['title' => 'Draft post', 'is_published' => false]);
+
+        $filtersTrigger = '[data-testid="filters-trigger"]';
+        $publishedFilter = '[data-testid="published-filter"]';
+        $applyAction = '[data-table-filter-action="apply"]';
+
+        $page = visit('/filters-reset-action-browser-test?deferred=1');
+
+        $page
+            ->click($filtersTrigger)
+            ->click($publishedFilter)
+            ->assertVisible($publishedFilter)
+            ->assertSee('Draft post')
+            ->click($applyAction)
+            ->assertMissing($publishedFilter)
+            ->assertPresent($filtersTrigger . ':focus')
+            ->assertSee('Published post')
+            ->assertDontSee('Draft post')
+            ->assertNoAccessibilityIssues();
+
+        $page
+            ->keys($filtersTrigger, 'Enter')
+            ->assertPresent($publishedFilter . ':focus')
+            ->keys($publishedFilter, 'Space')
+            ->keys($applyAction, 'Enter')
+            ->assertMissing($publishedFilter)
+            ->assertPresent($filtersTrigger . ':focus')
+            ->assertSee('Draft post')
+            ->assertNoSmoke();
+
+        $page->inDarkMode()->assertNoAccessibilityIssues();
+    });
+
+    it('contains filters `Escape` handling inside an enclosing modal', function (): void {
+        Artisan::call('filament:assets');
+
+        $this->actingAs(User::factory()->create());
+
+        $filtersTrigger = '[data-testid="filters-trigger"]';
+        $publishedFilter = '[data-testid="published-filter"]';
+        $tableModal = '[data-testid="table-modal"]';
+
+        $page = visit('/filters-modal-browser-test');
+
+        $page
+            ->click('[data-testid="table-modal-trigger"]')
+            ->assertVisible($tableModal)
+            ->keys($filtersTrigger, 'Enter')
+            ->assertVisible($publishedFilter)
+            ->keys($publishedFilter, 'Escape')
+            ->assertMissing($publishedFilter)
+            ->assertVisible($tableModal)
+            ->keys($filtersTrigger, 'Enter')
+            ->assertVisible($publishedFilter)
+            ->assertNoAccessibilityIssues()
+            ->keys($publishedFilter, 'Escape')
+            ->assertMissing($publishedFilter)
+            ->assertVisible($tableModal)
+            ->assertPresent($filtersTrigger . ':focus')
+            ->keys($filtersTrigger, 'Escape')
+            ->assertMissing($tableModal)
+            ->assertNoSmoke();
+
+        $page->inDarkMode()
+            ->click('[data-testid="table-modal-trigger"]')
+            ->assertVisible($tableModal)
+            ->keys($filtersTrigger, 'Enter')
+            ->assertVisible($publishedFilter)
+            ->assertNoAccessibilityIssues();
+    });
+
 });
 
-it('can remove a filter', function (): void {
-    $posts = Post::factory()->count(10)->create();
+describe('record and visibility assertions', function (): void {
+    it('can use a custom attribute for the `SelectFilter`', function (): void {
+        $posts = Post::factory()->count(10)->create();
 
-    $unpublishedPosts = $posts->where('is_published', false);
+        $unpublishedPosts = $posts->where('is_published', false);
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts)
-        ->filterTable('is_published')
-        ->assertCanNotSeeTableRecords($unpublishedPosts)
-        ->removeTableFilter('is_published')
-        ->assertCanSeeTableRecords($posts);
+        livewire(PostsTable::class)
+            ->assertCanSeeTableRecords($posts)
+            ->filterTable('select_filter_attribute', false)
+            ->assertCanSeeTableRecords($unpublishedPosts)
+            ->filterTable('select_filter_attribute', true)
+            ->assertCanNotSeeTableRecords($unpublishedPosts);
+    });
+
+    it('can assert a filter exists with a given configuration', function (): void {
+        livewire(PostsTable::class)
+            ->assertTableFilterExists('is_published', function (Filter $filter): bool {
+                return $filter->getLabel() === 'Is published';
+            });
+    });
+
+    it('can check if a filter is visible', function (): void {
+        livewire(PostsTable::class)
+            ->assertTableFilterVisible('is_published');
+    });
+
+    it('can check if a filter is hidden', function (): void {
+        livewire(PostsTable::class)
+            ->assertTableFilterHidden('hidden');
+    });
+
 });
 
-it('can remove all table filters', function (): void {
-    $posts = Post::factory()->count(10)->create();
+describe('defaults and fluent configuration', function (): void {
+    it('returns `["isActive" => false]` from `getResetState()` by default', function (): void {
+        $filter = Filter::make('test');
 
-    $unpublishedPosts = $posts->where('is_published', false);
+        expect($filter->getResetState())->toBe(['isActive' => false]);
+    });
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts)
-        ->filterTable('is_published')
-        ->assertCanNotSeeTableRecords($unpublishedPosts)
-        ->removeTableFilters()
-        ->assertCanSeeTableRecords($posts);
-});
+    it('returns fluent `$this` from `toggle()`', function (): void {
+        $filter = Filter::make('test');
 
-it('can use a custom attribute for the `SelectFilter`', function (): void {
-    $posts = Post::factory()->count(10)->create();
+        expect($filter->toggle())->toBe($filter);
+    });
 
-    $unpublishedPosts = $posts->where('is_published', false);
+    it('returns fluent `$this` from `checkbox()`', function (): void {
+        $filter = Filter::make('test');
 
-    livewire(PostsTable::class)
-        ->assertCanSeeTableRecords($posts)
-        ->filterTable('select_filter_attribute', false)
-        ->assertCanSeeTableRecords($unpublishedPosts)
-        ->filterTable('select_filter_attribute', true)
-        ->assertCanNotSeeTableRecords($unpublishedPosts);
-});
+        expect($filter->checkbox())->toBe($filter);
+    });
 
-it('can assert a filter exists with a given configuration', function (): void {
-    livewire(PostsTable::class)
-        ->assertTableFilterExists('is_published', function (Filter $filter): bool {
-            return $filter->getLabel() === 'Is published';
+    it('returns fluent `$this` from `formComponent()`', function (): void {
+        $filter = Filter::make('test');
+
+        expect($filter->formComponent(Toggle::class))->toBe($filter);
+    });
+
+    it('sets the form field label from the filter label', function (): void {
+        $filter = Filter::make('test')
+            ->label('My Filter');
+
+        $field = $filter->getFormField();
+
+        expect($field->getLabel())->toBe('My Filter');
+    });
+
+    describe('construction', function (): void {
+        it('can be constructed with a name', function (): void {
+            $filter = Filter::make('status');
+
+            expect($filter->getName())->toBe('status');
         });
-});
 
-it('can check if a filter is visible', function (): void {
-    livewire(PostsTable::class)
-        ->assertTableFilterVisible('is_published');
-});
+        it('throws `LogicException` when name is blank', function (): void {
+            Filter::make('');
+        })->throws(LogicException::class);
+    });
 
-it('can check if a filter is hidden', function (): void {
-    livewire(PostsTable::class)
-        ->assertTableFilterHidden('hidden');
+    it('returns `null` from `getDefaultName()`', function (): void {
+        expect(Filter::getDefaultName())->toBeNull();
+    });
+
+    describe('label', function (): void {
+        it('auto-generates label from name', function (): void {
+            $filter = Filter::make('is-published');
+
+            expect($filter->getLabel())->toBeString()->not->toBeEmpty();
+        });
+
+        it('can set label with a `Closure`', function (): void {
+            $filter = Filter::make('status')
+                ->label(static fn (): string => 'Dynamic');
+
+            expect($filter->getLabel())->toBe('Dynamic');
+        });
+    });
+
+    describe('column span', function (): void {
+        it('defaults column span to `1`', function (): void {
+            $filter = Filter::make('status');
+
+            expect($filter->getColumnSpan())->toBe(1);
+        });
+
+        it('can set `columnSpan()`', function (): void {
+            $filter = Filter::make('status')
+                ->columnSpan(2);
+
+            expect($filter->getColumnSpan())->toBe(2);
+        });
+
+        it('can set `columnSpanFull()`', function (): void {
+            $filter = Filter::make('status')
+                ->columnSpanFull();
+
+            expect($filter->getColumnSpan())->toBe(['default' => 'full']);
+        });
+    });
 });

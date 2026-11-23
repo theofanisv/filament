@@ -1,17 +1,26 @@
 <?php
 
-use Filament\Tables;
+use Filament\Tables\Grouping\Group;
+use Filament\Tests\Fixtures\Livewire\DefaultGroupedPostsTable;
+use Filament\Tests\Fixtures\Livewire\GroupedCustomDataTable;
 use Filament\Tests\Fixtures\Livewire\PostsTable;
+use Filament\Tests\Fixtures\Livewire\PostsTableWithGroupPersistedInSession;
+use Filament\Tests\Fixtures\Livewire\PostsTableWithoutSummarizers;
+use Filament\Tests\Fixtures\Livewire\TicketMessagesTable;
 use Filament\Tests\Fixtures\Livewire\UsersTable;
 use Filament\Tests\Fixtures\Models\Company;
 use Filament\Tests\Fixtures\Models\Image;
+use Filament\Tests\Fixtures\Models\Language;
 use Filament\Tests\Fixtures\Models\Post;
 use Filament\Tests\Fixtures\Models\Profile;
 use Filament\Tests\Fixtures\Models\Setting;
 use Filament\Tests\Fixtures\Models\Team;
+use Filament\Tests\Fixtures\Models\Ticket;
+use Filament\Tests\Fixtures\Models\TicketMessage;
 use Filament\Tests\Fixtures\Models\User;
 use Filament\Tests\Tables\TestCase;
 use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
 
 use function Filament\Tests\livewire;
 
@@ -43,10 +52,47 @@ it('can group a table', function (): void {
             $table = $livewire->getTable();
 
             expect($table)
-                ->getGrouping()->toBeInstanceOf(Tables\Grouping\Group::class)
+                ->getGrouping()->toBeInstanceOf(Group::class)
                 ->and($table->getGrouping())
                 ->getLabel()->toBe('Dynamic label');
         });
+});
+
+it('can group records by a default group in descending order', function (): void {
+    Post::factory()->create(['title' => 'Apple Post']);
+    Post::factory()->create(['title' => 'Cherry Post']);
+    Post::factory()->create(['title' => 'Banana Post']);
+
+    $sortedPosts = Post::query()->orderByDesc('title')->orderBy('id')->get();
+
+    livewire(DefaultGroupedPostsTable::class)
+        ->assertSet('tableGrouping', null)
+        ->assertCanSeeTableRecords($sortedPosts, inOrder: true);
+
+    livewire(PostsTableWithGroupPersistedInSession::class)
+        ->assertSet('tableGrouping', 'title:desc')
+        ->assertCanSeeTableRecords($sortedPosts, inOrder: true);
+});
+
+it('can set a default group direction with `defaultGroup()`', function (): void {
+    $livewire = livewire(PostsTable::class)->instance();
+    $table = $livewire->getTable();
+
+    expect($table->defaultGroup('title', 'DESC')->getDefaultGroupDirection())->toBe('desc');
+});
+
+it('can set a `defaultGroup()` direction with a `Closure`', function (): void {
+    $livewire = livewire(PostsTable::class)->instance();
+    $table = $livewire->getTable();
+
+    expect($table->defaultGroup('title', static fn (): string => 'DESC')->getDefaultGroupDirection())->toBe('desc');
+});
+
+it('defaults the `defaultGroup()` direction to ascending', function (): void {
+    $livewire = livewire(PostsTable::class)->instance();
+    $table = $livewire->getTable();
+
+    expect($table->defaultGroup('title')->getDefaultGroupDirection())->toBe('asc');
 });
 
 it('can group records by column', function (): void {
@@ -380,4 +426,691 @@ it('can group records with nullable nested `BelongsTo` -> `HasOne` -> `BelongsTo
     livewire(PostsTable::class)
         ->set('tableGrouping', 'author.profile.company.name')
         ->assertCanSeeTableRecords($allPosts);
+});
+
+it('can group records by `HasOneThrough` relationship', function (): void {
+    // Create users with profiles that have settings with unique themes
+    $themes = ['alpha-theme', 'beta-theme', 'gamma-theme', 'delta-theme', 'epsilon-theme'];
+    foreach ($themes as $theme) {
+        User::factory()->has(
+            Profile::factory()->has(
+                Setting::factory()->state(['theme' => $theme]),
+                'setting'
+            ),
+            'profile'
+        )->create();
+    }
+
+    $sortedUsers = User::query()
+        ->orderBy(
+            Setting::query()
+                ->select('theme')
+                ->join('profiles', 'profiles.id', '=', 'settings.profile_id')
+                ->whereColumn('profiles.user_id', 'users.id')
+                ->limit(1)
+        )
+        ->orderBy('users.id')
+        ->get();
+
+    livewire(UsersTable::class)
+        ->set('tableGrouping', 'setting.theme')
+        ->assertCanSeeTableRecords($sortedUsers, inOrder: true);
+});
+
+it('can group records with nullable `HasOneThrough` relationship', function (): void {
+    // User with profile and setting
+    $userWithSetting = User::factory()->has(
+        Profile::factory()->has(
+            Setting::factory()->state(['theme' => 'dark']),
+            'setting'
+        ),
+        'profile'
+    )->create();
+
+    // User with profile but no setting
+    $userWithProfileNoSetting = User::factory()->has(
+        Profile::factory(),
+        'profile'
+    )->create();
+
+    // User without profile (no setting possible)
+    $userWithoutProfile = User::factory()->create();
+
+    $allUsers = collect([$userWithSetting, $userWithProfileNoSetting, $userWithoutProfile]);
+
+    // Just verify grouping doesn't crash with nullable relationships
+    livewire(UsersTable::class)
+        ->set('tableGrouping', 'setting.theme')
+        ->assertCanSeeTableRecords($allUsers);
+});
+
+it('can group records by `BelongsTo` -> `HasOneThrough` relationship', function (): void {
+    // Create posts with authors that have settings via HasOneThrough
+    $themes = ['alpha-theme', 'beta-theme', 'gamma-theme', 'delta-theme', 'epsilon-theme'];
+    foreach ($themes as $theme) {
+        $user = User::factory()->has(
+            Profile::factory()->has(
+                Setting::factory()->state(['theme' => $theme]),
+                'setting'
+            ),
+            'profile'
+        )->create();
+
+        Post::factory()->create(['author_id' => $user->id]);
+    }
+
+    $sortedPosts = Post::query()
+        ->orderBy(
+            Setting::query()
+                ->select('theme')
+                ->join('profiles', 'profiles.id', '=', 'settings.profile_id')
+                ->join('users', 'users.id', '=', 'profiles.user_id')
+                ->whereColumn('users.id', 'posts.author_id')
+                ->limit(1)
+        )
+        ->orderBy('posts.id')
+        ->get();
+
+    livewire(PostsTable::class)
+        ->set('tableGrouping', 'author.setting.theme')
+        ->assertCanSeeTableRecords($sortedPosts, inOrder: true);
+});
+
+it('can group records with nullable `BelongsTo` -> `HasOneThrough` relationship', function (): void {
+    // Post with author that has setting
+    $userWithSetting = User::factory()->has(
+        Profile::factory()->has(
+            Setting::factory()->state(['theme' => 'dark']),
+            'setting'
+        ),
+        'profile'
+    )->create();
+    $postWithSetting = Post::factory()->create(['author_id' => $userWithSetting->id]);
+
+    // Post with author with profile but no setting
+    $userWithProfileNoSetting = User::factory()->has(
+        Profile::factory(),
+        'profile'
+    )->create();
+    $postNoSetting = Post::factory()->create(['author_id' => $userWithProfileNoSetting->id]);
+
+    // Post with author but no profile
+    $userNoProfile = User::factory()->create();
+    $postNoProfile = Post::factory()->create(['author_id' => $userNoProfile->id]);
+
+    // Post with no author
+    $postNoAuthor = Post::factory()->create(['author_id' => null]);
+
+    $allPosts = collect([$postWithSetting, $postNoSetting, $postNoProfile, $postNoAuthor]);
+
+    // Just verify grouping doesn't crash with nullable nested relationships
+    livewire(PostsTable::class)
+        ->set('tableGrouping', 'author.setting.theme')
+        ->assertCanSeeTableRecords($allPosts);
+});
+
+describe('array records', function (): void {
+    it('can handle array records in `getKey()`', function (): void {
+        $livewire = livewire(PostsTable::class)->instance();
+        $group = Group::make('status')->table($livewire->getTable());
+
+        $arrayRecord = ['__key' => '1', 'name' => 'John', 'status' => 'active'];
+
+        expect($group->getKey($arrayRecord))->toBe('active');
+    });
+
+    it('can handle array records in `getStringKey()`', function (): void {
+        $livewire = livewire(PostsTable::class)->instance();
+        $group = Group::make('status')->table($livewire->getTable());
+
+        $arrayRecord = ['__key' => '1', 'name' => 'John', 'status' => 'active'];
+
+        expect($group->getStringKey($arrayRecord))->toBe('active');
+    });
+
+    it('can handle array records in `getTitle()`', function (): void {
+        $livewire = livewire(PostsTable::class)->instance();
+        $group = Group::make('status')->table($livewire->getTable());
+
+        $arrayRecord = ['__key' => '1', 'name' => 'John', 'status' => 'active'];
+
+        expect($group->getTitle($arrayRecord))->toBe('active');
+    });
+
+    it('can handle array records in `getDescription()`', function (): void {
+        $livewire = livewire(PostsTable::class)->instance();
+        $group = Group::make('status')
+            ->getDescriptionFromRecordUsing(fn (array $record): string => 'User: ' . $record['name'])
+            ->table($livewire->getTable());
+
+        $arrayRecord = ['__key' => '1', 'name' => 'John', 'status' => 'active'];
+
+        expect($group->getDescription($arrayRecord, 'Active'))->toBe('User: John');
+    });
+
+    it('can use custom `getKeyFromRecordUsing()` with array records', function (): void {
+        $livewire = livewire(PostsTable::class)->instance();
+        $group = Group::make('status')
+            ->getKeyFromRecordUsing(fn (array $record): string => strtoupper($record['status']))
+            ->table($livewire->getTable());
+
+        $arrayRecord = ['__key' => '1', 'name' => 'John', 'status' => 'active'];
+
+        expect($group->getKey($arrayRecord))->toBe('ACTIVE')
+            ->and($group->getStringKey($arrayRecord))->toBe('ACTIVE');
+    });
+
+    it('can use custom `getTitleFromRecordUsing()` with array records', function (): void {
+        $livewire = livewire(PostsTable::class)->instance();
+        $group = Group::make('status')
+            ->getTitleFromRecordUsing(fn (array $record): string => 'Status: ' . ucfirst($record['status']))
+            ->table($livewire->getTable());
+
+        $arrayRecord = ['__key' => '1', 'name' => 'John', 'status' => 'active'];
+
+        expect($group->getTitle($arrayRecord))->toBe('Status: Active');
+    });
+
+    it('can get grouped selectable record keys for array tables', function (bool $usesCustomKey): void {
+        Group::configureUsing(
+            static fn (Group $group) => $group->getKeyFromRecordUsing(
+                $usesCustomKey ? static fn (array $record): string => strtoupper($record['status']) : null,
+            ),
+            during: static fn () => livewire(GroupedCustomDataTable::class)
+                ->set('tableGrouping', 'status')
+                ->tap(function (Testable $testable) use ($usesCustomKey): void {
+                    /** @var GroupedCustomDataTable $livewire */
+                    $livewire = $testable->instance();
+
+                    expect($livewire->getGroupedSelectableTableRecordKeys($usesCustomKey ? 'ACTIVE' : 'active'))
+                        ->toBe(['1', '3', '5'])
+                        ->and($livewire->getGroupedSelectableTableRecordKeys($usesCustomKey ? 'INACTIVE' : 'inactive'))
+                        ->toBe(['2', '4']);
+                }),
+        );
+    })->with([
+        'default keys' => false,
+        'custom keys' => true,
+    ]);
+
+    it('returns an empty array for a non-existent group in array tables', function (): void {
+        livewire(GroupedCustomDataTable::class)
+            ->set('tableGrouping', 'status')
+            ->tap(function (Testable $testable): void {
+                /** @var GroupedCustomDataTable $livewire */
+                $livewire = $testable->instance();
+
+                $keys = $livewire->getGroupedSelectableTableRecordKeys('nonexistent');
+
+                expect($keys)->toBeEmpty();
+            });
+    });
+});
+
+describe('grouped selection', function (): void {
+    it('only includes filtered records in `getGroupedSelectableTableRecordKeys()` for a `null` relationship group', function (): void {
+        $user = User::factory()->create();
+
+        $publishedPostWithoutAuthor = Post::factory()->create(['author_id' => null, 'is_published' => true]);
+        Post::factory()->create(['author_id' => null, 'is_published' => false]);
+        Post::factory()->create(['author_id' => $user->id, 'is_published' => true]);
+
+        livewire(PostsTable::class)
+            ->set('tableGrouping', 'author.name')
+            ->filterTable('is_published')
+            ->tap(function (Testable $testable) use ($publishedPostWithoutAuthor): void {
+                /** @var PostsTable $livewire */
+                $livewire = $testable->instance();
+
+                $keys = $livewire->getGroupedSelectableTableRecordKeys(null);
+
+                expect($keys)->toBe([(string) $publishedPostWithoutAuthor->id]);
+            });
+    });
+});
+
+describe('group configuration', function (): void {
+    it('can set `collapsible()` and get with `isCollapsible()`', function (): void {
+        expect(Group::make('status')->collapsible()->isCollapsible())->toBeTrue();
+    });
+
+    it('defaults `isCollapsible()` to `false`', function (): void {
+        expect(Group::make('status')->isCollapsible())->toBeFalse();
+    });
+
+    it('can set `column()` and get with `getColumn()`', function (): void {
+        expect(Group::make('status')->column('custom_column')->getColumn())->toBe('custom_column');
+    });
+
+    it('returns `getId()` from `getColumn()` when no custom column is set', function (): void {
+        expect(Group::make('status')->getColumn())->toBe('status');
+    });
+
+    it('can set `date()` and get with `isDate()`', function (): void {
+        expect(Group::make('created_at')->date()->isDate())->toBeTrue();
+    });
+
+    it('defaults `isDate()` to `false`', function (): void {
+        expect(Group::make('created_at')->isDate())->toBeFalse();
+    });
+
+    it('can set `label()` and get with `getLabel()`', function (): void {
+        expect(Group::make('status')->label('Status Group')->getLabel())->toBe('Status Group');
+    });
+
+    it('generates a default label from `getId()` when no label is set', function (): void {
+        expect(Group::make('author_name')->getLabel())->toBe('Author name');
+    });
+
+    it('can set `titlePrefixedWithLabel()` to `false` and get with `isTitlePrefixedWithLabel()`', function (): void {
+        expect(Group::make('status')->titlePrefixedWithLabel(false)->isTitlePrefixedWithLabel())->toBeFalse();
+    });
+
+    it('defaults `isTitlePrefixedWithLabel()` to `true`', function (): void {
+        expect(Group::make('status')->isTitlePrefixedWithLabel())->toBeTrue();
+    });
+
+    it('can set `id()` and get with `getId()`', function (): void {
+        $group = Group::make('status')
+            ->id('custom-id');
+
+        expect($group->getId())->toBe('custom-id');
+    });
+
+    it('can set `label()` with a `Closure`', function (): void {
+        $group = Group::make('status')
+            ->label(static fn (): string => 'Dynamic Label');
+
+        expect($group->getLabel())->toBe('Dynamic Label');
+    });
+
+    it('returns fluent `$this` from callback setters', function (): void {
+        $group = Group::make('status');
+
+        expect($group->getDescriptionFromRecordUsing(static fn () => 'desc'))->toBe($group);
+        expect($group->getDescriptionUsing(static fn () => 'desc'))->toBe($group);
+        expect($group->getTitleFromRecordUsing(static fn () => 'title'))->toBe($group);
+        expect($group->getKeyFromRecordUsing(static fn () => 'key'))->toBe($group);
+        expect($group->groupQueryUsing(static fn ($query) => $query))->toBe($group);
+        expect($group->orderQueryUsing(static fn ($query) => $query))->toBe($group);
+        expect($group->scopeQueryUsing(static fn ($query) => $query))->toBe($group);
+        expect($group->scopeQueryByKeyUsing(static fn ($query) => $query))->toBe($group);
+    });
+});
+
+it('can group records by `BelongsTo` relationship that uses `withTrashed()` when the related model is soft-deleted', function (): void {
+    $ticketAlpha = Ticket::factory()->create();
+    $ticketBeta = Ticket::factory()->create();
+    $ticketGamma = Ticket::factory()->create();
+
+    TicketMessage::factory()->create(['ticket_id' => $ticketBeta->id]);
+    TicketMessage::factory()->create(['ticket_id' => $ticketAlpha->id]);
+    TicketMessage::factory()->create(['ticket_id' => $ticketGamma->id]);
+    TicketMessage::factory()->create(['ticket_id' => $ticketAlpha->id]);
+    TicketMessage::factory()->create(['ticket_id' => $ticketBeta->id]);
+
+    $ticketGamma->delete();
+
+    $sortedMessages = TicketMessage::query()
+        ->orderBy(
+            Ticket::query()
+                ->select('id')
+                ->withTrashed()
+                ->whereColumn('tickets.id', 'ticket_messages.ticket_id')
+                ->limit(1)
+        )
+        ->orderBy('ticket_messages.id')
+        ->get();
+
+    livewire(TicketMessagesTable::class)
+        ->set('tableGrouping', 'ticket.id')
+        ->assertCanSeeTableRecords($sortedMessages, inOrder: true);
+});
+
+it('can group records by `HasOne` relationship', function (): void {
+    $bios = ['Alpha bio', 'Beta bio', 'Gamma bio', 'Delta bio', 'Epsilon bio'];
+    foreach ($bios as $bio) {
+        User::factory()->has(
+            Profile::factory()->state(['bio' => $bio]),
+            'profile'
+        )->create();
+    }
+
+    $sortedUsers = User::query()
+        ->orderBy(
+            Profile::query()
+                ->select('bio')
+                ->whereColumn('profiles.user_id', 'users.id')
+                ->limit(1)
+        )
+        ->orderBy('users.id')
+        ->get();
+
+    livewire(UsersTable::class)
+        ->set('tableGrouping', 'profile.bio')
+        ->assertCanSeeTableRecords($sortedUsers, inOrder: true);
+});
+
+it('can group records by `BelongsToThrough` relationship', function (): void {
+    $companyNames = ['Alpha Co', 'Beta Co', 'Gamma Co', 'Delta Co', 'Epsilon Co'];
+    foreach ($companyNames as $companyName) {
+        $company = Company::factory()->create(['name' => $companyName]);
+        $team = Team::factory()->create(['company_id' => $company->id]);
+        User::factory()->create(['team_id' => $team->id]);
+    }
+
+    $sortedUsers = User::query()
+        ->orderBy(
+            Company::query()
+                ->select('companies.name')
+                ->join('teams', 'teams.company_id', '=', 'companies.id')
+                ->whereColumn('teams.id', 'users.team_id')
+                ->limit(1)
+        )
+        ->orderBy('users.id')
+        ->get();
+
+    livewire(UsersTable::class)
+        ->set('tableGrouping', 'company.name')
+        ->assertCanSeeTableRecords($sortedUsers, inOrder: true);
+});
+
+it('can group records by `BelongsTo` -> `BelongsToThrough` relationship', function (): void {
+    $companyNames = ['Acme Corp', 'Beta Inc', 'Gamma LLC', 'Delta Co', 'Epsilon Ltd'];
+    foreach ($companyNames as $companyName) {
+        $company = Company::factory()->create(['name' => $companyName]);
+        $team = Team::factory()->create(['company_id' => $company->id]);
+        $user = User::factory()->create(['team_id' => $team->id]);
+        Post::factory()->create(['author_id' => $user->id]);
+    }
+
+    $sortedPosts = Post::query()
+        ->orderBy(
+            Company::query()
+                ->select('companies.name')
+                ->join('teams', 'teams.company_id', '=', 'companies.id')
+                ->join('users', 'users.team_id', '=', 'teams.id')
+                ->whereColumn('users.id', 'posts.author_id')
+                ->limit(1)
+        )
+        ->orderBy('posts.id')
+        ->get();
+
+    livewire(PostsTableWithoutSummarizers::class)
+        ->set('tableGrouping', 'author.company.name')
+        ->assertCanSeeTableRecords($sortedPosts, inOrder: true);
+});
+
+it('can group records with nullable `BelongsTo` -> `BelongsToThrough` relationship', function (): void {
+    // Post with author, team, and company
+    $company = Company::factory()->create(['name' => 'Acme Corp']);
+    $teamWithCompany = Team::factory()->create(['company_id' => $company->id]);
+    $userComplete = User::factory()->create(['team_id' => $teamWithCompany->id]);
+    $postComplete = Post::factory()->create(['author_id' => $userComplete->id]);
+
+    // Post with author and team but no company
+    $teamWithoutCompany = Team::factory()->create(['company_id' => null]);
+    $userNoCompany = User::factory()->create(['team_id' => $teamWithoutCompany->id]);
+    $postNoCompany = Post::factory()->create(['author_id' => $userNoCompany->id]);
+
+    // Post with author but no team
+    $userNoTeam = User::factory()->create(['team_id' => null]);
+    $postNoTeam = Post::factory()->create(['author_id' => $userNoTeam->id]);
+
+    // Post with no author
+    $postNoAuthor = Post::factory()->create(['author_id' => null]);
+
+    $allPosts = collect([$postComplete, $postNoCompany, $postNoTeam, $postNoAuthor]);
+
+    livewire(PostsTableWithoutSummarizers::class)
+        ->set('tableGrouping', 'author.company.name')
+        ->assertCanSeeTableRecords($allPosts);
+});
+
+it('can group records by `HasOneThrough` -> `BelongsTo` relationship', function (): void {
+    $languageNames = ['Alpha Lang', 'Beta Lang', 'Gamma Lang', 'Delta Lang', 'Epsilon Lang'];
+    foreach ($languageNames as $languageName) {
+        $language = Language::factory()->create(['name' => $languageName]);
+        User::factory()->has(
+            Profile::factory()->has(
+                Setting::factory()->state(['language_id' => $language->id]),
+                'setting'
+            ),
+            'profile'
+        )->create();
+    }
+
+    $sortedUsers = User::query()
+        ->orderBy(
+            Language::query()
+                ->select('languages.name')
+                ->join('settings', 'settings.language_id', '=', 'languages.id')
+                ->join('profiles', 'profiles.id', '=', 'settings.profile_id')
+                ->whereColumn('profiles.user_id', 'users.id')
+                ->limit(1)
+        )
+        ->orderBy('users.id')
+        ->get();
+
+    livewire(UsersTable::class)
+        ->set('tableGrouping', 'setting.language.name')
+        ->assertCanSeeTableRecords($sortedUsers, inOrder: true);
+});
+
+it('can group records with nullable `HasOneThrough` -> `BelongsTo` relationship', function (): void {
+    // User with full chain
+    $language = Language::factory()->create(['name' => 'English']);
+    $userWithLanguage = User::factory()->has(
+        Profile::factory()->has(
+            Setting::factory()->state(['language_id' => $language->id]),
+            'setting'
+        ),
+        'profile'
+    )->create();
+
+    // User with profile and setting but no language
+    $userWithSettingNoLanguage = User::factory()->has(
+        Profile::factory()->has(
+            Setting::factory()->state(['language_id' => null]),
+            'setting'
+        ),
+        'profile'
+    )->create();
+
+    // User with profile but no setting
+    $userWithProfileNoSetting = User::factory()->has(
+        Profile::factory(),
+        'profile'
+    )->create();
+
+    // User without profile
+    $userWithoutProfile = User::factory()->create();
+
+    $allUsers = collect([$userWithLanguage, $userWithSettingNoLanguage, $userWithProfileNoSetting, $userWithoutProfile]);
+
+    livewire(UsersTable::class)
+        ->set('tableGrouping', 'setting.language.name')
+        ->assertCanSeeTableRecords($allUsers);
+});
+
+it('can group records by `BelongsTo` -> `HasOneThrough` -> `BelongsTo` relationship', function (): void {
+    $languageNames = ['Alpha Lang', 'Beta Lang', 'Gamma Lang', 'Delta Lang', 'Epsilon Lang'];
+    foreach ($languageNames as $languageName) {
+        $language = Language::factory()->create(['name' => $languageName]);
+        $user = User::factory()->has(
+            Profile::factory()->has(
+                Setting::factory()->state(['language_id' => $language->id]),
+                'setting'
+            ),
+            'profile'
+        )->create();
+        Post::factory()->create(['author_id' => $user->id]);
+    }
+
+    $sortedPosts = Post::query()
+        ->orderBy(
+            Language::query()
+                ->select('languages.name')
+                ->join('settings', 'settings.language_id', '=', 'languages.id')
+                ->join('profiles', 'profiles.id', '=', 'settings.profile_id')
+                ->join('users', 'users.id', '=', 'profiles.user_id')
+                ->whereColumn('users.id', 'posts.author_id')
+                ->limit(1)
+        )
+        ->orderBy('posts.id')
+        ->get();
+
+    livewire(PostsTable::class)
+        ->set('tableGrouping', 'author.setting.language.name')
+        ->assertCanSeeTableRecords($sortedPosts, inOrder: true);
+});
+
+it('can group records by `HasOne` relationship that uses a custom `where()` constraint', function (): void {
+    // User 1: has both published and unpublished posts; should group by published
+    $user1 = User::factory()->create();
+    Post::factory()->create(['author_id' => $user1->id, 'is_published' => false, 'title' => 'Z Unpublished']);
+    Post::factory()->create(['author_id' => $user1->id, 'is_published' => true, 'title' => 'A Published']);
+
+    // User 2: only has unpublished posts; should group as null
+    $user2 = User::factory()->create();
+    Post::factory()->create(['author_id' => $user2->id, 'is_published' => false, 'title' => 'B Unpublished']);
+
+    // User 3: has a published post
+    $user3 = User::factory()->create();
+    Post::factory()->create(['author_id' => $user3->id, 'is_published' => true, 'title' => 'M Published']);
+
+    $sortedUsers = User::query()
+        ->orderBy(
+            Post::query()
+                ->select('posts.title')
+                ->whereColumn('posts.author_id', 'users.id')
+                ->where('posts.is_published', true)
+                ->limit(1)
+        )
+        ->orderBy('users.id')
+        ->get();
+
+    livewire(UsersTable::class)
+        ->set('tableGrouping', 'publishedPost.title')
+        ->assertCanSeeTableRecords($sortedUsers, inOrder: true);
+});
+
+it('can group records by `HasOneThrough` -> `BelongsTo` relationship that uses `withTrashed()` when the related model is soft-deleted', function (): void {
+    $alphaLanguage = Language::factory()->create(['name' => 'Alpha Lang']);
+    $betaLanguage = Language::factory()->create(['name' => 'Beta Lang']);
+    $gammaLanguage = Language::factory()->create(['name' => 'Gamma Lang']);
+
+    foreach ([$alphaLanguage, $betaLanguage, $gammaLanguage] as $language) {
+        User::factory()->has(
+            Profile::factory()->has(
+                Setting::factory()->state(['language_id' => $language->id]),
+                'setting'
+            ),
+            'profile'
+        )->create();
+    }
+
+    // Soft-delete the Gamma language
+    $gammaLanguage->delete();
+
+    $sortedUsers = User::query()
+        ->orderBy(
+            Language::query()
+                ->withTrashed()
+                ->select('languages.name')
+                ->join('settings', 'settings.language_id', '=', 'languages.id')
+                ->join('profiles', 'profiles.id', '=', 'settings.profile_id')
+                ->whereColumn('profiles.user_id', 'users.id')
+                ->limit(1)
+        )
+        ->orderBy('users.id')
+        ->get();
+
+    livewire(UsersTable::class)
+        ->set('tableGrouping', 'setting.languageWithTrashed.name')
+        ->assertCanSeeTableRecords($sortedUsers, inOrder: true);
+});
+
+it('resets pagination when `$tableGrouping` is updated', function (): void {
+    Post::factory()->count(20)->create();
+
+    livewire(PostsTable::class)
+        ->call('setPage', 2)
+        ->assertSet('paginators.page', 2)
+        ->set('tableGrouping', 'title')
+        ->assertSet('paginators.page', 1);
+});
+
+describe('session persistence', function (): void {
+    it('defaults `persistsGroupInSession()` to `false`', function (): void {
+        livewire(PostsTable::class)
+            ->tap(function (Testable $testable): void {
+                /** @var PostsTable $livewire */
+                $livewire = $testable->instance();
+
+                expect($livewire->getTable()->persistsGroupInSession())->toBeFalse();
+            });
+    });
+
+    it('can enable grouping persistence with `persistGroupInSession()`', function (): void {
+        livewire(PostsTableWithGroupPersistedInSession::class)
+            ->tap(function (Testable $testable): void {
+                /** @var PostsTableWithGroupPersistedInSession $livewire */
+                $livewire = $testable->instance();
+
+                expect($livewire->getTable()->persistsGroupInSession())->toBeTrue();
+            });
+    });
+
+    it('scopes `getTableGroupingSessionKey()` to the component class', function (): void {
+        /** @var PostsTableWithGroupPersistedInSession $livewire */
+        $livewire = livewire(PostsTableWithGroupPersistedInSession::class)->instance();
+
+        expect($livewire->getTableGroupingSessionKey())
+            ->toBe('filament.tables.' . hash('sha256', $livewire::class) . '.grouping');
+    });
+
+    it('can persist the grouping in the user\'s session', function (): void {
+        Post::factory()->count(10)->create();
+
+        livewire(PostsTableWithGroupPersistedInSession::class)
+            ->assertSet('tableGrouping', 'title:desc')
+            ->set('tableGrouping', 'author.name:asc')
+            ->assertSet('tableGrouping', 'author.name:asc');
+
+        livewire(PostsTableWithGroupPersistedInSession::class)
+            ->assertSet('tableGrouping', 'author.name:asc');
+    });
+
+    it('can clear the persisted grouping in the user\'s session', function (): void {
+        Post::factory()->count(10)->create();
+
+        livewire(PostsTableWithGroupPersistedInSession::class)
+            ->assertSet('tableGrouping', 'title:desc')
+            ->set('tableGrouping', null)
+            ->assertSet('tableGrouping', null);
+
+        livewire(PostsTableWithGroupPersistedInSession::class)
+            ->assertSet('tableGrouping', null);
+    });
+
+    it('does not override explicit `$tableGrouping` with the persisted grouping', function (): void {
+        livewire(PostsTableWithGroupPersistedInSession::class)
+            ->assertSet('tableGrouping', 'title:desc');
+
+        Livewire::withQueryParams(['grouping' => 'author.name:asc'])
+            ->test(PostsTableWithGroupPersistedInSession::class)
+            ->assertSet('tableGrouping', 'author.name:asc');
+    });
+
+    it('does not persist the grouping in the user\'s session by default', function (): void {
+        Post::factory()->count(10)->create();
+
+        livewire(PostsTable::class)
+            ->set('tableGrouping', 'title')
+            ->assertSet('tableGrouping', 'title');
+
+        livewire(PostsTable::class)
+            ->assertSet('tableGrouping', null);
+    });
 });

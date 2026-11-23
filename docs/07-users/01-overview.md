@@ -6,6 +6,8 @@ title: Overview
 
 By default, all `App\Models\User`s can access Filament locally. To allow them to access Filament in production, you must take a few extra steps to ensure that only the correct users have access to the app.
 
+<AutoScreenshot name="panels/login" alt="The default login page" />
+
 ## Authorizing access to the panel
 
 To set up your `App\Models\User` to access Filament in non-local environments, you must implement the `FilamentUser` contract:
@@ -99,12 +101,12 @@ In this example, we create a new file at `app/Filament/AvatarProviders/BoringAva
 
 namespace App\Filament\AvatarProviders;
 
-use Filament\AvatarProviders\Contracts;
+use Filament\AvatarProviders\Contracts\AvatarProvider;
 use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 
-class BoringAvatarsProvider implements Contracts\AvatarProvider
+class BoringAvatarsProvider implements AvatarProvider
 {
     public function get(Model | Authenticatable $record): string
     {
@@ -178,6 +180,12 @@ public function panel(Panel $panel): Panel
         ->profile();
 }
 ```
+
+<AutoScreenshot name="panels/registration" alt="The default registration page" />
+
+<AutoScreenshot name="panels/password-reset" alt="The default password reset page" />
+
+<AutoScreenshot name="panels/profile" alt="The default profile page" />
 
 Filament also supports multi-factor authentication, which you can learn about in the [Multi-factor authentication](multi-factor-authentication) section.
 
@@ -256,7 +264,29 @@ protected function getPasswordFormComponent(): Component
 
 If you're using the `profile()` feature with the `emailChangeVerification()` feature, users that change their email address from the profile form will be required to verify their new email address before they can log in with it. This is done by sending a verification email to the new address, which contains a link that the user must click to verify their new email address. The email address in the database is not updated until the user clicks the link in the email.
 
-The link that a user is sent is valid for 60 minutes. At the same time as the email to the new address is sent, an email to the old address is also sent, with a link to block the change. This is a security feature to potentially prevent a user from being affected by a malicious actor.
+The link that a user is sent is valid for 60 minutes by default, or the number of minutes configured in `auth.verification.expire`. At the same time as the email to the new address is sent, an email to the old address is also sent, with a link to block the change. This is a security feature to potentially prevent a user from being affected by a malicious actor.
+
+Email change verification requires a cache store that supports [Laravel's atomic locks](https://laravel.com/docs/cache#atomic-locks). If your application runs on multiple servers, they must share the same cache store so that verifying and blocking the same change cannot both succeed.
+
+#### Listening for verified email changes
+
+After the user verifies the new address and Filament saves it, Filament dispatches the `Filament\Auth\Events\EmailChangeVerified` event. You may listen for it, for example in the `boot()` method of a service provider:
+
+```php
+use Filament\Auth\Events\EmailChangeVerified;
+use Illuminate\Support\Facades\Event;
+
+Event::listen(function (EmailChangeVerified $event): void {
+    $user = $event->getUser(); // The user, with the new email address
+    $previousEmail = $event->getPreviousEmail();
+
+    // ...
+});
+```
+
+The previous address is no longer stored on the user model, including when a queued listener reloads the user, so use `getPreviousEmail()` to access it.
+
+Filament only dispatches this event when the new email address is saved to the database. Sending the verification email, blocking the change, saving an email address directly from the profile form, or a save that is cancelled or leaves the email address unchanged do not dispatch it.
 
 ### Using a sidebar on the profile page
 
@@ -289,8 +319,8 @@ public function panel(Panel $panel): Panel
         ->loginRouteSlug('login')
         ->registrationRouteSlug('register')
         ->passwordResetRoutePrefix('password-reset')
-        ->passwordResetRequestRouteSlug('request')
-        ->passwordResetRouteSlug('reset')
+        ->requestPasswordResetRouteSlug('request')
+        ->resetPasswordRouteSlug('reset')
         ->emailVerificationRoutePrefix('email-verification')
         ->emailVerificationPromptRouteSlug('prompt')
         ->emailVerificationRouteSlug('verify')

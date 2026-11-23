@@ -1,0 +1,55 @@
+<?php
+
+namespace App\Livewire;
+
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
+use Filament\Schemas\Concerns\InteractsWithSchemas;
+use Filament\Schemas\Contracts\HasSchemas;
+use Filament\Schemas\Schema;
+use Filament\Support\Components\Attributes\Exposed;
+use Filament\Support\Components\Attributes\Unexposed;
+use Filament\Tests\Fixtures\Models\Post;
+use Illuminate\Contracts\View\View;
+use Livewire\Component;
+
+class CreatePost extends Component implements HasActions, HasSchemas
+{
+    use InteractsWithActions;
+    use InteractsWithSchemas;
+
+    public ?array $data = [];
+
+    #[Unexposed]
+    public function mount(): void
+    {
+        $this->form->fill();
+    }
+
+    #[Unexposed]
+    public function form(Schema $schema): Schema
+    {
+        return $schema
+            ->components([
+                //
+            ])
+            ->statePath('data')
+            ->model(Post::class);
+    }
+
+    #[Exposed]
+    public function create(): void
+    {
+        $data = $this->form->getState();
+
+        $record = Post::create($data);
+
+        $this->form->model($record)->saveRelationships();
+    }
+
+    #[Unexposed]
+    public function render(): View
+    {
+        return view('livewire.create-post');
+    }
+}

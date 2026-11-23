@@ -1,7 +1,6 @@
 ---
 title: Panel configuration
 ---
-import Aside from "@components/Aside.astro"
 
 ## Introduction
 
@@ -100,6 +99,16 @@ public function panel(Panel $panel): Panel
 }
 ```
 
+If your panel uses `domains()` to register multiple domains, set the current domain before generating panel URLs outside an HTTP request, such as in a console command or queued job:
+
+```php
+use Filament\Facades\Filament;
+
+Filament::setCurrentDomain('admin.example.com');
+```
+
+Use one of the panel's registered domains. This changes the URL-generation context, not the panel's domain configuration. Pass `null` to `setCurrentDomain()` to clear this context when you have finished generating URLs.
+
 ## Customizing the maximum content width
 
 By default, Filament will restrict the width of the content on the page, so it doesn't become too wide on large screens. To change this, you may use the `maxContentWidth()` method. Options correspond to [Tailwind's max-width scale](https://tailwindcss.com/docs/max-width). The options are `ExtraSmall`, `Small`, `Medium`, `Large`, `ExtraLarge`, `TwoExtraLarge`, `ThreeExtraLarge`, `FourExtraLarge`, `FiveExtraLarge`, `SixExtraLarge`, `SevenExtraLarge`, `Full`, `MinContent`, `MaxContent`, `FitContent`,  `Prose`, `ScreenSmall`, `ScreenMedium`, `ScreenLarge`, `ScreenExtraLarge` and `ScreenTwoExtraLarge`. The default is `SevenExtraLarge`:
@@ -116,6 +125,8 @@ public function panel(Panel $panel): Panel
 }
 ```
 
+<AutoScreenshot name="panels/configuration/content-width-full" alt="Panel with full content width" />
+
 If you'd like to set the max content width for pages of the type `SimplePage`, like login and registration pages, you may do so using the `simplePageMaxContentWidth()` method. The default is `Large`:
 
 ```php
@@ -129,6 +140,8 @@ public function panel(Panel $panel): Panel
         ->simplePageMaxContentWidth(Width::Small);
 }
 ```
+
+<AutoScreenshot name="panels/configuration/simple-page-max-content-width" alt="Login page with small max content width" />
 
 ## Setting the default sub-navigation position
 
@@ -198,9 +211,8 @@ public function panel(Panel $panel): Panel
 }
 ```
 
-<Aside variant="info">
-    In this example, we are using [`getUrl()`](resources/overview#generating-urls-to-resource-pages) on a resource to get the URL to the resource's index page. This feature requires the panel to already be registered though, and the configuration is too early in the request lifecycle to do that. You can use a function to return the URLs instead, which will be resolved when the panel has been registered.
-</Aside>
+> [!NOTE]
+> In this example, we are using [`getUrl()`](resources/overview#generating-urls-to-resource-pages) on a resource to get the URL to the resource's index page. This feature requires the panel to already be registered though, and the configuration is too early in the request lifecycle to do that. You can use a function to return the URLs instead, which will be resolved when the panel has been registered.
 
 These URLs need to exactly match the URL that the user is navigating to, including the domain and protocol. If you'd like to use a pattern to match multiple URLs, you can use an asterisk (`*`) as a wildcard character:
 
@@ -220,9 +232,7 @@ public function panel(Panel $panel): Panel
 
 ### Enabling SPA prefetching
 
-SPA prefetching enhances the user experience by automatically prefetching pages when users hover over links, making navigation feel even more responsive. This feature utilizes [Livewire's `wire:navigate.hover` functionality](https://livewire.laravel.com/docs/navigate#prefetching-links).
-
-To enable SPA mode with prefetching, you can pass the `hasPrefetching: true` parameter to the `spa()` method:
+To prefetch SPA pages when users hover over links, pass `hasPrefetching: true` to `spa()`. This uses [Livewire's link prefetching](https://livewire.laravel.com/docs/navigate#prefetching-links) and respects your [SPA URL exceptions](#disabling-spa-navigation-for-specific-urls):
 
 ```php
 use Filament\Panel;
@@ -235,15 +245,8 @@ public function panel(Panel $panel): Panel
 }
 ```
 
-When prefetching is enabled, all links within your panel will automatically include `wire:navigate.hover`, which prefetches the page content when users hover over the link. This works seamlessly with [URL exceptions](#disabling-spa-navigation-for-specific-urls) - any URLs excluded from SPA mode will also be excluded from prefetching.
-
-<Aside variant="info">
-    Prefetching only works when SPA mode is enabled. If you disable SPA mode, prefetching will also be disabled automatically.
-</Aside>
-
-<Aside variant="warning">
-    Prefetching heavy pages can lead to increased bandwidth usage and server load, especially if users hover over many links in quick succession. Use this feature judiciously, particularly if your app has pages with large amounts of data or complex queries.
-</Aside>
+> [!WARNING]
+> Prefetching heavy pages can lead to increased bandwidth usage and server load, especially if users hover over many links in quick succession. Use this feature judiciously, particularly if your app has pages with large amounts of data or complex queries.
 
 ## Unsaved changes alerts
 
@@ -259,6 +262,8 @@ public function panel(Panel $panel): Panel
         ->unsavedChangesAlerts();
 }
 ```
+
+Action modals with a disabled schema, such as the read-only `ViewAction` modal, do not trigger the alert. You may also [disable the alert for another action that cannot contain unsaved changes](actions/modals#disabling-the-unsaved-changes-alert) using the `unsavedChangesAlert(false)` method.
 
 ## Enabling database transactions
 
@@ -439,7 +444,7 @@ public function panel(Panel $panel): Panel
 
 ## Configuring error notifications
 
-When Laravel's debug mode is disabled, Filament will replace Livewire's full-screen error modals with neater flash notifications. You can disable this behavior using the `errorNotifications(false)` method:
+When Laravel's debug mode is disabled, Filament will replace Livewire's full-screen error modals with neater flash notifications. By default, HTTP `419` responses use Livewire's built-in page expiry handling instead, prompting users to refresh the page. This includes expired sessions and [release token mismatches](deployment#expiring-outdated-pages-after-a-deployment). You can disable error notifications using the `errorNotifications(false)` method:
 
 ```php
 use Filament\Panel;
@@ -489,6 +494,29 @@ public function panel(Panel $panel): Panel
 }
 ```
 
+You may also choose to hide a notification for a specific HTTP status code, such as `403`, by passing that status code to the `hiddenErrorNotification()` method. A hidden status code will still be caught by filament, but no notification will be shown.
+
+> [!WARNING]
+> Registering or hiding an error notification specifically for HTTP `419` responses replaces Livewire's refresh prompt. If you do this, ensure that users know they need to refresh an expired page, rather than retry the same action.
+
+Alternatively, you can use the `disabledErrorNotification()` method to fall back to Livewire's built-in error handling for that status code. This is useful if you want to hook into the Livewire error handling system to customize the error handling behavior for a specific status code but maintain Filament's error notification system for everything else.
+
+```php
+use Filament\Panel;
+
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        // ...
+        ->registerErrorNotification(
+            title: 'An error occurred',
+            body: 'Please try again later.',
+        )
+        ->hiddenErrorNotification(403)
+        ->disabledErrorNotification(503);
+}
+```
+
 You can also enable or disable error notifications for specific pages in a panel by setting the `$hasErrorNotifications` property on the page class:
 
 ```php
@@ -497,9 +525,9 @@ use Filament\Pages\Dashboard as BaseDashboard;
 class Dashboard extends BaseDashboard
 {
     protected ?bool $hasErrorNotifications = true;
-    
+
     // or
-    
+
     protected ?bool $hasErrorNotifications = false;
 
     // ...
@@ -554,12 +582,37 @@ class Dashboard extends BaseDashboard
             title: 'An error occurred',
             body: 'Please try again later.',
         );
-    
+
         $this->registerErrorNotification(
             title: 'Record not found',
             body: 'A record you are looking for does not exist.',
             statusCode: 404,
         );
+    }
+
+    // ...
+}
+```
+
+You may also choose to hide a notification for a specific HTTP status code, such as `403`, by passing that status code to the `hiddenErrorNotification()` method. A hidden status code will still be caught by filament, but no notification will be shown.
+
+Alternatively, you can use the `disabledErrorNotification()` method to fall back to Livewire's built-in error handling for that status code. This is useful if you want to hook into the Livewire error handling system to customize the error handling behavior for a specific status code but maintain Filament's error notification system for everything else.
+
+```php
+use Filament\Pages\Dashboard as BaseDashboard;
+
+class Dashboard extends BaseDashboard
+{
+    protected function setUpErrorNotifications(): void
+    {
+        $this->registerErrorNotification(
+            title: 'An error occurred',
+            body: 'Please try again later.',
+        );
+
+        $this->hiddenErrorNotification(403);
+
+        $this->disabledErrorNotification(503);
     }
 
     // ...

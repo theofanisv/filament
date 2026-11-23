@@ -77,11 +77,13 @@ public static function canAccess(): bool
 If the user has access to the page, you can also prevent them from editing the settings. This is useful if a user needs to be able to check the current state of the settings, but not change them. In this case, the settings form would be "disabled" and read-only. Define the `canEdit()` method in the page class, and return `true` or `false` based on the user's permissions:
 
 ```php
-public static function canEdit(): bool
+public function canEdit(): bool
 {
     return auth()->user()->isAdmin();
 }
 ```
+
+> Note: `canEdit()` only gates saving — it does not prevent a user from loading the page and reading every field's current value. If the settings themselves are sensitive (API keys, internal flags, etc.), restrict viewing with `canAccess()` (and/or route middleware) instead of relying on `canEdit()`.
 
 ## Publishing translations
 

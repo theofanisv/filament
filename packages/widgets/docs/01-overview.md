@@ -6,6 +6,8 @@ title: Overview
 
 Filament allows you to build dynamic dashboards, comprised of "widgets". Each widget is an element on the dashboard that displays data in a specific way. For example, you can display [stats](stats-overview), [chart](charts), or a [table](#table-widgets).
 
+<AutoScreenshot name="panels/dashboard" alt="Dashboard with widgets" />
+
 ## Creating a widget
 
 To create a widget, you can use the `make:filament-widget` command:
@@ -152,6 +154,8 @@ protected int | string | array $columnSpan = [
 
 This is especially useful when using a [responsive widgets grid](#responsive-widgets-grid).
 
+<AutoScreenshot name="panels/dashboard-column-spans" alt="Dashboard with customized widget column spans" />
+
 ## Conditionally hiding widgets
 
 You may override the static `canView()` method on widgets to conditionally hide them:
@@ -162,6 +166,34 @@ public static function canView(): bool
     return auth()->user()->isAdmin();
 }
 ```
+
+Filament also checks `canView()` before a widget's `mount()` method runs, including when a lazy widget loads, and before subsequent Livewire updates. If access is denied, the request returns a 403 response. Dashboard and resource pages filter out denied widgets before mounting them.
+
+Keep sensitive work out of the widget's `boot()` and lazy `placeholder()` methods, which can run before this authorization check. If you need sensitive work in these methods, authorize it separately.
+
+## Customizing the loading placeholder
+
+Lazy widgets display a section containing a spinner and loading text until they load. You may replace the content with a custom Blade view, such as a skeleton, by overriding `getLoadingPlaceholder()` on the widget class:
+
+```php
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Contracts\View\View;
+
+public function getLoadingPlaceholder(): View | Htmlable | null
+{
+    return view('widgets.loading-placeholder');
+}
+```
+
+You may also return an `Illuminate\Support\HtmlString` containing trusted HTML, or `null` to use the default spinner and loading text. Filament preserves the widget's section, grid position, and accessible loading announcement. The custom content is decorative and hidden from assistive technologies, so it should not contain interactive controls.
+
+To change the reserved height, set `$placeholderHeight` on the widget class:
+
+```php
+protected ?string $placeholderHeight = '12rem';
+```
+
+You may still override Livewire's `placeholder()` method if you need to replace the entire placeholder view, including its outer section. In that case, your view is responsible for the loading announcement and grid layout.
 
 ## Table widgets
 
@@ -220,13 +252,16 @@ class Dashboard extends BaseDashboard
 }
 ```
 
+<AutoScreenshot name="panels/dashboard-filters" alt="Dashboard with filter form" />
+
 In widget classes that require data from the filters, you need to add the `InteractsWithPageFilters` trait, which will allow you to use the `$this->pageFilters` property to access the raw data from the filters form:
 
 ```php
 use App\Models\BlogPost;
 use Carbon\CarbonImmutable;
-use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
+use Filament\Widgets\StatsOverviewWidget;
+use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Database\Eloquent\Builder;
 
 class BlogPostsOverview extends StatsOverviewWidget
@@ -239,7 +274,7 @@ class BlogPostsOverview extends StatsOverviewWidget
         $endDate = $this->pageFilters['endDate'] ?? null;
 
         return [
-            StatsOverviewWidget\Stat::make(
+            Stat::make(
                 label: 'Total posts',
                 value: BlogPost::query()
                     ->when($startDate, fn (Builder $query) => $query->whereDate('created_at', '>=', $startDate))
@@ -290,9 +325,11 @@ class Dashboard extends BaseDashboard
 
 Handling data from the filter action is the same as handling data from the filters header form, except that the data is validated before being passed to the widget. The `InteractsWithPageFilters` trait still applies.
 
+<AutoScreenshot name="panels/dashboard-filter-action" alt="Dashboard with filter action modal" />
+
 ### Persisting widget filters in the user's session
 
-By default, the dashboard filters applied will persist in the user's session between page loads. To disable this, override the `$persistsFiltersInSession` property in the dashboard page class:
+By default, the dashboard filters applied will persist in the user's session between page loads. If you use [tenancy](../users/tenancy), filters are persisted separately for each tenant. To disable persistence, override the `$persistsFiltersInSession` property in the dashboard page class:
 
 ```php
 use Filament\Pages\Dashboard as BaseDashboard;

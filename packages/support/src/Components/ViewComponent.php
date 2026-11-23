@@ -3,12 +3,12 @@
 namespace Filament\Support\Components;
 
 use Closure;
-use Filament\Support\Components\Contracts\HasEmbeddedView;
+use Filament\Support\View\ComponentAttributeBag as FilamentComponentAttributeBag;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Arr;
 use Illuminate\Support\HtmlString;
-use Illuminate\View\ComponentAttributeBag;
+use Illuminate\View\FileViewFinder;
 use LogicException;
 
 abstract class ViewComponent extends Component implements Htmlable
@@ -27,7 +27,17 @@ abstract class ViewComponent extends Component implements Htmlable
 
     protected string $viewIdentifier;
 
-    protected View $viewInstance;
+    /**
+     * @var array<view-string, View>
+     */
+    protected array $viewInstances = [];
+
+    protected ?string $publishedViewOverrideCheckPath = null;
+
+    /**
+     * @var array<string, bool>
+     */
+    private static array $hasPublishedEmbeddedViewOverrideCache = [];
 
     /**
      * @param  view-string | null  $view
@@ -118,11 +128,66 @@ abstract class ViewComponent extends Component implements Htmlable
 
     public function toHtml(): string
     {
-        if (($this instanceof HasEmbeddedView) && (! $this->hasView())) {
-            return $this->toEmbeddedHtml();
+        if ($this->hasView()) {
+            return $this->render()->render();
         }
 
+        $publishedViewOverrideCheckPath = $this->getPublishedViewOverrideCheckPath();
+
+        if (filled($publishedViewOverrideCheckPath) && static::hasPublishedEmbeddedViewOverride($publishedViewOverrideCheckPath)) {
+            return $this->renderView($publishedViewOverrideCheckPath)->render();
+        }
+
+        return $this->toEmbeddedHtml();
+    }
+
+    public function toEmbeddedHtml(): string
+    {
         return $this->render()->render();
+    }
+
+    public function getPublishedViewOverrideCheckPath(): ?string
+    {
+        return $this->publishedViewOverrideCheckPath;
+    }
+
+    public static function hasPublishedEmbeddedViewOverride(string $view): bool
+    {
+        return self::$hasPublishedEmbeddedViewOverrideCache[$view] ??= self::checkForPublishedEmbeddedViewOverride($view);
+    }
+
+    protected static function checkForPublishedEmbeddedViewOverride(string $view): bool
+    {
+        if (! str_contains($view, '::')) {
+            return false;
+        }
+
+        [$namespace, $name] = explode('::', $view, 2);
+
+        $relativePath = str_replace('.', '/', $name) . '.blade.php';
+
+        if (file_exists(resource_path('views/vendor/' . $namespace . '/' . $relativePath))) {
+            return true;
+        }
+
+        $viewFinder = app('view')->getFinder();
+
+        if (! ($viewFinder instanceof FileViewFinder)) {
+            return false;
+        }
+
+        $paths = $viewFinder->getHints()[$namespace] ?? [];
+
+        // Laravel registers the package's own views after its override paths.
+        array_pop($paths);
+
+        foreach ($paths as $path) {
+            if (file_exists($path . '/' . $relativePath)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function toHtmlString(): ?HtmlString
@@ -146,13 +211,23 @@ abstract class ViewComponent extends Component implements Htmlable
 
     public function render(): View
     {
-        $this->viewInstance ??= view($this->getView(), [
+        return $this->renderView($this->getView());
+    }
+
+    /**
+     * @internal Never call or override this method. It is not part of the public API and may change in minor and patch releases.
+     *
+     * @param  view-string  $view
+     */
+    protected function renderView(string $view): View
+    {
+        $this->viewInstances[$view] ??= view($view, [
             ...$this->extractPublicMethods(),
             ...(isset($this->viewIdentifier) ? [$this->viewIdentifier => $this] : []),
         ]);
 
-        return $this->viewInstance->with([
-            'attributes' => new ComponentAttributeBag,
+        return $this->viewInstances[$view]->with([
+            'attributes' => new FilamentComponentAttributeBag,
             ...$this->getExtraViewData(),
             ...$this->getViewData(),
         ]);

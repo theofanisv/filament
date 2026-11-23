@@ -9,11 +9,21 @@ use Illuminate\Support\Arr;
 
 trait CanUpdateState
 {
+    // Security: Inline editing requires explicit `authorize()` configuration
+    // to restrict access, even in strict authorization mode.
+
     protected ?Closure $updateStateUsing = null;
 
     protected ?Closure $beforeStateUpdated = null;
 
     protected ?Closure $afterStateUpdated = null;
+
+    protected bool | Closure $isPartiallyRenderedAfterStateUpdated = false;
+
+    /**
+     * @var array<string>
+     */
+    protected array $columnsToPartiallyRenderAfterStateUpdated = [];
 
     public function updateStateUsing(?Closure $callback): static
     {
@@ -36,62 +46,145 @@ trait CanUpdateState
         return $this;
     }
 
+    public function partiallyRenderAfterStateUpdated(bool | Closure $condition = true): static
+    {
+        $this->isPartiallyRenderedAfterStateUpdated = $condition;
+
+        return $this;
+    }
+
+    /**
+     * @param  array<string>  $columns
+     */
+    public function partiallyRenderColumnsAfterStateUpdated(array $columns): static
+    {
+        $this->columnsToPartiallyRenderAfterStateUpdated = $columns;
+
+        return $this;
+    }
+
+    public function isPartiallyRenderedAfterStateUpdated(): bool
+    {
+        return (bool) $this->evaluate($this->isPartiallyRenderedAfterStateUpdated);
+    }
+
+    /**
+     * @return array<string>
+     */
+    public function getColumnsToPartiallyRenderAfterStateUpdated(): array
+    {
+        return $this->columnsToPartiallyRenderAfterStateUpdated;
+    }
+
+    /**
+     * @return array<string>
+     */
+    public function getPartiallyRenderableColumnNamesAfterStateUpdated(): array
+    {
+        if (filled($this->columnsToPartiallyRenderAfterStateUpdated)) {
+            return [$this->getName(), ...$this->columnsToPartiallyRenderAfterStateUpdated];
+        }
+
+        if ($this->isPartiallyRenderedAfterStateUpdated === false) {
+            return [];
+        }
+
+        return [$this->getName()];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function getUpdateStateMessages(): array
+    {
+        return [
+            'saving' => __('filament-tables::table.columns.editable.saving'),
+            'saved' => __('filament-tables::table.columns.editable.saved'),
+            'failure' => __('filament-tables::table.columns.editable.failure'),
+        ];
+    }
+
     public function updateState(mixed $state): mixed
     {
         if (blank($state)) {
             $state = null;
         }
 
-        $this->callBeforeStateUpdated($state);
+        $record = $this->getRecord();
+        $relatedRecord = null;
+        $columnName = $this->getName();
+        $hasRelationship = ($record instanceof Model) && $this->hasRelationship($record);
+
+        if ($hasRelationship) {
+            $columnName = $this->getFullAttributeName($record);
+            $columnRelationshipName = $this->getRelationshipName($record);
+            $relatedRecord = Arr::get(
+                $record->loadMissing($columnRelationshipName),
+                $columnRelationshipName,
+            );
+
+            if (! ($relatedRecord instanceof Model)) {
+                $relatedRecord = null;
+            }
+        }
+
+        $this->callBeforeStateUpdated($state, $relatedRecord);
 
         if ($this->updateStateUsing !== null) {
             try {
                 return $this->evaluate($this->updateStateUsing, [
                     'state' => $state,
+                    'relatedRecord' => $relatedRecord,
                 ]);
             } finally {
-                $this->callAfterStateUpdated($state);
+                $this->callAfterStateUpdated($state, $relatedRecord);
             }
         }
 
-        $record = $this->getRecord();
+        $recordToUpdate = $record;
 
-        $columnName = $this->getName();
-
-        if ($this->hasRelationship($record)) {
+        if ($hasRelationship) {
             $columnName = $this->getFullAttributeName($record);
             $columnRelationshipName = $this->getRelationshipName($record);
-
-            $record = Arr::get(
+            $recordToUpdate = Arr::get(
                 $record->load($columnRelationshipName),
                 $columnRelationshipName,
             );
-        } elseif (
+            $relatedRecord = $recordToUpdate instanceof Model ? $recordToUpdate : null;
+        }
+
+        if ((! $hasRelationship) && ($record instanceof Model) && (
             (($tableRelationship = $this->getTable()->getRelationship()) instanceof BelongsToMany) &&
             in_array($this->getAttributeName($record), $tableRelationship->getPivotColumns())
-        ) {
-            $record = $record->getRelationValue($tableRelationship->getPivotAccessor());
+        )) {
+            $recordToUpdate = $record->getRelationValue($tableRelationship->getPivotAccessor());
         }
 
-        if (! ($record instanceof Model)) {
-            return null;
+        if (! ($recordToUpdate instanceof Model)) {
+            return ['error' => __('filament-tables::table.columns.editable.unavailable')];
         }
 
-        $record->setAttribute((string) str($columnName)->replace('.', '->'), $state);
-        $record->save();
+        $recordToUpdate->setAttribute((string) str($columnName)->replace('.', '->'), $state);
+        $recordToUpdate->save();
 
-        $this->callAfterStateUpdated($state);
+        $this->callAfterStateUpdated($state, $relatedRecord);
 
         return $state;
     }
 
-    public function callBeforeStateUpdated(mixed $state): mixed
+    public function callBeforeStateUpdated(mixed $state, ?Model $relatedRecord = null): mixed
     {
-        return $this->evaluate($this->beforeStateUpdated, ['state' => $state]);
+        return $this->evaluate($this->beforeStateUpdated, [
+            'state' => $state,
+            'relatedRecord' => $relatedRecord,
+        ]);
     }
 
-    public function callAfterStateUpdated(mixed $state): mixed
+    public function callAfterStateUpdated(mixed $state, ?Model $relatedRecord = null): mixed
     {
-        return $this->evaluate($this->afterStateUpdated, ['state' => $state]);
+        return $this->evaluate($this->afterStateUpdated, [
+            'state' => $state,
+            'relatedRecord' => $relatedRecord,
+        ]);
     }
 }

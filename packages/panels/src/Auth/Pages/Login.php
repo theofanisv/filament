@@ -7,11 +7,9 @@ use DanHarrin\LivewireRateLimiting\WithRateLimiting;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Auth\Http\Responses\Contracts\LoginResponse;
-use Filament\Auth\MultiFactor\Contracts\HasBeforeChallengeHook;
-use Filament\Auth\MultiFactor\Contracts\MultiFactorAuthenticationProvider;
+use Filament\Auth\MultiFactor\MultiFactorChallenge;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Checkbox;
-use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\TextInput;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Notifications\Notification;
@@ -20,13 +18,14 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
-use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\RenderHook;
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Concerns\RestrictsFileUploadsToSchemaComponents;
 use Filament\Schemas\Schema;
+use Filament\Support\Components\Attributes\Exposed;
+use Filament\Support\Components\Attributes\Unexposed;
 use Filament\Support\Enums\Alignment;
 use Filament\View\PanelsRenderHook;
+use Illuminate\Auth\Events\Attempting;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -34,7 +33,9 @@ use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Timebox;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 use SensitiveParameter;
@@ -46,6 +47,7 @@ use SensitiveParameter;
  */
 class Login extends SimplePage
 {
+    use RestrictsFileUploadsToSchemaComponents;
     use WithRateLimiting;
 
     /**
@@ -56,6 +58,7 @@ class Login extends SimplePage
     #[Locked]
     public ?string $userUndertakingMultiFactorAuthentication = null;
 
+    #[Unexposed]
     public function mount(): void
     {
         if (Filament::auth()->check()) {
@@ -65,14 +68,26 @@ class Login extends SimplePage
         $this->form->fill();
     }
 
+    #[Exposed]
     public function authenticate(): ?LoginResponse
     {
-        try {
-            $this->rateLimit(5);
-        } catch (TooManyRequestsException $exception) {
-            $this->getRateLimitedNotification($exception)?->send();
+        $isSubmittingMultiFactorChallenge = $this->isSubmittingMultiFactorChallenge();
 
-            return null;
+        // Submitting the multi-factor challenge is not another login attempt: it can only be
+        // reached with valid credentials, and it has its own rate limit per user. Otherwise,
+        // failed password attempts before the challenge would leave none for the challenge.
+        if ($isSubmittingMultiFactorChallenge) {
+            if ($this->isMultiFactorChallengeSubmissionRateLimited()) {
+                return null;
+            }
+        } else {
+            try {
+                $this->rateLimit(5);
+            } catch (TooManyRequestsException $exception) {
+                $this->getRateLimitedNotification($exception)?->send();
+
+                return null;
+            }
         }
 
         $data = $this->form->getState();
@@ -82,57 +97,174 @@ class Login extends SimplePage
 
         $authProvider = $authGuard->getProvider(); /** @phpstan-ignore-line */
         $credentials = $this->getCredentialsFromFormData($data);
+        $remember = $data['remember'] ?? false;
+        $timeboxDuration = (int) config('auth.timebox_duration', 200_000);
 
-        $user = $authProvider->retrieveByCredentials($credentials);
+        $user = app(Timebox::class)->call(function (Timebox $timebox) use ($authProvider, $authGuard, $credentials, $remember): Authenticatable {
+            $this->fireAttemptingEvent($authGuard, $credentials, $remember);
 
-        if ((! $user) || (! $authProvider->validateCredentials($user, $credentials))) {
+            $user = $authProvider->retrieveByCredentials($credentials);
+
+            if ((! $user) || (! $authProvider->validateCredentials($user, $credentials))) {
+                $this->userUndertakingMultiFactorAuthentication = null;
+
+                $this->fireFailedEvent($authGuard, $user, $credentials);
+                $this->throwFailureValidationException();
+            }
+
+            // This must run before the multi-factor challenge is presented, otherwise
+            // the challenge confirms that the password was valid for an account that
+            // can never sign in. It must also stay inside the `Timebox`, so that the
+            // failure is padded to the same duration as an invalid password.
+            if (! $this->isUserAllowedToAccessPanel($user)) {
+                $this->userUndertakingMultiFactorAuthentication = null;
+
+                $this->fireFailedEvent($authGuard, $user, $credentials);
+                $this->throwFailureValidationException();
+            }
+
+            $timebox->returnEarly();
+
+            return $user;
+        }, $timeboxDuration);
+
+        $needsMultiFactorChallenge = app(Timebox::class)->call(function (Timebox $timebox) use ($user): bool {
+            $userUndertakingMultiFactorAuthenticationData = $this->getUserUndertakingMultiFactorAuthenticationData();
+
+            if (
+                $userUndertakingMultiFactorAuthenticationData &&
+                hash_equals($userUndertakingMultiFactorAuthenticationData['userKey'], Filament::getUserScopedAuthIdentifier($user)) &&
+                $this->getUserUndertakingMultiFactorAuthentication()
+            ) {
+                if ($this->isMultiFactorChallengeRateLimited($user)) {
+                    return true;
+                }
+
+                $this->cacheSchema('multiFactorChallengeForm', null);
+                $this->multiFactorChallengeForm->validate();
+
+                return false;
+            }
+
             $this->userUndertakingMultiFactorAuthentication = null;
 
-            $this->fireFailedEvent($authGuard, $user, $credentials);
-            $this->throwFailureValidationException();
-        }
+            $multiFactorChallenge = $this->getMultiFactorChallenge();
 
-        if (
-            filled($this->userUndertakingMultiFactorAuthentication) &&
-            (decrypt($this->userUndertakingMultiFactorAuthentication) === $user->getAuthIdentifier())
-        ) {
-            $this->multiFactorChallengeForm->validate();
-        } else {
-            foreach (Filament::getMultiFactorAuthenticationProviders() as $multiFactorAuthenticationProvider) {
-                if (! $multiFactorAuthenticationProvider->isEnabled($user)) {
-                    continue;
-                }
+            if ($multiFactorAuthenticationProvider = $multiFactorChallenge->getFirstEnabledProvider($user)) {
+                $this->userUndertakingMultiFactorAuthentication = encrypt([
+                    'identifier' => $user->getAuthIdentifier(),
+                    'userKey' => Filament::getUserScopedAuthIdentifier($user),
+                    'passwordKey' => $this->getUserUndertakingMultiFactorAuthenticationPasswordKey($user),
+                    'loginDataHash' => $this->getMultiFactorChallengeLoginDataHash(),
+                ]);
 
-                $this->userUndertakingMultiFactorAuthentication = encrypt($user->getAuthIdentifier());
-
-                if ($multiFactorAuthenticationProvider instanceof HasBeforeChallengeHook) {
-                    $multiFactorAuthenticationProvider->beforeChallenge($user);
-                }
-
-                break;
+                $multiFactorChallenge->beforeChallenge($user, $multiFactorAuthenticationProvider);
             }
 
             if (filled($this->userUndertakingMultiFactorAuthentication)) {
+                $this->cacheSchema('multiFactorChallengeForm', null);
                 $this->multiFactorChallengeForm->fill();
 
-                return null;
-            }
-        }
-
-        if (! $authGuard->attemptWhen($credentials, function (Authenticatable $user): bool {
-            if (! ($user instanceof FilamentUser)) {
                 return true;
             }
 
-            return $user->canAccessPanel(Filament::getCurrentOrDefaultPanel());
-        }, $data['remember'] ?? false)) {
-            $this->fireFailedEvent($authGuard, $user, $credentials);
+            if (Filament::getMultiFactorAuthenticationProviders() === []) {
+                $timebox->returnEarly();
+            }
+
+            return false;
+        }, $timeboxDuration);
+
+        if ($needsMultiFactorChallenge) {
+            return null;
+        }
+
+        $userScopedAuthIdentifier = Filament::getUserScopedAuthIdentifier($user);
+        $multiFactorChallengePasswordKey = $this->getUserUndertakingMultiFactorAuthenticationData()['passwordKey'] ?? null;
+
+        // Credentials are deliberately validated again after the multi-factor challenge so that
+        // password and panel access changes made during the challenge are observed before login.
+        // The corresponding second `Attempting` event is intentional.
+        if (! $authGuard->attemptWhen(
+            $credentials,
+            fn (Authenticatable $user): bool => hash_equals($userScopedAuthIdentifier, Filament::getUserScopedAuthIdentifier($user))
+                && $this->isUserAllowedToAccessPanel($user)
+                && (($multiFactorChallengePasswordKey === null) || hash_equals($multiFactorChallengePasswordKey, $this->getUserUndertakingMultiFactorAuthenticationPasswordKey($user))),
+            $remember,
+        )) {
             $this->throwFailureValidationException();
         }
 
         session()->regenerate();
 
         return app(LoginResponse::class);
+    }
+
+    protected function isUserAllowedToAccessPanel(Authenticatable $user): bool
+    {
+        if (! ($user instanceof FilamentUser)) {
+            return true;
+        }
+
+        return $user->canAccessPanel(Filament::getCurrentOrDefaultPanel());
+    }
+
+    protected function isSubmittingMultiFactorChallenge(): bool
+    {
+        $loginDataHash = $this->getUserUndertakingMultiFactorAuthenticationData()['loginDataHash'] ?? null;
+
+        return is_string($loginDataHash) && hash_equals($loginDataHash, $this->getMultiFactorChallengeLoginDataHash());
+    }
+
+    protected function getMultiFactorChallengeLoginDataHash(): string
+    {
+        return hash('sha256', serialize(Arr::except($this->data ?? [], ['multiFactor'])));
+    }
+
+    protected function isMultiFactorChallengeSubmissionRateLimited(): bool
+    {
+        $multiFactorChallenge = $this->getMultiFactorChallenge();
+        $rateLimiterKey = 'filament:auth:multi_factor_challenge_submission:rate_limit:' . hash('sha256', (string) $this->userUndertakingMultiFactorAuthentication);
+
+        if (RateLimiter::tooManyAttempts($rateLimiterKey, $multiFactorChallenge->getMaxRateLimiterAttempts())) {
+            $this->getRateLimitedNotification(new TooManyRequestsException(
+                static::class,
+                'authenticate',
+                request()->ip(),
+                RateLimiter::availableIn($rateLimiterKey),
+            ))?->send();
+
+            return true;
+        }
+
+        RateLimiter::hit($rateLimiterKey);
+
+        return false;
+    }
+
+    protected function getMultiFactorChallenge(): MultiFactorChallenge
+    {
+        return MultiFactorChallenge::make();
+    }
+
+    protected function isMultiFactorChallengeRateLimited(Authenticatable $user): bool
+    {
+        $multiFactorChallenge = $this->getMultiFactorChallenge();
+
+        if ($multiFactorChallenge->isRateLimited($user)) {
+            $this->getRateLimitedNotification(new TooManyRequestsException(
+                static::class,
+                'authenticate',
+                request()->ip(),
+                $multiFactorChallenge->getRateLimiterAvailableInSeconds($user),
+            ))?->send();
+
+            return true;
+        }
+
+        $multiFactorChallenge->hitRateLimiter($user);
+
+        return false;
     }
 
     protected function getRateLimitedNotification(TooManyRequestsException $exception): ?Notification
@@ -152,6 +284,14 @@ class Login extends SimplePage
     /**
      * @param  array<string, mixed>  $credentials
      */
+    protected function fireAttemptingEvent(Guard $guard, #[SensitiveParameter] array $credentials, bool $remember): void
+    {
+        event(app(Attempting::class, ['guard' => property_exists($guard, 'name') ? $guard->name : '', 'credentials' => $credentials, 'remember' => $remember]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $credentials
+     */
     protected function fireFailedEvent(Guard $guard, ?Authenticatable $user, #[SensitiveParameter] array $credentials): void
     {
         event(app(Failed::class, ['guard' => property_exists($guard, 'name') ? $guard->name : '', 'user' => $user, 'credentials' => $credentials]));
@@ -164,12 +304,14 @@ class Login extends SimplePage
         ]);
     }
 
+    #[Unexposed]
     public function defaultForm(Schema $schema): Schema
     {
         return $schema
             ->statePath('data');
     }
 
+    #[Unexposed]
     public function form(Schema $schema): Schema
     {
         return $schema
@@ -180,37 +322,77 @@ class Login extends SimplePage
             ]);
     }
 
+    #[Unexposed]
     public function defaultMultiFactorChallengeForm(Schema $schema): Schema
     {
         return $schema
             ->components(function (): array {
-                if (blank($this->userUndertakingMultiFactorAuthentication)) {
+                $user = $this->getUserUndertakingMultiFactorAuthentication();
+
+                if (! $user) {
                     return [];
                 }
 
-                $authProvider = Filament::auth()->getProvider(); /** @phpstan-ignore-line */
-                $user = $authProvider->retrieveById(decrypt($this->userUndertakingMultiFactorAuthentication));
-
-                $enabledMultiFactorAuthenticationProviders = array_filter(
-                    Filament::getMultiFactorAuthenticationProviders(),
-                    fn (MultiFactorAuthenticationProvider $multiFactorAuthenticationProvider): bool => $multiFactorAuthenticationProvider->isEnabled($user)
-                );
-
                 return [
                     ...Arr::wrap($this->getMultiFactorProviderFormComponent()),
-                    ...collect($enabledMultiFactorAuthenticationProviders)
-                        ->map(fn (MultiFactorAuthenticationProvider $multiFactorAuthenticationProvider): Component => Group::make($multiFactorAuthenticationProvider->getChallengeFormComponents($user))
-                            ->statePath($multiFactorAuthenticationProvider->getId())
-                            ->when(
-                                count($enabledMultiFactorAuthenticationProviders) > 1,
-                                fn (Group $group) => $group->visible(fn (Get $get): bool => $get('provider') === $multiFactorAuthenticationProvider->getId())
-                            ))
-                        ->all(),
+                    ...$this->getMultiFactorChallenge()->getChallengeFormComponents($user),
                 ];
             })
             ->statePath('data.multiFactor');
     }
 
+    protected function getUserUndertakingMultiFactorAuthentication(): ?Authenticatable
+    {
+        $data = $this->getUserUndertakingMultiFactorAuthenticationData();
+
+        if (! $data) {
+            return null;
+        }
+
+        $authProvider = Filament::auth()->getProvider(); /** @phpstan-ignore-line */
+        $user = $authProvider->retrieveById($data['identifier']);
+
+        if (
+            (! $user)
+            || (! hash_equals($data['userKey'], Filament::getUserScopedAuthIdentifier($user)))
+            || (! hash_equals($data['passwordKey'], $this->getUserUndertakingMultiFactorAuthenticationPasswordKey($user)))
+            || (! $this->isUserAllowedToAccessPanel($user))
+        ) {
+            return null;
+        }
+
+        return $user;
+    }
+
+    protected function getUserUndertakingMultiFactorAuthenticationPasswordKey(Authenticatable $user): string
+    {
+        return hash('sha256', (string) $user->getAuthPassword());
+    }
+
+    /**
+     * @return array{identifier: mixed, userKey: string, passwordKey: string, loginDataHash?: string} | null
+     */
+    protected function getUserUndertakingMultiFactorAuthenticationData(): ?array
+    {
+        if (blank($this->userUndertakingMultiFactorAuthentication)) {
+            return null;
+        }
+
+        $data = decrypt($this->userUndertakingMultiFactorAuthentication);
+
+        if (
+            (! is_array($data))
+            || (! array_key_exists('identifier', $data))
+            || (! is_string($data['userKey'] ?? null))
+            || (! is_string($data['passwordKey'] ?? null))
+        ) {
+            return null;
+        }
+
+        return $data;
+    }
+
+    #[Unexposed]
     public function multiFactorChallengeForm(Schema $schema): Schema
     {
         return $schema;
@@ -223,20 +405,18 @@ class Login extends SimplePage
             ->email()
             ->required()
             ->autocomplete()
-            ->autofocus()
-            ->extraInputAttributes(['tabindex' => 1]);
+            ->autofocus();
     }
 
     protected function getPasswordFormComponent(): Component
     {
         return TextInput::make('password')
             ->label(__('filament-panels::auth/pages/login.form.password.label'))
-            ->hint(filament()->hasPasswordReset() ? new HtmlString(Blade::render('<x-filament::link :href="filament()->getRequestPasswordResetUrl()" tabindex="3"> {{ __(\'filament-panels::auth/pages/login.actions.request_password_reset.label\') }}</x-filament::link>')) : null)
+            ->hint(filament()->hasPasswordReset() ? new HtmlString(Blade::render('<x-filament::link :href="filament()->getRequestPasswordResetUrl()" tabindex="-1"> {{ __(\'filament-panels::auth/pages/login.actions.request_password_reset.label\') }}</x-filament::link>')) : null)
             ->password()
             ->revealable(filament()->arePasswordsRevealable())
             ->autocomplete('current-password')
-            ->required()
-            ->extraInputAttributes(['tabindex' => 2]);
+            ->required();
     }
 
     protected function getRememberFormComponent(): Component
@@ -247,54 +427,16 @@ class Login extends SimplePage
 
     protected function getMultiFactorProviderFormComponent(): ?Component
     {
-        $authProvider = Filament::auth()->getProvider(); /** @phpstan-ignore-line */
-        $user = $authProvider->retrieveById(decrypt($this->userUndertakingMultiFactorAuthentication));
+        $user = $this->getUserUndertakingMultiFactorAuthentication();
 
-        $enabledMultiFactorAuthenticationProviders = array_filter(
-            Filament::getMultiFactorAuthenticationProviders(),
-            fn (MultiFactorAuthenticationProvider $multiFactorAuthenticationProvider): bool => $multiFactorAuthenticationProvider->isEnabled($user)
-        );
-
-        if (count($enabledMultiFactorAuthenticationProviders) <= 1) {
+        if (! $user) {
             return null;
         }
 
-        return Section::make()
-            ->compact()
-            ->secondary()
-            ->schema(fn (Section $section): array => [
-                Radio::make('provider')
-                    ->label(__('filament-panels::auth/pages/login.multi_factor.form.provider.label'))
-                    ->options(array_map(
-                        fn (MultiFactorAuthenticationProvider $multiFactorAuthenticationProvider): string => $multiFactorAuthenticationProvider->getLoginFormLabel(),
-                        $enabledMultiFactorAuthenticationProviders,
-                    ))
-                    ->live()
-                    ->afterStateUpdated(function (?string $state) use ($enabledMultiFactorAuthenticationProviders, $section, $user): void {
-                        $provider = $enabledMultiFactorAuthenticationProviders[$state] ?? null;
-
-                        if (! $provider) {
-                            return;
-                        }
-
-                        $section
-                            ->getContainer()
-                            ->getComponent($provider->getId())
-                            ->getChildSchema()
-                            ->fill();
-
-                        if (! ($provider instanceof HasBeforeChallengeHook)) {
-                            return;
-                        }
-
-                        $provider->beforeChallenge($user);
-                    })
-                    ->default(array_key_first($enabledMultiFactorAuthenticationProviders))
-                    ->required()
-                    ->markAsRequired(false),
-            ]);
+        return $this->getMultiFactorChallenge()->getProviderPickerFormComponent($user);
     }
 
+    #[Unexposed]
     public function registerAction(): Action
     {
         return Action::make('register')
@@ -303,11 +445,13 @@ class Login extends SimplePage
             ->url(filament()->getRegistrationUrl());
     }
 
+    #[Unexposed]
     public function getTitle(): string | Htmlable
     {
         return __('filament-panels::auth/pages/login.title');
     }
 
+    #[Unexposed]
     public function getHeading(): string | Htmlable | null
     {
         if (filled($this->userUndertakingMultiFactorAuthentication)) {
@@ -373,6 +517,7 @@ class Login extends SimplePage
         ];
     }
 
+    #[Unexposed]
     public function getSubheading(): string | Htmlable | null
     {
         if (filled($this->userUndertakingMultiFactorAuthentication)) {
@@ -386,6 +531,7 @@ class Login extends SimplePage
         return new HtmlString(__('filament-panels::auth/pages/login.actions.register.before') . ' ' . $this->registerAction->toHtml());
     }
 
+    #[Unexposed]
     public function content(Schema $schema): Schema
     {
         return $schema
@@ -397,6 +543,7 @@ class Login extends SimplePage
             ]);
     }
 
+    #[Unexposed]
     public function getFormContentComponent(): Component
     {
         return Form::make([EmbeddedSchema::make('form')])
@@ -411,6 +558,7 @@ class Login extends SimplePage
             ->visible(fn (): bool => blank($this->userUndertakingMultiFactorAuthentication));
     }
 
+    #[Unexposed]
     public function getMultiFactorChallengeFormContentComponent(): Component
     {
         return Form::make([EmbeddedSchema::make('multiFactorChallengeForm')])
@@ -424,6 +572,7 @@ class Login extends SimplePage
             ->visible(fn (): bool => filled($this->userUndertakingMultiFactorAuthentication));
     }
 
+    #[Unexposed]
     public function getMultiFactorChallengeFormActionsAlignment(): string | Alignment
     {
         return $this->getFormActionsAlignment();

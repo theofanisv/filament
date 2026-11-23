@@ -7,6 +7,10 @@ use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ReplicateAction;
 use Filament\Actions\RestoreAction;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Schema;
 use Filament\Tests\Fixtures\Models\Post;
 use Filament\Tests\Fixtures\Models\Ticket;
 use Filament\Tests\Fixtures\Models\TicketMessage;
@@ -73,7 +77,7 @@ it('can refresh data', function (): void {
     ]);
 });
 
-it('can ticket messages page without a policy', function (): void {
+it('can render ticket messages page without a policy', function (): void {
     $message = TicketMessage::factory()
         ->create();
 
@@ -81,7 +85,7 @@ it('can ticket messages page without a policy', function (): void {
         ->assertSuccessful();
 });
 
-it('can render tickets page if the policy viewAny returns true', function (): void {
+it('can render tickets page if the policy `viewAny()` returns `true`', function (): void {
     app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
 
     $ticket = Ticket::factory()
@@ -91,7 +95,7 @@ it('can render tickets page if the policy viewAny returns true', function (): vo
         ->assertSuccessful();
 });
 
-it('can render tickets page if the policy viewAny returns an allowed response', function (): void {
+it('can render tickets page if the policy `viewAny()` returns an allowed response', function (): void {
     app()->bind(TicketPolicy::class . '::viewAny', fn (): Response => Response::allow());
 
     $ticket = Ticket::factory()
@@ -115,7 +119,7 @@ it('does not render ticket messages page without a policy if authorization is st
     Filament::getCurrentOrDefaultPanel()->strictAuthorization(false);
 });
 
-it('does not render tickets page if the policy viewAny returns false', function (): void {
+it('does not render tickets page if the policy `viewAny()` returns `false`', function (): void {
     app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => false);
 
     $ticket = Ticket::factory()
@@ -127,7 +131,7 @@ it('does not render tickets page if the policy viewAny returns false', function 
     app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
 });
 
-it('does not render tickets page if the policy viewAny returns a denied response', function (): void {
+it('does not render tickets page if the policy `viewAny()` returns a denied response', function (): void {
     app()->bind(TicketPolicy::class . '::viewAny', fn (): Response => Response::deny());
 
     $ticket = Ticket::factory()
@@ -139,7 +143,7 @@ it('does not render tickets page if the policy viewAny returns a denied response
     app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
 });
 
-it('can render tickets page if the policy view returns true', function (): void {
+it('can render tickets page if the policy `view()` returns `true`', function (): void {
     app()->bind(TicketPolicy::class . '::view', fn (): bool => true);
 
     $ticket = Ticket::factory()
@@ -149,7 +153,7 @@ it('can render tickets page if the policy view returns true', function (): void 
         ->assertSuccessful();
 });
 
-it('can render tickets page if the policy view returns an allowed response', function (): void {
+it('can render tickets page if the policy `view()` returns an allowed response', function (): void {
     app()->bind(TicketPolicy::class . '::view', fn (): Response => Response::allow());
 
     $ticket = Ticket::factory()
@@ -161,7 +165,7 @@ it('can render tickets page if the policy view returns an allowed response', fun
     app()->bind(TicketPolicy::class . '::view', fn (): bool => true);
 });
 
-it('does not render tickets page if the policy view returns false', function (): void {
+it('does not render tickets page if the policy `view()` returns `false`', function (): void {
     app()->bind(TicketPolicy::class . '::view', fn (): bool => false);
 
     $ticket = Ticket::factory()
@@ -173,7 +177,7 @@ it('does not render tickets page if the policy view returns false', function ():
     app()->bind(TicketPolicy::class . '::view', fn (): bool => true);
 });
 
-it('does not render tickets page if the policy view returns a denied response', function (): void {
+it('does not render tickets page if the policy `view()` returns a denied response', function (): void {
     app()->bind(TicketPolicy::class . '::view', fn (): Response => Response::deny());
 
     $ticket = Ticket::factory()
@@ -183,6 +187,40 @@ it('does not render tickets page if the policy view returns a denied response', 
         ->assertForbidden();
 
     app()->bind(TicketPolicy::class . '::view', fn (): bool => true);
+});
+
+it('re-authorizes `view()` on Livewire updates after the initial mount', function (): void {
+    $ticket = Ticket::factory()
+        ->create();
+
+    app()->bind(TicketPolicy::class . '::view', fn (): bool => true);
+
+    $component = livewire(ViewTicket::class, ['record' => $ticket->getKey()]);
+
+    app()->bind(TicketPolicy::class . '::view', fn (): bool => false);
+
+    $component
+        ->set('data.subject', 'foo')
+        ->assertStatus(403);
+
+    app()->bind(TicketPolicy::class . '::view', fn (): bool => true);
+});
+
+it('re-authorizes `viewAny()` on Livewire updates after the initial mount of a view page', function (): void {
+    $ticket = Ticket::factory()
+        ->create();
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
+
+    $component = livewire(ViewTicket::class, ['record' => $ticket->getKey()]);
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => false);
+
+    $component
+        ->set('data.subject', 'foo')
+        ->assertStatus(403);
+
+    app()->bind(TicketPolicy::class . '::viewAny', fn (): bool => true);
 });
 
 it('renders actions based on policy', function (string $action, string $policyMethod, bool | Response $policyResult, bool $isVisible, bool $isSoftDeleted = false): void {
@@ -225,3 +263,147 @@ it('renders actions based on policy', function (string $action, string $policyMe
     'replicate action with policy returning false' => fn (): array => [ReplicateAction::class, 'replicate', false, false],
     'replicate action with policy returning denied response' => fn (): array => [ReplicateAction::class, 'replicate', Response::deny(), false],
 ]);
+
+it('header action with custom model different from page record receives null record', function (): void {
+    $post = Post::factory()->create();
+
+    livewire(ViewPost::class, [
+        'record' => $post->getKey(),
+    ])
+        ->callAction('actionWithCustomModel', data: [
+            'name' => 'Test Name',
+        ])
+        ->assertHasNoFormErrors()
+        ->assertDispatched(
+            'action-with-custom-model-called',
+            fn (string $event, array $data): bool => $data[0]['recordIsNull'] === true && $data[0]['modelIsUser'] === true
+        );
+});
+
+it('header action with same model as page record receives the record', function (): void {
+    $post = Post::factory()->create();
+
+    livewire(ViewPost::class, [
+        'record' => $post->getKey(),
+    ])
+        ->callAction('actionWithSameModel', data: [
+            'title' => 'Test Title',
+        ])
+        ->assertHasNoFormErrors()
+        ->assertDispatched(
+            'action-with-same-model-called',
+            fn (string $event, array $data): bool => $data[0]['recordIsPost'] === true && $data[0]['modelIsPost'] === true
+        );
+});
+
+it('header action without custom model receives the page record', function (): void {
+    $post = Post::factory()->create();
+
+    livewire(ViewPost::class, [
+        'record' => $post->getKey(),
+    ])
+        ->callAction('actionWithoutCustomModel', data: [
+            'title' => 'Test Title',
+        ])
+        ->assertHasNoFormErrors()
+        ->assertDispatched(
+            'action-without-custom-model-called',
+            fn (string $event, array $data): bool => $data[0]['recordIsPost'] === true && $data[0]['modelIsPost'] === true
+        );
+});
+
+it('modal action does not return URL when modal is explicitly set', function (): void {
+    $post = Post::factory()->create();
+
+    livewire(ViewPost::class, [
+        'record' => $post->getKey(),
+    ])
+        ->assertActionExists('createUserWithModal', function (CreateAction $action): bool {
+            return $action->hasModal() === true && $action->getUrl() === null;
+        });
+});
+
+it('create action with custom model and modal opens modal instead of redirecting', function (): void {
+    $post = Post::factory()->create();
+
+    livewire(ViewPost::class, [
+        'record' => $post->getKey(),
+    ])
+        ->mountAction('createUserWithModal')
+        ->assertActionMounted('createUserWithModal')
+        ->assertSchemaStateSet([
+            'name' => '',
+        ]);
+});
+
+it('create action with custom model returns null for record', function (): void {
+    $post = Post::factory()->create();
+
+    livewire(ViewPost::class, [
+        'record' => $post->getKey(),
+    ])
+        ->assertActionExists('createUserWithModal', function (CreateAction $action): bool {
+            return $action->getRecord() === null;
+        });
+});
+
+it('action with modal and custom model can be called without relationship errors', function (): void {
+    $post = Post::factory()->create();
+
+    livewire(ViewPost::class, [
+        'record' => $post->getKey(),
+    ])
+        ->callAction('simpleModalAction', data: [
+            'name' => 'Test Name',
+        ])
+        ->assertHasNoFormErrors()
+        ->assertDispatched('simple-modal-action-called');
+});
+
+it('preserves content tab customization for infolists and disabled forms', function (bool $hasInfolist): void {
+    $component = livewire(CombinedContentViewTicket::class, ['record' => Ticket::factory()->create()->getRouteKey()])
+        ->set('hasOverviewInfolist', $hasInfolist)
+        ->assertSuccessful();
+
+    $tabs = $component->instance()->getSchema('content')->getComponents()[0]->getChildSchema()->getComponents(withOriginalKeys: true);
+
+    expect(array_keys($tabs))->toBe([''])
+        ->and($tabs['']->getLabel())->toBe('Ticket details')
+        ->and($tabs['']->getBadge())->toBe('Read only');
+
+    if ($hasInfolist) {
+        $component
+            ->assertSee('Read-only overview')
+            ->assertDontSeeHtml('id="view-ticket-note"');
+    } else {
+        $component
+            ->assertFormFieldDisabled('note')
+            ->assertSeeHtml('id="view-ticket-note"')
+            ->assertDontSee('Read-only overview');
+    }
+})->with([false, true]);
+
+class CombinedContentViewTicket extends ViewTicket
+{
+    public bool $hasOverviewInfolist = false;
+
+    public function hasCombinedRelationManagerTabsWithContent(): bool
+    {
+        return true;
+    }
+
+    public function getContentTabComponent(): Tab
+    {
+        return parent::getContentTabComponent()->label('Ticket details')->badge('Read only');
+    }
+
+    public function infolist(Schema $schema): Schema
+    {
+        return $schema->components($this->hasOverviewInfolist ? [TextEntry::make('summary')->state('Read-only overview')] : []);
+    }
+
+    public function form(Schema $schema): Schema
+    {
+        return $schema->components([TextInput::make('note')->id('view-ticket-note')]);
+    }
+}

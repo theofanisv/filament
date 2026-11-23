@@ -1,9 +1,65 @@
-export default ({ id }) => ({
+let scrollLockCount = 0
+
+let restoreScroll = null
+
+const acquireScrollLock = () => {
+    if (scrollLockCount === 0) {
+        const overflow = document.documentElement.style.overflow
+        const paddingRight = document.documentElement.style.paddingRight
+
+        const scrollbarWidth =
+            window.innerWidth - document.documentElement.clientWidth
+        const scrollbarGutter = window.getComputedStyle(
+            document.documentElement,
+        ).scrollbarGutter
+
+        document.documentElement.style.overflow = 'hidden'
+
+        // A reserved scrollbar gutter already compensates for the scrollbar.
+        if (scrollbarGutter && scrollbarGutter !== 'auto') {
+            restoreScroll = () => {
+                document.documentElement.style.overflow = overflow
+            }
+        } else {
+            document.documentElement.style.paddingRight = `${scrollbarWidth}px`
+
+            restoreScroll = () => {
+                document.documentElement.style.overflow = overflow
+                document.documentElement.style.paddingRight = paddingRight
+            }
+        }
+    }
+
+    scrollLockCount++
+}
+
+const releaseScrollLock = () => {
+    if (scrollLockCount === 0) {
+        return
+    }
+
+    scrollLockCount--
+
+    if (scrollLockCount === 0) {
+        restoreScroll?.()
+        restoreScroll = null
+    }
+}
+
+export default ({ id, isScrollLocked = true, shouldRestoreFocus = true }) => ({
     isOpen: false,
+
+    isDestroyed: false,
 
     isWindowVisible: false,
 
+    isTrapActive: false,
+
+    isHoldingScrollLock: false,
+
     livewire: null,
+
+    previouslyFocusedElement: null,
 
     textSelectionClosePreventionMouseDownHandler: null,
 
@@ -13,12 +69,34 @@ export default ({ id }) => ({
 
     init() {
         this.$nextTick(() => {
+            if (this.isDestroyed || !this.$el.isConnected) {
+                return
+            }
+
             this.isWindowVisible = this.isOpen
 
             this.setUpTextSelectionClosePrevention()
 
             this.$watch('isOpen', () => (this.isWindowVisible = this.isOpen))
         })
+    },
+
+    handleOpenEvent(event, modalId) {
+        if (event.detail.id === modalId && !this.isOpen) {
+            this.open()
+        }
+    },
+
+    handleCloseEvent(event, modalId) {
+        if (event.detail.id === modalId && this.isOpen) {
+            this.close()
+        }
+    },
+
+    handleCloseQuietlyEvent(event, modalId) {
+        if (event.detail.id === modalId && this.isOpen) {
+            this.closeQuietly()
+        }
     },
 
     setUpTextSelectionClosePrevention() {
@@ -89,8 +167,71 @@ export default ({ id }) => ({
         )
     },
 
+    isTopmost() {
+        if (!id) {
+            return true
+        }
+
+        const openModals = document.querySelectorAll('.fi-modal-open')
+
+        if (openModals.length === 0) {
+            return false
+        }
+
+        return openModals[openModals.length - 1].id === id
+    },
+
+    acquireScrollLock() {
+        if (this.isHoldingScrollLock) {
+            return
+        }
+
+        this.isHoldingScrollLock = true
+
+        acquireScrollLock()
+    },
+
+    releaseScrollLock() {
+        if (!this.isHoldingScrollLock) {
+            return
+        }
+
+        this.isHoldingScrollLock = false
+
+        releaseScrollLock()
+    },
+
+    restorePreviouslyFocusedElement() {
+        if (!shouldRestoreFocus || !this.previouslyFocusedElement) {
+            return
+        }
+
+        this.$nextTick(() => {
+            if (this.isDestroyed) {
+                return
+            }
+
+            this.previouslyFocusedElement.focus({ preventScroll: true })
+            this.previouslyFocusedElement = null
+        })
+    },
+
     close() {
+        if (!this.isOpen) {
+            return
+        }
+
         this.closeQuietly()
+
+        this.isTrapActive = false
+
+        this.releaseScrollLock()
+
+        this.restorePreviouslyFocusedElement()
+
+        if (!this.$el.isConnected) {
+            return
+        }
 
         this.$dispatch('modal-closed', { id })
     },
@@ -101,7 +242,36 @@ export default ({ id }) => ({
 
     open() {
         this.$nextTick(() => {
+            if (this.isDestroyed || !this.$el.isConnected) {
+                return
+            }
+
+            if (shouldRestoreFocus) {
+                this.previouslyFocusedElement = document.activeElement
+            }
+
             this.isOpen = true
+
+            // Wait for Alpine's root `x-show` and window transition to remove `display: none`.
+            requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                    if (
+                        this.isDestroyed ||
+                        !this.isOpen ||
+                        !this.$el.isConnected
+                    ) {
+                        return
+                    }
+
+                    this.isTrapActive = true
+                }),
+            )
+
+            // Click-through modals let you interact with the page behind them,
+            // so they must not lock scrolling.
+            if (isScrollLocked) {
+                this.acquireScrollLock()
+            }
 
             document.dispatchEvent(
                 new CustomEvent('x-modal-opened', {
@@ -114,6 +284,11 @@ export default ({ id }) => ({
     },
 
     destroy() {
+        this.isDestroyed = true
+
+        // Release in case the modal is removed while still holding the lock.
+        this.releaseScrollLock()
+
         const capture = true
 
         if (this.textSelectionClosePreventionMouseDownHandler) {

@@ -1,20 +1,19 @@
 ---
 title: Validation
 ---
-import Aside from "@components/Aside.astro"
-import UtilityInjection from "@components/UtilityInjection.astro"
 
 ## Introduction
 
-Validation rules may be added to any [field](overview#available-fields).
+Validation rules may be added to any [field](overview#form-fields).
 
 In Laravel, validation rules are usually defined in arrays like `['required', 'max:255']` or a combined string like `required|max:255`. This is fine if you're exclusively working in the backend with simple form requests. But Filament is also able to give your users frontend validation, so they can fix their mistakes before any backend requests are made.
 
 Filament includes many [dedicated validation methods](#available-rules), but you can also use any [other Laravel validation rules](#other-rules), including [custom validation rules](#custom-rules).
 
-<Aside variant="warning">
-    Some default Laravel validation rules rely on the correct attribute names and won't work when passed via `rule()`/`rules()`. Use the dedicated validation methods whenever you can.
-</Aside>
+<AutoScreenshot name="forms/validation" alt="A form with validation errors" />
+
+> [!WARNING]
+> Some default Laravel validation rules rely on the correct attribute names and won't work when passed via `rule()`/`rules()`. Use the dedicated validation methods whenever you can.
 
 ## Available rules
 
@@ -189,7 +188,7 @@ By default, the field name will be used as the column to search. You may specify
 Field::make('invitation')->exists(column: 'id')
 ```
 
-You can further customize the rule by passing a [closure](overview#closure-customization) to the `modifyRuleUsing` parameter:
+You can further customize the rule by passing a [closure](overview#field-utility-injection) to the `modifyRuleUsing` parameter:
 
 ```php
 use Illuminate\Validation\Rules\Exists;
@@ -386,7 +385,7 @@ Field::make('name')->required()
 
 #### Marking a field as required
 
-By default, required fields will show an asterisk `*` next to their label. You may want to hide the asterisk on forms where all fields are required, or where it makes sense to add a [hint](#adding-a-hint-next-to-the-label) to optional fields instead:
+By default, required fields will show an asterisk `*` next to their label. You may want to hide the asterisk on forms where all fields are required, or where it makes sense to add [extra content after the label](overview#adding-extra-content-after-a-fields-label) to optional fields instead:
 
 ```php
 use Filament\Forms\Components\TextInput;
@@ -528,7 +527,7 @@ Alternatively, to ignore an Eloquent record of your choice, you can pass it to t
 Field::make('email')->unique(ignorable: $ignoredUser)
 ```
 
-You can further customize the rule by passing a [closure](overview#closure-customization) to the `modifyRuleUsing` parameter:
+You can further customize the rule by passing a [closure](overview#field-utility-injection) to the `modifyRuleUsing` parameter:
 
 ```php
 use Illuminate\Validation\Rules\Unique;
@@ -638,7 +637,7 @@ TextInput::make('name')
     ->validationAttribute('full name')
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static value, the `validationAttribute()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static value, the `validationAttribute()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Validation messages
 
@@ -648,13 +647,13 @@ By default Laravel's validation error message is used. To customize the error me
 use Filament\Forms\Components\TextInput;
 
 TextInput::make('email')
-    ->unique(// ...)
+    ->unique()
     ->validationMessages([
         'unique' => 'The :attribute has already been registered.',
     ])
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing an array of static value, the `validationMessages()` method also accepts a function for each message. You can inject various utilities into the functions as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing an array of static value, the `validationMessages()` method also accepts a function for each message. You can inject various utilities into the functions as parameters.</UtilityInjection>
 
 ### Allowing HTML in validation messages
 
@@ -671,19 +670,20 @@ TextInput::make('password')
     ->allowHtmlValidationMessages()
 ```
 
-Be aware that you will need to ensure that the HTML in all validation messages is safe to render, otherwise your application will be vulnerable to XSS attacks.
+> [!CAUTION]
+> Enabling this opts out of escaping for validation messages on this field. Make sure every message — including those from custom rules or translations — is safe to render. Untrusted content can lead to XSS.
 
-## Disabling validation when fields are not dehydrated
+## Disabling validation when fields are not saved
 
-When a field is [not dehydrated](overview#preventing-a-field-from-being-dehydrated), it is still validated. To disable validation for fields that are not dehydrated, use the `validatedWhenNotDehydrated()` method:
+When a field is [not saved](overview#preventing-a-field-from-being-saved), it is still validated. To disable validation for fields that are not saved, use the `validatedWhenNotDehydrated()` method:
 
 ```php
 use Filament\Forms\Components\TextInput;
 
 TextInput::make('name')
     ->required()
-    ->dehydrated(false)
+    ->saved(false)
     ->validatedWhenNotDehydrated(false)
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static value, the `validatedWhenNotDehydrated()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static value, the `validatedWhenNotDehydrated()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>

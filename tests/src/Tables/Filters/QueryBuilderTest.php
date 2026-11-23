@@ -1,3361 +1,4405 @@
 <?php
 
+use Filament\Actions\Testing\TestAction;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\TextInput;
+use Filament\QueryBuilder\Constraints\DateConstraint;
+use Filament\QueryBuilder\Constraints\DateConstraint\Operators\IsAfterOperator;
+use Filament\QueryBuilder\Constraints\DateConstraint\Operators\IsBeforeOperator;
+use Filament\QueryBuilder\Constraints\DateConstraint\Operators\IsDateOperator;
+use Filament\QueryBuilder\Constraints\DateConstraint\Operators\IsMonthOperator;
+use Filament\QueryBuilder\Constraints\DateConstraint\Operators\IsYearOperator;
+use Filament\QueryBuilder\Constraints\NumberConstraint;
+use Filament\QueryBuilder\Constraints\NumberConstraint\Operators\EqualsOperator as NumberEqualsOperator;
+use Filament\QueryBuilder\Constraints\NumberConstraint\Operators\IsMaxOperator;
+use Filament\QueryBuilder\Constraints\NumberConstraint\Operators\IsMinOperator;
+use Filament\QueryBuilder\Constraints\RelationshipConstraint;
+use Filament\QueryBuilder\Constraints\RelationshipConstraint\Operators\EqualsOperator as RelationshipEqualsOperator;
+use Filament\QueryBuilder\Constraints\RelationshipConstraint\Operators\HasMaxOperator as RelationshipHasMaxOperator;
+use Filament\QueryBuilder\Constraints\RelationshipConstraint\Operators\HasMinOperator as RelationshipHasMinOperator;
+use Filament\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
+use Filament\QueryBuilder\Constraints\SelectConstraint;
+use Filament\QueryBuilder\Constraints\SelectConstraint\Operators\IsOperator as SelectIsOperator;
+use Filament\QueryBuilder\Constraints\TextConstraint\Operators\ContainsOperator;
+use Filament\QueryBuilder\Forms\Components\RuleBuilder;
+use Filament\Schemas\Schema;
+use Filament\Support\Facades\FilamentTimezone;
+use Filament\Tables\Filters\QueryBuilder;
+use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
+use Filament\Tests\Fixtures\Livewire\Livewire as TestLivewire;
 use Filament\Tests\Fixtures\Livewire\PostsQueryBuilderTable;
+use Filament\Tests\Fixtures\Livewire\PostsQueryBuilderTableWithScopedAuthor;
 use Filament\Tests\Fixtures\Livewire\UsersQueryBuilderTable;
+use Filament\Tests\Fixtures\Livewire\UsersQueryBuilderTableWithScopedPostsCount;
+use Filament\Tests\Fixtures\Livewire\UsersQueryBuilderTableWithScopedPostsRatingAggregate;
 use Filament\Tests\Fixtures\Models\Post;
+use Filament\Tests\Fixtures\Models\QueryBuilderItem;
 use Filament\Tests\Fixtures\Models\Team;
 use Filament\Tests\Fixtures\Models\User;
+use Filament\Tests\Fixtures\Pages\QueryBuilderTableBrowserTest;
 use Filament\Tests\Tables\TestCase;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema as DatabaseSchema;
+use Livewire\Features\SupportTesting\Testable;
 
 use function Filament\Tests\livewire;
 
 uses(TestCase::class);
 
-function applyQueryBuilderFilter(array $rules)
-{
+$applyQueryBuilderFilter = function (array $rules) {
     return fn ($livewire) => $livewire
         ->set('tableDeferredFilters.query_builder.rules', $rules)
         ->call('applyTableFilters');
-}
+};
 
-it('can filter records using text constraint with contains operator', function (): void {
-    $posts = Post::factory()->count(10)->create([
-        'title' => 'Test Post Title',
-    ]);
+describe('`TextConstraint` operators', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using text constraint with contains operator', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Test Post Title',
+        ]);
 
-    $otherPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-    ]);
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'contains',
-                    'settings' => ['text' => 'Test Post'],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => 'Test Post'],
+                    ],
                 ],
+            ]))
+            ->assertCanSeeTableRecords($posts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
+
+    it('can filter records using text constraint with does not contain operator', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Test Post Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'contains.inverse',
+                        'settings' => ['text' => 'Test Post'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($otherPosts)
+            ->assertCanNotSeeTableRecords($posts);
+    });
+
+    it('can filter records using text constraint with starts with operator', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Test Post Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'startsWith',
+                        'settings' => ['text' => 'Test'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($posts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
+
+    it('can filter records using text constraint with does not start with operator', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Test Post Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'startsWith.inverse',
+                        'settings' => ['text' => 'Test'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($otherPosts)
+            ->assertCanNotSeeTableRecords($posts);
+    });
+
+    it('can filter records using text constraint with ends with operator', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Post Title Test',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'endsWith',
+                        'settings' => ['text' => 'Test'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($posts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
+
+    it('can filter records using text constraint with does not end with operator', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Post Title Test',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'endsWith.inverse',
+                        'settings' => ['text' => 'Test'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($otherPosts)
+            ->assertCanNotSeeTableRecords($posts);
+    });
+
+    it('can filter records using text constraint with equals operator', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Exact Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'equals',
+                        'settings' => ['text' => 'Exact Title'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($posts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
+
+    it('can filter records using text constraint with does not equal operator', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Exact Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'equals.inverse',
+                        'settings' => ['text' => 'Exact Title'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($otherPosts)
+            ->assertCanNotSeeTableRecords($posts);
+    });
+
+    it('treats LIKE wildcard characters as literal text for text constraint operators', function (string $operator, string $literalTitle, string $wildcardTitle) use ($applyQueryBuilderFilter): void {
+        $literalMatch = Post::factory()->create(['title' => $literalTitle]);
+        $wildcardMatch = Post::factory()->create(['title' => $wildcardTitle]);
+        $unrelatedPost = Post::factory()->create(['title' => 'Unrelated']);
+
+        $rule = [
+            'type' => 'title',
+            'data' => [
+                'operator' => $operator,
+                'settings' => ['text' => 'a!_b%'],
             ],
-        ]))
-        ->assertCanSeeTableRecords($posts)
-        ->assertCanNotSeeTableRecords($otherPosts);
+        ];
+
+        livewire(PostsQueryBuilderTable::class)
+            ->tap($applyQueryBuilderFilter([$rule]))
+            ->assertCanSeeTableRecords([$literalMatch])
+            ->assertCanNotSeeTableRecords([$wildcardMatch, $unrelatedPost]);
+
+        $rule['data']['operator'] .= '.inverse';
+
+        livewire(PostsQueryBuilderTable::class)
+            ->tap($applyQueryBuilderFilter([$rule]))
+            ->assertCanSeeTableRecords([$wildcardMatch, $unrelatedPost])
+            ->assertCanNotSeeTableRecords([$literalMatch]);
+    })->with([
+        'contains' => ['contains', 'Before a!_b% After', 'Before a!Xb anything After'],
+        'starts with' => ['startsWith', 'a!_b% After', 'a!Xb anything After'],
+        'ends with' => ['endsWith', 'Before a!_b%', 'Before a!Xb anything'],
+        'equals' => ['equals', 'a!_b%', 'a!Xb anything'],
+    ]);
 });
 
-it('can filter records using text constraint with does not contain operator', function (): void {
-    $posts = Post::factory()->count(10)->create([
-        'title' => 'Test Post Title',
-    ]);
+describe('settings type safety', function () use ($applyQueryBuilderFilter): void {
+    it('does not error when a tampered text setting is a non-scalar array', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(5)->create([
+            'title' => 'Test Post Title',
+        ]);
 
-    $otherPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'contains.inverse',
-                    'settings' => ['text' => 'Test Post'],
+        // Security: a tampered Livewire request can set `settings.text` to an array, which
+        // would reach `trim()` / `mb_substr()` and throw a `TypeError` (HTTP 500). The
+        // operator must fail closed by skipping the constraint, so the table still loads.
+        livewire(PostsQueryBuilderTable::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => ['tampered']],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($otherPosts)
-        ->assertCanNotSeeTableRecords($posts);
+            ]))
+            ->assertOk()
+            ->assertCanSeeTableRecords($posts);
+    });
+
+    it('does not error when a tampered text setting is a non-scalar array across all text operators', function (string $operator) use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(5)->create([
+            'title' => 'Test Post Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => $operator,
+                        'settings' => ['text' => ['tampered']],
+                    ],
+                ],
+            ]))
+            ->assertOk()
+            ->assertCanSeeTableRecords($posts);
+    })->with([
+        'contains',
+        'startsWith',
+        'endsWith',
+        'equals',
+    ]);
+
+    it('does not error when a tampered multiple select setting contains a non-scalar array element', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
+
+        // Security: a tampered request can nest an array inside the `values` of a multiple
+        // select, which would reach `strval()` in `OptionsArrayStateCast` and throw an
+        // `Array to string conversion` error (HTTP 500). The cast must skip the bad element.
+        livewire(PostsQueryBuilderTable::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating_select_multiple',
+                    'data' => [
+                        'operator' => 'is',
+                        'settings' => ['values' => [['tampered']]],
+                    ],
+                ],
+            ]))
+            ->assertOk()
+            ->assertCanSeeTableRecords($posts);
+    });
+
+    it('does not error when a tampered multiple relationship setting contains a non-scalar array element', function (): void {
+        $author = User::factory()->create(['name' => 'John Doe']);
+        Post::factory()->count(3)->create(['author_id' => $author->id]);
+
+        // Security: a tampered request can nest an array inside the `values` of a multiple
+        // relationship select, which would reach `whereKey()` binding and crash the request.
+        // The operator must discard the bad element instead of throwing.
+        $constraint = RelationshipConstraint::make('author')->multiple();
+
+        $operator = IsRelatedToOperator::make()
+            ->constraint($constraint)
+            ->settings(['values' => [['tampered'], $author->id]])
+            ->titleAttribute('name');
+
+        $filtered = $operator->apply(Post::query(), 'author_id');
+
+        expect($filtered->count())->toBe(3);
+    });
+
+    it('skips the constraint and renders the summary when a single select receives a tampered non-scalar setting', function (): void {
+        // Defense-in-depth: `OptionStateCast` is the primary defense for single selects, but
+        // this invokes `apply()` / `getSummary()` directly to confirm the operator fails closed
+        // rather than passing an array to `Arr::only()` or `where()`.
+        $posts = Post::factory()->count(3)->create(['rating' => 3]);
+
+        $constraint = SelectConstraint::make('rating_select')
+            ->options([3 => 'Three', 5 => 'Five']);
+
+        $operator = SelectIsOperator::make()
+            ->constraint($constraint)
+            ->settings(['value' => ['tampered']]);
+
+        $filtered = $operator->apply(Post::query(), 'rating_select');
+
+        expect($filtered->count())->toBe($posts->count())
+            ->and($operator->getSummary())->toBeString();
+    });
 });
 
-it('can filter records using text constraint with starts with operator', function (): void {
-    $posts = Post::factory()->count(10)->create([
-        'title' => 'Test Post Title',
-    ]);
+describe('boolean constraint operators', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using boolean constraint with is true operator', function () use ($applyQueryBuilderFilter): void {
+        $publishedPosts = Post::factory()->count(10)->create([
+            'is_published' => true,
+        ]);
 
-    $otherPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-    ]);
+        $unpublishedPosts = Post::factory()->count(5)->create([
+            'is_published' => false,
+        ]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'startsWith',
-                    'settings' => ['text' => 'Test'],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($publishedPosts->merge($unpublishedPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'is_published',
+                    'data' => [
+                        'operator' => 'isTrue',
+                        'settings' => [],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($posts)
-        ->assertCanNotSeeTableRecords($otherPosts);
+            ]))
+            ->assertCanSeeTableRecords($publishedPosts)
+            ->assertCanNotSeeTableRecords($unpublishedPosts);
+    });
+
+    it('can filter records using boolean constraint with is false operator', function () use ($applyQueryBuilderFilter): void {
+        $publishedPosts = Post::factory()->count(10)->create([
+            'is_published' => true,
+        ]);
+
+        $unpublishedPosts = Post::factory()->count(5)->create([
+            'is_published' => false,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($publishedPosts->merge($unpublishedPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'is_published',
+                    'data' => [
+                        'operator' => 'isTrue.inverse',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($unpublishedPosts)
+            ->assertCanNotSeeTableRecords($publishedPosts);
+    });
 });
 
-it('can filter records using text constraint with does not start with operator', function (): void {
-    $posts = Post::factory()->count(10)->create([
-        'title' => 'Test Post Title',
-    ]);
+describe('`NumberConstraint` operators', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using number constraint with minimum operator', function () use ($applyQueryBuilderFilter): void {
+        $highRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 8,
+        ]);
 
-    $otherPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-    ]);
+        $lowRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'startsWith.inverse',
-                    'settings' => ['text' => 'Test'],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highRatedPosts->merge($lowRatedPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 5],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($otherPosts)
-        ->assertCanNotSeeTableRecords($posts);
+            ]))
+            ->assertCanSeeTableRecords($highRatedPosts)
+            ->assertCanNotSeeTableRecords($lowRatedPosts);
+    });
+
+    it('can filter records using number constraint with less than operator', function () use ($applyQueryBuilderFilter): void {
+        $highRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 8,
+        ]);
+
+        $lowRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highRatedPosts->merge($lowRatedPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'isMin.inverse',
+                        'settings' => ['number' => 5],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($lowRatedPosts)
+            ->assertCanNotSeeTableRecords($highRatedPosts);
+    });
+
+    it('can filter records using number constraint with maximum operator', function () use ($applyQueryBuilderFilter): void {
+        $highRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 8,
+        ]);
+
+        $lowRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highRatedPosts->merge($lowRatedPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'isMax',
+                        'settings' => ['number' => 5],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($lowRatedPosts)
+            ->assertCanNotSeeTableRecords($highRatedPosts);
+    });
+
+    it('can filter records using number constraint with greater than operator', function () use ($applyQueryBuilderFilter): void {
+        $highRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 8,
+        ]);
+
+        $lowRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highRatedPosts->merge($lowRatedPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'isMax.inverse',
+                        'settings' => ['number' => 5],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($highRatedPosts)
+            ->assertCanNotSeeTableRecords($lowRatedPosts);
+    });
+
+    it('can filter records using number constraint with equals operator', function () use ($applyQueryBuilderFilter): void {
+        $targetPosts = Post::factory()->count(5)->create([
+            'rating' => 5,
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'equals',
+                        'settings' => ['number' => 5],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($targetPosts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
+
+    it('can filter records using number constraint with does not equal operator', function () use ($applyQueryBuilderFilter): void {
+        $targetPosts = Post::factory()->count(5)->create([
+            'rating' => 5,
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'equals.inverse',
+                        'settings' => ['number' => 5],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($otherPosts)
+            ->assertCanNotSeeTableRecords($targetPosts);
+    });
+
+    it('can filter records using integer number constraint', function () use ($applyQueryBuilderFilter): void {
+        $integerRatedPosts = Post::factory()->count(5)->create([
+            'rating' => 5,
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($integerRatedPosts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating_integer',
+                    'data' => [
+                        'operator' => 'equals',
+                        'settings' => ['number' => 5],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($integerRatedPosts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
 });
 
-it('can filter records using text constraint with ends with operator', function (): void {
-    $posts = Post::factory()->count(10)->create([
-        'title' => 'Post Title Test',
-    ]);
+describe('`DateConstraint` operators', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using date constraint with is after operator', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(5),
+        ]);
 
-    $otherPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-    ]);
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(5),
+        ]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'endsWith',
-                    'settings' => ['text' => 'Test'],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => ['date' => now()->toDateString()],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($posts)
-        ->assertCanNotSeeTableRecords($otherPosts);
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is before operator', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(5),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => ['date' => now()->toDateString()],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using date constraint with is date operator', function () use ($applyQueryBuilderFilter): void {
+        $targetDate = now()->startOfDay();
+
+        $targetPosts = Post::factory()->count(5)->create([
+            'created_at' => $targetDate,
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'created_at' => $targetDate->copy()->addDays(1),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isDate',
+                        'settings' => ['date' => $targetDate->toDateString()],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($targetPosts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
+
+    it('matches whole days at the boundaries using the configured date query strategy', function (string $operatorClass, array $settings, bool $isInverse, array $expectedPosts, ?bool $dateQueriesUsingRanges, bool $isClosure): void {
+        $posts = collect([
+            'lastSecondOfPreviousYear' => '2023-12-31 23:59:59',
+            'midnight' => '2024-03-15 00:00:00',
+            'lastSecondOfDay' => '2024-03-15 23:59:59',
+            'midnightOfNextDay' => '2024-03-16 00:00:00',
+            'midnightOfNextYear' => '2025-01-01 00:00:00',
+        ])->map(static fn (string $createdAt): Post => Post::factory()->create(['created_at' => $createdAt]));
+
+        $constraint = DateConstraint::make('created_at');
+
+        if ($dateQueriesUsingRanges !== null) {
+            $constraint->dateQueriesUsingRanges(false)->dateQueriesUsingRanges($isClosure ? static fn (): bool => $dateQueriesUsingRanges : $dateQueriesUsingRanges);
+        }
+
+        $query = $operatorClass::make()
+            ->constraint($constraint)
+            ->settings($settings)
+            ->inverse($isInverse)
+            ->apply(Post::query(), 'posts.created_at');
+
+        if (($dateQueriesUsingRanges !== false) && in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb', 'pgsql'], true)) {
+            expect($query->toSql())->not->toMatch('/(strftime|date|year|extract|cast)\s*\(|::date/i');
+        } else {
+            expect($query->toSql())->toMatch('/(strftime|date|year|extract|cast)\s*\(|::date/i');
+        }
+
+        expect($query->pluck('id')->sort()->values()->all())->toBe($posts->only($expectedPosts)->pluck('id')->sort()->values()->all());
+    })->with([
+        '`isAfter`' => [IsAfterOperator::class, ['date' => '2024-03-15'], false, ['midnight', 'lastSecondOfDay', 'midnightOfNextDay', 'midnightOfNextYear']],
+        'inverse `isAfter`' => [IsAfterOperator::class, ['date' => '2024-03-15'], true, ['lastSecondOfPreviousYear']],
+        '`isBefore`' => [IsBeforeOperator::class, ['date' => '2024-03-15'], false, ['lastSecondOfPreviousYear', 'midnight', 'lastSecondOfDay']],
+        'inverse `isBefore`' => [IsBeforeOperator::class, ['date' => '2024-03-15'], true, ['midnightOfNextDay', 'midnightOfNextYear']],
+        '`isDate`' => [IsDateOperator::class, ['date' => '2024-03-15'], false, ['midnight', 'lastSecondOfDay']],
+        'inverse `isDate`' => [IsDateOperator::class, ['date' => '2024-03-15'], true, ['lastSecondOfPreviousYear', 'midnightOfNextDay', 'midnightOfNextYear']],
+        '`isYear`' => [IsYearOperator::class, ['year' => 2024], false, ['midnight', 'lastSecondOfDay', 'midnightOfNextDay']],
+        'inverse `isYear`' => [IsYearOperator::class, ['year' => 2024], true, ['lastSecondOfPreviousYear', 'midnightOfNextYear']],
+    ])->with([
+        'default ranges' => [null, false],
+        'explicit ranges' => [true, false],
+        'extraction' => [false, false],
+        'ranges closure' => [true, true],
+        'extraction closure' => [false, true],
+    ]);
+
+    it('can use `dateQueriesUsingRanges()` to preserve PostgreSQL dates across ambiguous midnights', function (bool $dateQueriesUsingRanges, bool $isInverse, array $expectedPosts): void {
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Requires PostgreSQL timezone-aware timestamps.');
+        }
+
+        DatabaseSchema::table('posts', static function (Blueprint $table): void {
+            $table->dateTimeTz('offset_date')->nullable();
+        });
+
+        $posts = collect([
+            'firstMidnightHour' => '2024-11-03 00:30:00-04:00',
+            'secondMidnightHour' => '2024-11-03 00:30:00-05:00',
+            'nextDay' => '2024-11-04 00:30:00-05:00',
+            'nullDate' => null,
+        ])->map(static fn (?string $date): Post => Post::factory()->create(['offset_date' => $date]));
+
+        $originalTimezone = DB::selectOne('SHOW TIME ZONE')->TimeZone;
+
+        try {
+            DB::statement("SET TIME ZONE 'America/Havana'");
+
+            $query = IsDateOperator::make()
+                ->constraint(DateConstraint::make('offset_date')->dateQueriesUsingRanges($dateQueriesUsingRanges))
+                ->settings(['date' => '2024-11-03'])
+                ->inverse($isInverse)
+                ->apply(Post::query(), 'posts.offset_date');
+
+            expect($query->pluck('id')->sort()->values()->all())->toBe($posts->only($expectedPosts)->pluck('id')->sort()->values()->all());
+        } finally {
+            DB::select("SELECT set_config('TimeZone', ?, false)", [$originalTimezone]);
+        }
+    })->with([
+        'ranges' => [true, false, ['secondMidnightHour']],
+        'inverse ranges' => [true, true, ['firstMidnightHour', 'nextDay']],
+        'extraction' => [false, false, ['firstMidnightHour', 'secondMidnightHour']],
+        'inverse extraction' => [false, true, ['nextDay']],
+    ]);
+
+    it('preserves the database calendar date of offset timestamps in `DateConstraint` operators', function (string $operatorClass, array $settings, bool $isInverse, array $expectedPosts): void {
+        $driver = DB::connection()->getDriverName();
+
+        if (! in_array($driver, ['sqlite', 'sqlsrv', 'pgsql'], true)) {
+            $this->markTestSkipped('Requires support for storing timestamps with offsets.');
+        }
+
+        DatabaseSchema::table('posts', static function (Blueprint $table): void {
+            $table->dateTimeTz('offset_date')->nullable();
+        });
+
+        // SQLite and this PostgreSQL session use UTC; SQL Server preserves the stored offset.
+        $posts = collect([
+            'previousDay' => '2024-03-14 12:00:00+00:00',
+            'startOfDay' => $driver === 'sqlsrv' ? '2024-03-15 00:30:00+02:00' : '2024-03-14 23:30:00-02:00',
+            'endOfDay' => $driver === 'sqlsrv' ? '2024-03-15 23:30:00-02:00' : '2024-03-16 00:30:00+02:00',
+            'nextDay' => '2024-03-16 12:00:00+00:00',
+            'endOfYear' => $driver === 'sqlsrv' ? '2024-12-31 23:30:00-02:00' : '2025-01-01 00:30:00+02:00',
+            'nextYear' => '2025-01-01 12:00:00+00:00',
+            'nullDate' => null,
+        ])->map(static fn (?string $date): Post => Post::factory()->create(['offset_date' => $date]));
+
+        $query = $operatorClass::make()
+            ->constraint(DateConstraint::make('offset_date'))
+            ->settings($settings)
+            ->inverse($isInverse)
+            ->apply(Post::query(), 'posts.offset_date');
+
+        expect($query->pluck('id')->sort()->values()->all())->toBe($posts->only($expectedPosts)->pluck('id')->sort()->values()->all());
+    })->with([
+        '`isAfter`' => [IsAfterOperator::class, ['date' => '2024-03-15'], false, ['startOfDay', 'endOfDay', 'nextDay', 'endOfYear', 'nextYear']],
+        'inverse `isAfter`' => [IsAfterOperator::class, ['date' => '2024-03-15'], true, ['previousDay']],
+        '`isBefore`' => [IsBeforeOperator::class, ['date' => '2024-03-15'], false, ['previousDay', 'startOfDay', 'endOfDay']],
+        'inverse `isBefore`' => [IsBeforeOperator::class, ['date' => '2024-03-15'], true, ['nextDay', 'endOfYear', 'nextYear']],
+        '`isDate`' => [IsDateOperator::class, ['date' => '2024-03-15'], false, ['startOfDay', 'endOfDay']],
+        'inverse `isDate`' => [IsDateOperator::class, ['date' => '2024-03-15'], true, ['previousDay', 'nextDay', 'endOfYear', 'nextYear']],
+        '`isYear`' => [IsYearOperator::class, ['year' => 2024], false, ['previousDay', 'startOfDay', 'endOfDay', 'nextDay', 'endOfYear']],
+        'inverse `isYear`' => [IsYearOperator::class, ['year' => 2024], true, ['nextYear']],
+    ]);
+
+    it('can filter `datetime` columns by years outside their storage range', function (int $year, bool $isInverse): void {
+        $post = Post::factory()->create(['created_at' => '2024-03-15 12:00:00']);
+
+        $query = IsYearOperator::make()
+            ->constraint(DateConstraint::make('created_at'))
+            ->settings(['year' => $year])
+            ->inverse($isInverse)
+            ->apply(Post::query(), 'posts.created_at');
+
+        expect($query->pluck('id')->all())->toBe(($year === 2024) !== $isInverse ? [$post->id] : []);
+    })->with([1, 1752, 1753, 2024])->with([false, true]);
+
+    it('calculates `DateConstraint` calendar boundaries independently of the PHP timezone', function (): void {
+        Post::factory()->create(['published_at' => '2011-12-30 12:00:00']);
+
+        $originalTimezone = date_default_timezone_get();
+
+        try {
+            date_default_timezone_set('Pacific/Apia');
+
+            $query = IsDateOperator::make()
+                ->constraint(DateConstraint::make('published_at'))
+                ->settings(['date' => '2011-12-29'])
+                ->apply(Post::query(), 'posts.published_at');
+
+            expect($query->pluck('id')->all())->toBe([]);
+        } finally {
+            date_default_timezone_set($originalTimezone);
+        }
+    });
+
+    it('can filter the last supported calendar day without overflowing the database date range', function (string $operatorClass, array $settings, bool $isInverse, array $expectedPosts): void {
+        DatabaseSchema::table('posts', static function (Blueprint $table): void {
+            $table->dateTime('boundary_date')->nullable();
+        });
+
+        $posts = collect([
+            'previousDay' => '9999-12-30 12:00:00',
+            'lastDay' => '9999-12-31 12:00:00',
+            'nullDate' => null,
+        ])->map(static fn (?string $date): Post => Post::factory()->create(['boundary_date' => $date]));
+
+        $query = $operatorClass::make()
+            ->constraint(DateConstraint::make('boundary_date'))
+            ->settings($settings)
+            ->inverse($isInverse)
+            ->apply(Post::query(), 'posts.boundary_date');
+
+        expect($query->pluck('id')->sort()->values()->all())->toBe($posts->only($expectedPosts)->pluck('id')->sort()->values()->all());
+    })->with([
+        '`isAfter`' => [IsAfterOperator::class, ['date' => '9999-12-31'], false, ['lastDay']],
+        'inverse `isAfter`' => [IsAfterOperator::class, ['date' => '9999-12-31'], true, ['previousDay']],
+        '`isBefore`' => [IsBeforeOperator::class, ['date' => '9999-12-31'], false, ['previousDay', 'lastDay']],
+        'inverse `isBefore`' => [IsBeforeOperator::class, ['date' => '9999-12-31'], true, []],
+        '`isDate`' => [IsDateOperator::class, ['date' => '9999-12-31'], false, ['lastDay']],
+        'inverse `isDate`' => [IsDateOperator::class, ['date' => '9999-12-31'], true, ['previousDay']],
+        '`isYear` at 9999' => [IsYearOperator::class, ['year' => 9999], false, ['previousDay', 'lastDay']],
+        'inverse `isYear` at 9999' => [IsYearOperator::class, ['year' => 9999], true, []],
+        '`isYear` at 9998' => [IsYearOperator::class, ['year' => 9998], false, []],
+        'inverse `isYear` at 9998' => [IsYearOperator::class, ['year' => 9998], true, ['previousDay', 'lastDay']],
+    ]);
 });
 
-it('can filter records using text constraint with does not end with operator', function (): void {
-    $posts = Post::factory()->count(10)->create([
-        'title' => 'Post Title Test',
-    ]);
+describe('`SelectConstraint` operators', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using select constraint', function () use ($applyQueryBuilderFilter): void {
+        $targetPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
 
-    $otherPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-    ]);
+        $otherPosts = Post::factory()->count(5)->create([
+            'rating' => 5,
+        ]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'endsWith.inverse',
-                    'settings' => ['text' => 'Test'],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating_select',
+                    'data' => [
+                        'operator' => 'is',
+                        'settings' => ['value' => 3],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($otherPosts)
-        ->assertCanNotSeeTableRecords($posts);
+            ]))
+            ->assertCanSeeTableRecords($targetPosts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
+
+    it('can filter records using select constraint with is not operator', function () use ($applyQueryBuilderFilter): void {
+        $targetPosts = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'rating' => 5,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating_select',
+                    'data' => [
+                        'operator' => 'is.inverse',
+                        'settings' => ['value' => 3],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($otherPosts)
+            ->assertCanNotSeeTableRecords($targetPosts);
+    });
+
+    it('can filter records using multiple select constraint', function () use ($applyQueryBuilderFilter): void {
+        $posts3or5 = Post::factory()->count(5)->create([
+            'rating' => 3,
+        ])->merge(Post::factory()->count(3)->create([
+            'rating' => 5,
+        ]));
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'rating' => 1,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts3or5->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating_select_multiple',
+                    'data' => [
+                        'operator' => 'is',
+                        'settings' => ['values' => [3, 5]],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($posts3or5)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
 });
 
-it('can filter records using text constraint with equals operator', function (): void {
-    $posts = Post::factory()->count(10)->create([
-        'title' => 'Exact Title',
-    ]);
+describe('`RelationshipConstraint` operators', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using relationship constraint with text operator', function () use ($applyQueryBuilderFilter): void {
+        $author = User::factory()->create(['name' => 'John Doe']);
+        Post::factory()->count(5)->create(['author_id' => $author->id]);
+        Post::factory()->count(5)->create();
 
-    $otherPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-    ]);
+        $allPosts = Post::with('author')->get();
+        $matchingPosts = $allPosts->filter(fn ($post) => str_contains($post->author->name ?? '', 'John'));
+        $nonMatchingPosts = $allPosts->reject(fn ($post) => str_contains($post->author->name ?? '', 'John'));
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'equals',
-                    'settings' => ['text' => 'Exact Title'],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($allPosts)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_name',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => 'John'],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($posts)
-        ->assertCanNotSeeTableRecords($otherPosts);
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
+
+    it('can filter records using relationship constraint with is related to operator', function () use ($applyQueryBuilderFilter): void {
+        $author = User::factory()->create(['name' => 'John Doe']);
+        Post::factory()->count(5)->create(['author_id' => $author->id]);
+        Post::factory()->count(5)->create();
+
+        $allPosts = Post::all();
+        $matchingPosts = $allPosts->filter(fn ($post) => $post->author_id === $author->id);
+        $nonMatchingPosts = $allPosts->reject(fn ($post) => $post->author_id === $author->id);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($allPosts)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author',
+                    'data' => [
+                        'operator' => 'isRelatedTo',
+                        'settings' => ['value' => $author->id],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
+
+    it('can filter records using relationship constraint with a `multiple()` is related to operator', function () use ($applyQueryBuilderFilter): void {
+        $firstAuthor = User::factory()->create(['name' => 'John Doe']);
+        $secondAuthor = User::factory()->create(['name' => 'Jane Doe']);
+        Post::factory()->count(5)->create(['author_id' => $firstAuthor->id]);
+        Post::factory()->count(5)->create(['author_id' => $secondAuthor->id]);
+        Post::factory()->count(5)->create();
+
+        $allPosts = Post::all();
+        $matchingPosts = $allPosts->filter(fn ($post) => in_array($post->author_id, [$firstAuthor->id, $secondAuthor->id]));
+        $nonMatchingPosts = $allPosts->reject(fn ($post) => in_array($post->author_id, [$firstAuthor->id, $secondAuthor->id]));
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($allPosts)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_multiple',
+                    'data' => [
+                        'operator' => 'isRelatedTo',
+                        'settings' => ['value' => [$firstAuthor->id, $secondAuthor->id]],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
+
+    it('can filter records using a `multiple()` relationship constraint with a single value is related to operator', function () use ($applyQueryBuilderFilter): void {
+        $matchingUser = User::factory()->create(['name' => 'John Doe']);
+        $post = Post::factory()->create(['author_id' => $matchingUser->id]);
+
+        $nonMatchingUsers = User::factory()->count(3)->create();
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords(collect([$matchingUser])->merge($nonMatchingUsers))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'posts',
+                    'data' => [
+                        'operator' => 'isRelatedTo',
+                        'settings' => ['values' => $post->id],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$matchingUser])
+            ->assertCanNotSeeTableRecords($nonMatchingUsers);
+    });
+
+    it('still matches in-scope `isRelatedTo` values when `modifyRelationshipQueryUsing()` is set', function () use ($applyQueryBuilderFilter): void {
+        $inScopeAuthor = User::factory()->create(['name' => 'Alpha Author']);
+        $outOfScopeAuthor = User::factory()->create(['name' => 'Beta Author']);
+
+        $inScopePosts = Post::factory()->count(2)->create(['author_id' => $inScopeAuthor->id]);
+        $outOfScopePosts = Post::factory()->count(2)->create(['author_id' => $outOfScopeAuthor->id]);
+
+        livewire(PostsQueryBuilderTableWithScopedAuthor::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author',
+                    'data' => [
+                        'operator' => 'isRelatedTo',
+                        'settings' => ['value' => $inScopeAuthor->id],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($inScopePosts)
+            ->assertCanNotSeeTableRecords($outOfScopePosts);
+    });
+
+    it('applies `modifyRelationshipQueryUsing()` inside the `whereHas()` subquery to defend against a bypassed tampered value', function (): void {
+        // Defense-in-depth: form validation is the primary defense and would reject the
+        // out-of-scope value before reaching `apply()`. This test bypasses validation
+        // by invoking `apply()` directly to confirm the operator does not leak rows
+        // even if a tampered value did somehow reach query construction.
+        $inScopeAuthor = User::factory()->create(['name' => 'Alpha Author']);
+        $outOfScopeAuthor = User::factory()->create(['name' => 'Beta Author']);
+
+        Post::factory()->count(2)->create(['author_id' => $inScopeAuthor->id]);
+        Post::factory()->count(2)->create(['author_id' => $outOfScopeAuthor->id]);
+
+        $constraint = RelationshipConstraint::make('author');
+
+        $operator = IsRelatedToOperator::make()
+            ->constraint($constraint)
+            ->settings(['value' => $outOfScopeAuthor->id])
+            ->titleAttribute('name')
+            ->modifyRelationshipQueryUsing(fn ($query) => $query->where('name', 'like', 'Alpha%'));
+
+        $filtered = $operator->apply(Post::query(), 'author_id');
+
+        expect($filtered->count())->toBe(0);
+    });
+
+    it('applies `modifyRelationshipQueryUsing()` inside `IsEmptyOperator` count check', function () use ($applyQueryBuilderFilter): void {
+        // Author A has 1 published + 0 unpublished — should NOT match isEmpty under the published-only scope.
+        // Author B has 0 published + 2 unpublished — SHOULD match isEmpty under the scope (no published posts).
+        // Author C has no posts at all — SHOULD match isEmpty.
+        $authorA = User::factory()->create(['name' => 'Author A']);
+        Post::factory()->create(['author_id' => $authorA->id, 'is_published' => true]);
+
+        $authorB = User::factory()->create(['name' => 'Author B']);
+        Post::factory()->count(2)->create(['author_id' => $authorB->id, 'is_published' => false]);
+
+        $authorC = User::factory()->create(['name' => 'Author C']);
+
+        livewire(UsersQueryBuilderTableWithScopedPostsCount::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'posts',
+                    'data' => [
+                        'operator' => 'isEmpty',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$authorB, $authorC])
+            ->assertCanNotSeeTableRecords([$authorA]);
+    });
+
+    it('applies `modifyRelationshipQueryUsing()` inside `HasMinOperator` count check', function () use ($applyQueryBuilderFilter): void {
+        $authorWithTwoPublished = User::factory()->create(['name' => 'Two Published']);
+        Post::factory()->count(2)->create(['author_id' => $authorWithTwoPublished->id, 'is_published' => true]);
+
+        $authorWithUnpublishedOnly = User::factory()->create(['name' => 'Unpublished Only']);
+        Post::factory()->count(3)->create(['author_id' => $authorWithUnpublishedOnly->id, 'is_published' => false]);
+
+        livewire(UsersQueryBuilderTableWithScopedPostsCount::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'posts',
+                    'data' => [
+                        'operator' => 'hasMin',
+                        'settings' => ['count' => 2],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$authorWithTwoPublished])
+            ->assertCanNotSeeTableRecords([$authorWithUnpublishedOnly]);
+    });
+
+    it('applies `modifyRelationshipQueryUsing()` inside `HasMaxOperator` count check', function () use ($applyQueryBuilderFilter): void {
+        $authorWithOnePublished = User::factory()->create(['name' => 'One Published']);
+        Post::factory()->create(['author_id' => $authorWithOnePublished->id, 'is_published' => true]);
+        Post::factory()->count(5)->create(['author_id' => $authorWithOnePublished->id, 'is_published' => false]);
+
+        $authorWithThreePublished = User::factory()->create(['name' => 'Three Published']);
+        Post::factory()->count(3)->create(['author_id' => $authorWithThreePublished->id, 'is_published' => true]);
+
+        // hasMax: 1 — both `one published + 5 unpublished` and `three published` would match if the scope
+        // were dropped (since one has 6 total and the other has 3 total). With the scope applied, only the
+        // author with 1 published post matches.
+        livewire(UsersQueryBuilderTableWithScopedPostsCount::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'posts',
+                    'data' => [
+                        'operator' => 'hasMax',
+                        'settings' => ['count' => 1],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$authorWithOnePublished])
+            ->assertCanNotSeeTableRecords([$authorWithThreePublished]);
+    });
+
+    it('applies `modifyRelationshipQueryUsing()` inside `EqualsOperator` count check', function () use ($applyQueryBuilderFilter): void {
+        $authorWithTwoPublished = User::factory()->create(['name' => 'Two Published']);
+        Post::factory()->count(2)->create(['author_id' => $authorWithTwoPublished->id, 'is_published' => true]);
+        Post::factory()->count(3)->create(['author_id' => $authorWithTwoPublished->id, 'is_published' => false]);
+
+        $authorWithFivePublished = User::factory()->create(['name' => 'Five Published']);
+        Post::factory()->count(5)->create(['author_id' => $authorWithFivePublished->id, 'is_published' => true]);
+
+        // equals: 2 — pre-fix, the `Two Published` author has 5 posts total, would NOT match.
+        // Post-fix (scope applied), they have exactly 2 published posts, so they DO match.
+        livewire(UsersQueryBuilderTableWithScopedPostsCount::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'posts',
+                    'data' => [
+                        'operator' => 'equals',
+                        'settings' => ['count' => 2],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$authorWithTwoPublished])
+            ->assertCanNotSeeTableRecords([$authorWithFivePublished]);
+    });
+
+    it('inverts the scope inside `whereDoesntHave()` when `isRelatedTo.inverse` is used with `modifyRelationshipQueryUsing()`', function (): void {
+        $inScopeAuthor = User::factory()->create(['name' => 'Alpha Author']);
+        $outOfScopeAuthor = User::factory()->create(['name' => 'Beta Author']);
+
+        Post::factory()->count(2)->create(['author_id' => $inScopeAuthor->id]);
+        Post::factory()->count(2)->create(['author_id' => $outOfScopeAuthor->id]);
+
+        $constraint = RelationshipConstraint::make('author');
+
+        $operator = IsRelatedToOperator::make()
+            ->constraint($constraint)
+            ->settings(['value' => $inScopeAuthor->id])
+            ->inverse()
+            ->titleAttribute('name')
+            ->modifyRelationshipQueryUsing(fn ($query) => $query->where('name', 'like', 'Alpha%'));
+
+        $filtered = $operator->apply(Post::query(), 'author_id');
+
+        // Only the out-of-scope posts (those NOT related to the in-scope author) remain.
+        expect($filtered->count())->toBe(2);
+    });
+
+    it('can filter records using relationship constraint with is not related to operator', function () use ($applyQueryBuilderFilter): void {
+        $author = User::factory()->create(['name' => 'John Doe']);
+        Post::factory()->count(5)->create(['author_id' => $author->id]);
+        Post::factory()->count(5)->create();
+
+        $allPosts = Post::all();
+        $matchingPosts = $allPosts->filter(fn ($post) => $post->author_id !== $author->id);
+        $nonMatchingPosts = $allPosts->reject(fn ($post) => $post->author_id !== $author->id);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($allPosts)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author',
+                    'data' => [
+                        'operator' => 'isRelatedTo.inverse',
+                        'settings' => ['value' => $author->id],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
 });
 
-it('can filter records using text constraint with does not equal operator', function (): void {
-    $posts = Post::factory()->count(10)->create([
-        'title' => 'Exact Title',
-    ]);
+describe('nullable constraint operators', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using nullable constraint with is filled operator', function () use ($applyQueryBuilderFilter): void {
+        $filledPosts = Post::factory()->count(5)->create([
+            'content' => 'Some content here',
+        ]);
 
-    $otherPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-    ]);
+        $emptyPosts = Post::factory()->count(5)->create([
+            'content' => null,
+        ]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'equals.inverse',
-                    'settings' => ['text' => 'Exact Title'],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($filledPosts->merge($emptyPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'content',
+                    'data' => [
+                        'operator' => 'isFilled',
+                        'settings' => [],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($otherPosts)
-        ->assertCanNotSeeTableRecords($posts);
+            ]))
+            ->assertCanSeeTableRecords($filledPosts)
+            ->assertCanNotSeeTableRecords($emptyPosts);
+    });
+
+    it('can filter records using nullable constraint with is blank operator', function () use ($applyQueryBuilderFilter): void {
+        $filledPosts = Post::factory()->count(5)->create([
+            'content' => 'Some content here',
+        ]);
+
+        $emptyPosts = Post::factory()->count(5)->create([
+            'content' => null,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($filledPosts->merge($emptyPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'content',
+                    'data' => [
+                        'operator' => 'isFilled.inverse',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($emptyPosts)
+            ->assertCanNotSeeTableRecords($filledPosts);
+    });
 });
 
-it('can filter records using boolean constraint with is true operator', function (): void {
-    $publishedPosts = Post::factory()->count(10)->create([
-        'is_published' => true,
-    ]);
+describe('complex rules', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using complex nested AND rules', function () use ($applyQueryBuilderFilter): void {
+        $matchingPosts = Post::factory()->count(3)->create([
+            'title' => 'Test Post',
+            'rating' => 8,
+            'is_published' => true,
+        ]);
 
-    $unpublishedPosts = Post::factory()->count(5)->create([
-        'is_published' => false,
-    ]);
+        $nonMatchingPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+            'rating' => 3,
+            'is_published' => false,
+        ]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($publishedPosts->merge($unpublishedPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'is_published',
-                'data' => [
-                    'operator' => 'isTrue',
-                    'settings' => [],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($matchingPosts->merge($nonMatchingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => 'Test'],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($publishedPosts)
-        ->assertCanNotSeeTableRecords($unpublishedPosts);
-});
-
-it('can filter records using boolean constraint with is false operator', function (): void {
-    $publishedPosts = Post::factory()->count(10)->create([
-        'is_published' => true,
-    ]);
-
-    $unpublishedPosts = Post::factory()->count(5)->create([
-        'is_published' => false,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($publishedPosts->merge($unpublishedPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'is_published',
-                'data' => [
-                    'operator' => 'isTrue.inverse',
-                    'settings' => [],
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 5],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($unpublishedPosts)
-        ->assertCanNotSeeTableRecords($publishedPosts);
-});
-
-it('can filter records using number constraint with minimum operator', function (): void {
-    $highRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 8,
-    ]);
-
-    $lowRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highRatedPosts->merge($lowRatedPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating',
-                'data' => [
-                    'operator' => 'isMin',
-                    'settings' => ['number' => 5],
+                [
+                    'type' => 'is_published',
+                    'data' => [
+                        'operator' => 'isTrue',
+                        'settings' => [],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($highRatedPosts)
-        ->assertCanNotSeeTableRecords($lowRatedPosts);
-});
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
 
-it('can filter records using number constraint with less than operator', function (): void {
-    $highRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 8,
-    ]);
+    it('can filter records using OR block rules', function () use ($applyQueryBuilderFilter): void {
+        $highRatedPosts = Post::factory()->count(3)->create([
+            'title' => 'High Rated',
+            'rating' => 9,
+            'is_published' => false,
+        ]);
 
-    $lowRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
+        $publishedPosts = Post::factory()->count(3)->create([
+            'title' => 'Published',
+            'rating' => 3,
+            'is_published' => true,
+        ]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highRatedPosts->merge($lowRatedPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating',
-                'data' => [
-                    'operator' => 'isMin.inverse',
-                    'settings' => ['number' => 5],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($lowRatedPosts)
-        ->assertCanNotSeeTableRecords($highRatedPosts);
-});
+        $nonMatchingPosts = Post::factory()->count(5)->create([
+            'title' => 'Low Rated',
+            'rating' => 2,
+            'is_published' => false,
+        ]);
 
-it('can filter records using number constraint with maximum operator', function (): void {
-    $highRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 8,
-    ]);
-
-    $lowRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highRatedPosts->merge($lowRatedPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating',
-                'data' => [
-                    'operator' => 'isMax',
-                    'settings' => ['number' => 5],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($lowRatedPosts)
-        ->assertCanNotSeeTableRecords($highRatedPosts);
-});
-
-it('can filter records using number constraint with greater than operator', function (): void {
-    $highRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 8,
-    ]);
-
-    $lowRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highRatedPosts->merge($lowRatedPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating',
-                'data' => [
-                    'operator' => 'isMax.inverse',
-                    'settings' => ['number' => 5],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($highRatedPosts)
-        ->assertCanNotSeeTableRecords($lowRatedPosts);
-});
-
-it('can filter records using number constraint with equals operator', function (): void {
-    $targetPosts = Post::factory()->count(5)->create([
-        'rating' => 5,
-    ]);
-
-    $otherPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating',
-                'data' => [
-                    'operator' => 'equals',
-                    'settings' => ['number' => 5],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($targetPosts)
-        ->assertCanNotSeeTableRecords($otherPosts);
-});
-
-it('can filter records using number constraint with does not equal operator', function (): void {
-    $targetPosts = Post::factory()->count(5)->create([
-        'rating' => 5,
-    ]);
-
-    $otherPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating',
-                'data' => [
-                    'operator' => 'equals.inverse',
-                    'settings' => ['number' => 5],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($otherPosts)
-        ->assertCanNotSeeTableRecords($targetPosts);
-});
-
-it('can filter records using integer number constraint', function (): void {
-    $integerRatedPosts = Post::factory()->count(5)->create([
-        'rating' => 5,
-    ]);
-
-    $otherPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($integerRatedPosts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating_integer',
-                'data' => [
-                    'operator' => 'equals',
-                    'settings' => ['number' => 5],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($integerRatedPosts)
-        ->assertCanNotSeeTableRecords($otherPosts);
-});
-
-it('can filter records using date constraint with is after operator', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(5),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => ['date' => now()->toDateString()],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is before operator', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(5),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => ['date' => now()->toDateString()],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using date constraint with is date operator', function (): void {
-    $targetDate = now()->startOfDay();
-
-    $targetPosts = Post::factory()->count(5)->create([
-        'created_at' => $targetDate,
-    ]);
-
-    $otherPosts = Post::factory()->count(5)->create([
-        'created_at' => $targetDate->copy()->addDays(1),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isDate',
-                    'settings' => ['date' => $targetDate->toDateString()],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($targetPosts)
-        ->assertCanNotSeeTableRecords($otherPosts);
-});
-
-it('can filter records using select constraint', function (): void {
-    $targetPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
-
-    $otherPosts = Post::factory()->count(5)->create([
-        'rating' => 5,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating_select',
-                'data' => [
-                    'operator' => 'is',
-                    'settings' => ['value' => 3],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($targetPosts)
-        ->assertCanNotSeeTableRecords($otherPosts);
-});
-
-it('can filter records using select constraint with is not operator', function (): void {
-    $targetPosts = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ]);
-
-    $otherPosts = Post::factory()->count(5)->create([
-        'rating' => 5,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($targetPosts->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating_select',
-                'data' => [
-                    'operator' => 'is.inverse',
-                    'settings' => ['value' => 3],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($otherPosts)
-        ->assertCanNotSeeTableRecords($targetPosts);
-});
-
-it('can filter records using multiple select constraint', function (): void {
-    $posts3or5 = Post::factory()->count(5)->create([
-        'rating' => 3,
-    ])->merge(Post::factory()->count(3)->create([
-        'rating' => 5,
-    ]));
-
-    $otherPosts = Post::factory()->count(5)->create([
-        'rating' => 1,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($posts3or5->merge($otherPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'rating_select_multiple',
-                'data' => [
-                    'operator' => 'is',
-                    'settings' => ['values' => [3, 5]],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($posts3or5)
-        ->assertCanNotSeeTableRecords($otherPosts);
-});
-
-it('can filter records using relationship constraint with text operator', function (): void {
-    $author = User::factory()->create(['name' => 'John Doe']);
-    Post::factory()->count(5)->create(['author_id' => $author->id]);
-    Post::factory()->count(5)->create();
-
-    $allPosts = Post::with('author')->get();
-    $matchingPosts = $allPosts->filter(fn ($post) => str_contains($post->author->name ?? '', 'John'));
-    $nonMatchingPosts = $allPosts->reject(fn ($post) => str_contains($post->author->name ?? '', 'John'));
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($allPosts)
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_name',
-                'data' => [
-                    'operator' => 'contains',
-                    'settings' => ['text' => 'John'],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can filter records using relationship constraint with is related to operator', function (): void {
-    $author = User::factory()->create(['name' => 'John Doe']);
-    Post::factory()->count(5)->create(['author_id' => $author->id]);
-    Post::factory()->count(5)->create();
-
-    $allPosts = Post::all();
-    $matchingPosts = $allPosts->filter(fn ($post) => $post->author_id === $author->id);
-    $nonMatchingPosts = $allPosts->reject(fn ($post) => $post->author_id === $author->id);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($allPosts)
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author',
-                'data' => [
-                    'operator' => 'isRelatedTo',
-                    'settings' => ['value' => $author->id],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can filter records using relationship constraint with is not related to operator', function (): void {
-    $author = User::factory()->create(['name' => 'John Doe']);
-    Post::factory()->count(5)->create(['author_id' => $author->id]);
-    Post::factory()->count(5)->create();
-
-    $allPosts = Post::all();
-    $matchingPosts = $allPosts->filter(fn ($post) => $post->author_id !== $author->id);
-    $nonMatchingPosts = $allPosts->reject(fn ($post) => $post->author_id !== $author->id);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($allPosts)
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author',
-                'data' => [
-                    'operator' => 'isRelatedTo.inverse',
-                    'settings' => ['value' => $author->id],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can filter records using nullable constraint with is filled operator', function (): void {
-    $filledPosts = Post::factory()->count(5)->create([
-        'content' => 'Some content here',
-    ]);
-
-    $emptyPosts = Post::factory()->count(5)->create([
-        'content' => null,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($filledPosts->merge($emptyPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'content',
-                'data' => [
-                    'operator' => 'isFilled',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($filledPosts)
-        ->assertCanNotSeeTableRecords($emptyPosts);
-});
-
-it('can filter records using nullable constraint with is blank operator', function (): void {
-    $filledPosts = Post::factory()->count(5)->create([
-        'content' => 'Some content here',
-    ]);
-
-    $emptyPosts = Post::factory()->count(5)->create([
-        'content' => null,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($filledPosts->merge($emptyPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'content',
-                'data' => [
-                    'operator' => 'isFilled.inverse',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($emptyPosts)
-        ->assertCanNotSeeTableRecords($filledPosts);
-});
-
-it('can filter records using complex nested AND rules', function (): void {
-    $matchingPosts = Post::factory()->count(3)->create([
-        'title' => 'Test Post',
-        'rating' => 8,
-        'is_published' => true,
-    ]);
-
-    $nonMatchingPosts = Post::factory()->count(5)->create([
-        'title' => 'Different Title',
-        'rating' => 3,
-        'is_published' => false,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($matchingPosts->merge($nonMatchingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'contains',
-                    'settings' => ['text' => 'Test'],
-                ],
-            ],
-            [
-                'type' => 'rating',
-                'data' => [
-                    'operator' => 'isMin',
-                    'settings' => ['number' => 5],
-                ],
-            ],
-            [
-                'type' => 'is_published',
-                'data' => [
-                    'operator' => 'isTrue',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can filter records using OR block rules', function (): void {
-    $highRatedPosts = Post::factory()->count(3)->create([
-        'title' => 'High Rated',
-        'rating' => 9,
-        'is_published' => false,
-    ]);
-
-    $publishedPosts = Post::factory()->count(3)->create([
-        'title' => 'Published',
-        'rating' => 3,
-        'is_published' => true,
-    ]);
-
-    $nonMatchingPosts = Post::factory()->count(5)->create([
-        'title' => 'Low Rated',
-        'rating' => 2,
-        'is_published' => false,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highRatedPosts->merge($publishedPosts)->merge($nonMatchingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'or',
-                'data' => [
-                    'groups' => [
-                        [
-                            'rules' => [
-                                [
-                                    'type' => 'rating',
-                                    'data' => [
-                                        'operator' => 'isMin',
-                                        'settings' => ['number' => 8],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highRatedPosts->merge($publishedPosts)->merge($nonMatchingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'or',
+                    'data' => [
+                        'groups' => [
+                            [
+                                'rules' => [
+                                    [
+                                        'type' => 'rating',
+                                        'data' => [
+                                            'operator' => 'isMin',
+                                            'settings' => ['number' => 8],
+                                        ],
                                     ],
                                 ],
                             ],
-                        ],
-                        [
-                            'rules' => [
-                                [
-                                    'type' => 'is_published',
-                                    'data' => [
-                                        'operator' => 'isTrue',
-                                        'settings' => [],
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($highRatedPosts->merge($publishedPosts))
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can filter records using deeply nested OR and AND rules', function (): void {
-    // Matching: (title contains "Premium" AND rating >= 8) OR (is_published = true AND rating >= 5)
-    $premiumHighRated = Post::factory()->count(2)->create([
-        'title' => 'Premium Product',
-        'rating' => 9,
-        'is_published' => false,
-    ]);
-
-    $publishedMediumRated = Post::factory()->count(2)->create([
-        'title' => 'Standard Product',
-        'rating' => 6,
-        'is_published' => true,
-    ]);
-
-    $nonMatchingPosts = Post::factory()->count(5)->create([
-        'title' => 'Basic Product',
-        'rating' => 3,
-        'is_published' => false,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($premiumHighRated->merge($publishedMediumRated)->merge($nonMatchingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'or',
-                'data' => [
-                    'groups' => [
-                        [
-                            'rules' => [
-                                [
-                                    'type' => 'title',
-                                    'data' => [
-                                        'operator' => 'contains',
-                                        'settings' => ['text' => 'Premium'],
-                                    ],
-                                ],
-                                [
-                                    'type' => 'rating',
-                                    'data' => [
-                                        'operator' => 'isMin',
-                                        'settings' => ['number' => 8],
-                                    ],
-                                ],
-                            ],
-                        ],
-                        [
-                            'rules' => [
-                                [
-                                    'type' => 'is_published',
-                                    'data' => [
-                                        'operator' => 'isTrue',
-                                        'settings' => [],
-                                    ],
-                                ],
-                                [
-                                    'type' => 'rating',
-                                    'data' => [
-                                        'operator' => 'isMin',
-                                        'settings' => ['number' => 5],
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($premiumHighRated->merge($publishedMediumRated))
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can filter records using multiple constraints with different data types', function (): void {
-    $targetDate = now()->subDays(2);
-    $author = User::factory()->create(['name' => 'Alice Smith']);
-
-    $matchingPosts = Post::factory()->count(3)->create([
-        'title' => 'Featured Article',
-        'rating' => 7,
-        'is_published' => true,
-        'created_at' => $targetDate,
-        'author_id' => $author->id,
-    ]);
-
-    $nonMatchingPosts = Post::factory()->count(5)->create([
-        'title' => 'Draft Article',
-        'rating' => 2,
-        'is_published' => false,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($matchingPosts->merge($nonMatchingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'title',
-                'data' => [
-                    'operator' => 'contains',
-                    'settings' => ['text' => 'Featured'],
-                ],
-            ],
-            [
-                'type' => 'rating',
-                'data' => [
-                    'operator' => 'isMin',
-                    'settings' => ['number' => 5],
-                ],
-            ],
-            [
-                'type' => 'is_published',
-                'data' => [
-                    'operator' => 'isTrue',
-                    'settings' => [],
-                ],
-            ],
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => ['date' => now()->subDays(1)->toDateString()],
-                ],
-            ],
-            [
-                'type' => 'author_name',
-                'data' => [
-                    'operator' => 'contains',
-                    'settings' => ['text' => 'Alice'],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can combine multiple OR blocks with AND conditions', function (): void {
-    // Must be published AND ((rating >= 8) OR (title contains "Featured"))
-    $publishedHighRated = Post::factory()->count(2)->create([
-        'title' => 'Regular Post',
-        'rating' => 9,
-        'is_published' => true,
-    ]);
-
-    $publishedFeatured = Post::factory()->count(2)->create([
-        'title' => 'Featured Content',
-        'rating' => 5,
-        'is_published' => true,
-    ]);
-
-    $unpublishedHighRated = Post::factory()->count(2)->create([
-        'title' => 'Regular Post',
-        'rating' => 9,
-        'is_published' => false,
-    ]);
-
-    $unpublishedFeatured = Post::factory()->count(2)->create([
-        'title' => 'Featured Content',
-        'rating' => 5,
-        'is_published' => false,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords(
-            $publishedHighRated
-                ->merge($publishedFeatured)
-                ->merge($unpublishedHighRated)
-                ->merge($unpublishedFeatured)
-        )
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'is_published',
-                'data' => [
-                    'operator' => 'isTrue',
-                    'settings' => [],
-                ],
-            ],
-            [
-                'type' => 'or',
-                'data' => [
-                    'groups' => [
-                        [
-                            'rules' => [
-                                [
-                                    'type' => 'rating',
-                                    'data' => [
-                                        'operator' => 'isMin',
-                                        'settings' => ['number' => 8],
-                                    ],
-                                ],
-                            ],
-                        ],
-                        [
-                            'rules' => [
-                                [
-                                    'type' => 'title',
-                                    'data' => [
-                                        'operator' => 'contains',
-                                        'settings' => ['text' => 'Featured'],
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($publishedHighRated->merge($publishedFeatured))
-        ->assertCanNotSeeTableRecords($unpublishedHighRated->merge($unpublishedFeatured));
-});
-
-it('can filter records using text constraint with relationship method', function (): void {
-    $matchingAuthor = User::factory()->create(['email' => 'john@example.com']);
-    $matchingPosts = Post::factory()->count(5)->create(['author_id' => $matchingAuthor->id]);
-
-    $nonMatchingAuthor = User::factory()->create(['email' => 'jane@different.com']);
-    $nonMatchingPosts = Post::factory()->count(5)->create(['author_id' => $nonMatchingAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($matchingPosts->merge($nonMatchingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.email',
-                'data' => [
-                    'operator' => 'contains',
-                    'settings' => ['text' => 'example.com'],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can filter records using boolean constraint with relationship method', function (): void {
-    $activeAuthor = User::factory()->create(['has_email_authentication' => true]);
-    $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
-
-    $inactiveAuthor = User::factory()->create(['has_email_authentication' => false]);
-    $inactivePosts = Post::factory()->count(5)->create(['author_id' => $inactiveAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($activePosts->merge($inactivePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.has_email_authentication',
-                'data' => [
-                    'operator' => 'isTrue',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($activePosts)
-        ->assertCanNotSeeTableRecords($inactivePosts);
-});
-
-it('can filter records using boolean constraint with relationship method and inverse operator', function (): void {
-    $activeAuthor = User::factory()->create(['has_email_authentication' => true]);
-    $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
-
-    $inactiveAuthor = User::factory()->create(['has_email_authentication' => false]);
-    $inactivePosts = Post::factory()->count(5)->create(['author_id' => $inactiveAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($activePosts->merge($inactivePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.has_email_authentication',
-                'data' => [
-                    'operator' => 'isTrue.inverse',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($inactivePosts)
-        ->assertCanNotSeeTableRecords($activePosts);
-});
-
-it('can filter records using number constraint with relationship method', function (): void {
-    $highScoreAuthor = User::factory()->create(['score' => 95]);
-    $highScorePosts = Post::factory()->count(5)->create(['author_id' => $highScoreAuthor->id]);
-
-    $lowScoreAuthor = User::factory()->create(['score' => 45]);
-    $lowScorePosts = Post::factory()->count(5)->create(['author_id' => $lowScoreAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highScorePosts->merge($lowScorePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.score',
-                'data' => [
-                    'operator' => 'isMin',
-                    'settings' => ['number' => 80, 'aggregate' => null],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($highScorePosts)
-        ->assertCanNotSeeTableRecords($lowScorePosts);
-});
-
-it('can filter records using number constraint with relationship method and inverse operator', function (): void {
-    $highScoreAuthor = User::factory()->create(['score' => 95]);
-    $highScorePosts = Post::factory()->count(5)->create(['author_id' => $highScoreAuthor->id]);
-
-    $lowScoreAuthor = User::factory()->create(['score' => 45]);
-    $lowScorePosts = Post::factory()->count(5)->create(['author_id' => $lowScoreAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highScorePosts->merge($lowScorePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.score',
-                'data' => [
-                    'operator' => 'isMin.inverse',
-                    'settings' => ['number' => 80, 'aggregate' => null],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($lowScorePosts)
-        ->assertCanNotSeeTableRecords($highScorePosts);
-});
-
-it('can filter records using select constraint with relationship method', function (): void {
-    $activeAuthor = User::factory()->create(['status' => 'active']);
-    $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
-
-    $pendingAuthor = User::factory()->create(['status' => 'pending']);
-    $pendingPosts = Post::factory()->count(5)->create(['author_id' => $pendingAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($activePosts->merge($pendingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.status',
-                'data' => [
-                    'operator' => 'is',
-                    'settings' => ['value' => 'active'],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($activePosts)
-        ->assertCanNotSeeTableRecords($pendingPosts);
-});
-
-it('can filter records using select constraint with relationship method and inverse operator', function (): void {
-    $activeAuthor = User::factory()->create(['status' => 'active']);
-    $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
-
-    $pendingAuthor = User::factory()->create(['status' => 'pending']);
-    $pendingPosts = Post::factory()->count(5)->create(['author_id' => $pendingAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($activePosts->merge($pendingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.status',
-                'data' => [
-                    'operator' => 'is.inverse',
-                    'settings' => ['value' => 'active'],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($pendingPosts)
-        ->assertCanNotSeeTableRecords($activePosts);
-});
-
-it('can filter records using date constraint with relationship method', function (): void {
-    $recentDate = '2024-06-20';
-    $oldDate = '2024-01-10';
-    $filterDate = '2024-06-15';
-
-    $recentAuthor = User::factory()->create(['email_verified_at' => $recentDate]);
-    $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
-
-    $oldAuthor = User::factory()->create(['email_verified_at' => $oldDate]);
-    $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.email_verified_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => ['date' => $filterDate],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with relationship method and inverse operator', function (): void {
-    $recentDate = '2024-06-20';
-    $oldDate = '2024-01-10';
-    $filterDate = '2024-06-15';
-
-    $recentAuthor = User::factory()->create(['email_verified_at' => $recentDate]);
-    $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
-
-    $oldAuthor = User::factory()->create(['email_verified_at' => $oldDate]);
-    $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.email_verified_at',
-                'data' => [
-                    'operator' => 'isAfter.inverse',
-                    'settings' => ['date' => $filterDate],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can combine relationship constraints with regular constraints', function (): void {
-    $activeHighScoreAuthor = User::factory()->create([
-        'score' => 95,
-        'status' => 'active',
-    ]);
-    $matchingPosts = Post::factory()->count(3)->create([
-        'author_id' => $activeHighScoreAuthor->id,
-        'is_published' => true,
-    ]);
-
-    $activeHighScoreUnpublished = Post::factory()->count(2)->create([
-        'author_id' => $activeHighScoreAuthor->id,
-        'is_published' => false,
-    ]);
-
-    $inactiveAuthor = User::factory()->create([
-        'score' => 95,
-        'status' => 'inactive',
-    ]);
-    $nonMatchingPosts = Post::factory()->count(3)->create([
-        'author_id' => $inactiveAuthor->id,
-        'is_published' => true,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($matchingPosts->merge($activeHighScoreUnpublished)->merge($nonMatchingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.score',
-                'data' => [
-                    'operator' => 'isMin',
-                    'settings' => ['number' => 80, 'aggregate' => null],
-                ],
-            ],
-            [
-                'type' => 'author.status',
-                'data' => [
-                    'operator' => 'is',
-                    'settings' => ['value' => 'active'],
-                ],
-            ],
-            [
-                'type' => 'is_published',
-                'data' => [
-                    'operator' => 'isTrue',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($activeHighScoreUnpublished->merge($nonMatchingPosts));
-});
-
-it('can filter records using number constraint with sum aggregate on relationship', function (): void {
-    // Create user with high total rating across all posts
-    $highTotalUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $highTotalUser->id,
-        'rating' => 8, // Total: 24
-    ]);
-
-    // Create user with low total rating across all posts
-    $lowTotalUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $lowTotalUser->id,
-        'rating' => 2, // Total: 6
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highTotalUser, $lowTotalUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts.rating',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 20, 'aggregate' => 'sum'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highTotalUser])
-        ->assertCanNotSeeTableRecords([$lowTotalUser]);
-});
-
-it('can filter records using number constraint with average aggregate on relationship', function (): void {
-    // Create user with high average rating
-    $highAvgUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $highAvgUser->id,
-        'rating' => 9, // Average: 9
-    ]);
-
-    // Create user with low average rating
-    $lowAvgUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $lowAvgUser->id,
-        'rating' => 3, // Average: 3
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts.rating',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 7, 'aggregate' => 'avg'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highAvgUser])
-        ->assertCanNotSeeTableRecords([$lowAvgUser]);
-});
-
-it('can filter records using number constraint with min aggregate on relationship', function (): void {
-    // Create user where even the lowest rating is high
-    $highMinUser = User::factory()->create();
-    Post::factory()->create([
-        'author_id' => $highMinUser->id,
-        'rating' => 8,
-    ]);
-    Post::factory()->create([
-        'author_id' => $highMinUser->id,
-        'rating' => 9,
-    ]);
-    Post::factory()->create([
-        'author_id' => $highMinUser->id,
-        'rating' => 10,
-    ]);
-
-    // Create user with at least one low rating
-    $lowMinUser = User::factory()->create();
-    Post::factory()->create([
-        'author_id' => $lowMinUser->id,
-        'rating' => 2, // This is the min
-    ]);
-    Post::factory()->create([
-        'author_id' => $lowMinUser->id,
-        'rating' => 9,
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highMinUser, $lowMinUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts.rating',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 7, 'aggregate' => 'min'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highMinUser])
-        ->assertCanNotSeeTableRecords([$lowMinUser]);
-});
-
-it('can filter records using number constraint with max aggregate on relationship', function (): void {
-    // Create user with at least one very high rating
-    $highMaxUser = User::factory()->create();
-    Post::factory()->create([
-        'author_id' => $highMaxUser->id,
-        'rating' => 10, // This is the max
-    ]);
-    Post::factory()->create([
-        'author_id' => $highMaxUser->id,
-        'rating' => 5,
-    ]);
-
-    // Create user where even the highest rating is low
-    $lowMaxUser = User::factory()->create();
-    Post::factory()->create([
-        'author_id' => $lowMaxUser->id,
-        'rating' => 3,
-    ]);
-    Post::factory()->create([
-        'author_id' => $lowMaxUser->id,
-        'rating' => 4, // This is the max
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highMaxUser, $lowMaxUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts.rating',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 8, 'aggregate' => 'max'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highMaxUser])
-        ->assertCanNotSeeTableRecords([$lowMaxUser]);
-});
-
-it('can filter records using number constraint with aggregate and inverse operator', function (): void {
-    // Create user with high average rating
-    $highAvgUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $highAvgUser->id,
-        'rating' => 9,
-    ]);
-
-    // Create user with low average rating
-    $lowAvgUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $lowAvgUser->id,
-        'rating' => 3,
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts.rating',
-                    'data' => [
-                        'operator' => 'isMin.inverse', // Less than
-                        'settings' => ['number' => 7, 'aggregate' => 'avg'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$lowAvgUser])
-        ->assertCanNotSeeTableRecords([$highAvgUser]);
-});
-
-it('can filter records using number constraint with sum aggregate on `BelongsToMany` relationship', function (): void {
-    // Create user with high total budget across all teams
-    $highTotalUser = User::factory()->create();
-    $highTeams = Team::factory()->count(3)->create(['budget' => 5000]); // Total: 15000
-    $highTotalUser->teams()->attach($highTeams->pluck('id'));
-
-    // Create user with low total budget across all teams
-    $lowTotalUser = User::factory()->create();
-    $lowTeams = Team::factory()->count(2)->create(['budget' => 1000]); // Total: 2000
-    $lowTotalUser->teams()->attach($lowTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highTotalUser, $lowTotalUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams.budget',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 10000, 'aggregate' => 'sum'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highTotalUser])
-        ->assertCanNotSeeTableRecords([$lowTotalUser]);
-});
-
-it('can filter records using number constraint with average aggregate on `BelongsToMany` relationship', function (): void {
-    // Create user with high average budget
-    $highAvgUser = User::factory()->create();
-    $highTeams = Team::factory()->count(3)->create(['budget' => 8000]); // Average: 8000
-    $highAvgUser->teams()->attach($highTeams->pluck('id'));
-
-    // Create user with low average budget
-    $lowAvgUser = User::factory()->create();
-    $lowTeams = Team::factory()->count(3)->create(['budget' => 2000]); // Average: 2000
-    $lowAvgUser->teams()->attach($lowTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams.budget',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 5000, 'aggregate' => 'avg'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highAvgUser])
-        ->assertCanNotSeeTableRecords([$lowAvgUser]);
-});
-
-it('can filter records using number constraint with min aggregate on `BelongsToMany` relationship', function (): void {
-    // Create user where even the lowest budget is high
-    $highMinUser = User::factory()->create();
-    $highMinTeams = collect([
-        Team::factory()->create(['budget' => 6000]),
-        Team::factory()->create(['budget' => 8000]),
-        Team::factory()->create(['budget' => 10000]),
-    ]);
-    $highMinUser->teams()->attach($highMinTeams->pluck('id'));
-
-    // Create user with at least one low budget team
-    $lowMinUser = User::factory()->create();
-    $lowMinTeams = collect([
-        Team::factory()->create(['budget' => 1000]), // This is the min
-        Team::factory()->create(['budget' => 9000]),
-    ]);
-    $lowMinUser->teams()->attach($lowMinTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highMinUser, $lowMinUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams.budget',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 5000, 'aggregate' => 'min'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highMinUser])
-        ->assertCanNotSeeTableRecords([$lowMinUser]);
-});
-
-it('can filter records using number constraint with max aggregate on `BelongsToMany` relationship', function (): void {
-    // Create user with at least one very high budget team
-    $highMaxUser = User::factory()->create();
-    $highMaxTeams = collect([
-        Team::factory()->create(['budget' => 15000]), // This is the max
-        Team::factory()->create(['budget' => 3000]),
-    ]);
-    $highMaxUser->teams()->attach($highMaxTeams->pluck('id'));
-
-    // Create user where even the highest budget is low
-    $lowMaxUser = User::factory()->create();
-    $lowMaxTeams = collect([
-        Team::factory()->create(['budget' => 2000]),
-        Team::factory()->create(['budget' => 3000]), // This is the max
-    ]);
-    $lowMaxUser->teams()->attach($lowMaxTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highMaxUser, $lowMaxUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams.budget',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 10000, 'aggregate' => 'max'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highMaxUser])
-        ->assertCanNotSeeTableRecords([$lowMaxUser]);
-});
-
-it('can filter records using number constraint with aggregate and inverse operator on `BelongsToMany` relationship', function (): void {
-    // Create user with high average budget
-    $highAvgUser = User::factory()->create();
-    $highTeams = Team::factory()->count(3)->create(['budget' => 8000]);
-    $highAvgUser->teams()->attach($highTeams->pluck('id'));
-
-    // Create user with low average budget
-    $lowAvgUser = User::factory()->create();
-    $lowTeams = Team::factory()->count(3)->create(['budget' => 2000]);
-    $lowAvgUser->teams()->attach($lowTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams.budget',
-                    'data' => [
-                        'operator' => 'isMin.inverse', // Less than
-                        'settings' => ['number' => 5000, 'aggregate' => 'avg'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$lowAvgUser])
-        ->assertCanNotSeeTableRecords([$highAvgUser]);
-});
-
-// Legacy `relationship()` method tests - these ensure backwards compatibility
-
-it('can filter records using text constraint with relationship method (legacy `relationship()`)', function (): void {
-    $matchingAuthor = User::factory()->create(['email' => 'john@example.com']);
-    $matchingPosts = Post::factory()->count(5)->create(['author_id' => $matchingAuthor->id]);
-
-    $nonMatchingAuthor = User::factory()->create(['email' => 'jane@different.com']);
-    $nonMatchingPosts = Post::factory()->count(5)->create(['author_id' => $nonMatchingAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($matchingPosts->merge($nonMatchingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_email',
-                'data' => [
-                    'operator' => 'contains',
-                    'settings' => ['text' => 'example.com'],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($nonMatchingPosts);
-});
-
-it('can filter records using boolean constraint with relationship method (legacy `relationship()`)', function (): void {
-    $activeAuthor = User::factory()->create(['has_email_authentication' => true]);
-    $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
-
-    $inactiveAuthor = User::factory()->create(['has_email_authentication' => false]);
-    $inactivePosts = Post::factory()->count(5)->create(['author_id' => $inactiveAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($activePosts->merge($inactivePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_has_email_auth',
-                'data' => [
-                    'operator' => 'isTrue',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($activePosts)
-        ->assertCanNotSeeTableRecords($inactivePosts);
-});
-
-it('can filter records using boolean constraint with relationship method and inverse operator (legacy `relationship()`)', function (): void {
-    $activeAuthor = User::factory()->create(['has_email_authentication' => true]);
-    $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
-
-    $inactiveAuthor = User::factory()->create(['has_email_authentication' => false]);
-    $inactivePosts = Post::factory()->count(5)->create(['author_id' => $inactiveAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($activePosts->merge($inactivePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_has_email_auth',
-                'data' => [
-                    'operator' => 'isTrue.inverse',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($inactivePosts)
-        ->assertCanNotSeeTableRecords($activePosts);
-});
-
-it('can filter records using number constraint with relationship method (legacy `relationship()`)', function (): void {
-    $highScoreAuthor = User::factory()->create(['score' => 95]);
-    $highScorePosts = Post::factory()->count(5)->create(['author_id' => $highScoreAuthor->id]);
-
-    $lowScoreAuthor = User::factory()->create(['score' => 45]);
-    $lowScorePosts = Post::factory()->count(5)->create(['author_id' => $lowScoreAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highScorePosts->merge($lowScorePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_score',
-                'data' => [
-                    'operator' => 'isMin',
-                    'settings' => ['number' => 80, 'aggregate' => null],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($highScorePosts)
-        ->assertCanNotSeeTableRecords($lowScorePosts);
-});
-
-it('can filter records using number constraint with relationship method and inverse operator (legacy `relationship()`)', function (): void {
-    $highScoreAuthor = User::factory()->create(['score' => 95]);
-    $highScorePosts = Post::factory()->count(5)->create(['author_id' => $highScoreAuthor->id]);
-
-    $lowScoreAuthor = User::factory()->create(['score' => 45]);
-    $lowScorePosts = Post::factory()->count(5)->create(['author_id' => $lowScoreAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($highScorePosts->merge($lowScorePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_score',
-                'data' => [
-                    'operator' => 'isMin.inverse',
-                    'settings' => ['number' => 80, 'aggregate' => null],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($lowScorePosts)
-        ->assertCanNotSeeTableRecords($highScorePosts);
-});
-
-it('can filter records using select constraint with relationship method (legacy `relationship()`)', function (): void {
-    $activeAuthor = User::factory()->create(['status' => 'active']);
-    $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
-
-    $pendingAuthor = User::factory()->create(['status' => 'pending']);
-    $pendingPosts = Post::factory()->count(5)->create(['author_id' => $pendingAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($activePosts->merge($pendingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_status',
-                'data' => [
-                    'operator' => 'is',
-                    'settings' => ['value' => 'active'],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($activePosts)
-        ->assertCanNotSeeTableRecords($pendingPosts);
-});
-
-it('can filter records using select constraint with relationship method and inverse operator (legacy `relationship()`)', function (): void {
-    $activeAuthor = User::factory()->create(['status' => 'active']);
-    $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
-
-    $pendingAuthor = User::factory()->create(['status' => 'pending']);
-    $pendingPosts = Post::factory()->count(5)->create(['author_id' => $pendingAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($activePosts->merge($pendingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_status',
-                'data' => [
-                    'operator' => 'is.inverse',
-                    'settings' => ['value' => 'active'],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($pendingPosts)
-        ->assertCanNotSeeTableRecords($activePosts);
-});
-
-it('can filter records using date constraint with relationship method (legacy `relationship()`)', function (): void {
-    $recentDate = '2024-06-20';
-    $oldDate = '2024-01-10';
-    $filterDate = '2024-06-15';
-
-    $recentAuthor = User::factory()->create(['email_verified_at' => $recentDate]);
-    $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
-
-    $oldAuthor = User::factory()->create(['email_verified_at' => $oldDate]);
-    $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_verified_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => ['date' => $filterDate],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with relationship method and inverse operator (legacy `relationship()`)', function (): void {
-    $recentDate = '2024-06-20';
-    $oldDate = '2024-01-10';
-    $filterDate = '2024-06-15';
-
-    $recentAuthor = User::factory()->create(['email_verified_at' => $recentDate]);
-    $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
-
-    $oldAuthor = User::factory()->create(['email_verified_at' => $oldDate]);
-    $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_verified_at',
-                'data' => [
-                    'operator' => 'isAfter.inverse',
-                    'settings' => ['date' => $filterDate],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can combine relationship constraints with regular constraints (legacy `relationship()`)', function (): void {
-    $activeHighScoreAuthor = User::factory()->create([
-        'score' => 95,
-        'status' => 'active',
-    ]);
-    $matchingPosts = Post::factory()->count(3)->create([
-        'author_id' => $activeHighScoreAuthor->id,
-        'is_published' => true,
-    ]);
-
-    $activeHighScoreUnpublished = Post::factory()->count(2)->create([
-        'author_id' => $activeHighScoreAuthor->id,
-        'is_published' => false,
-    ]);
-
-    $inactiveAuthor = User::factory()->create([
-        'score' => 95,
-        'status' => 'inactive',
-    ]);
-    $nonMatchingPosts = Post::factory()->count(3)->create([
-        'author_id' => $inactiveAuthor->id,
-        'is_published' => true,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($matchingPosts->merge($activeHighScoreUnpublished)->merge($nonMatchingPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author_score',
-                'data' => [
-                    'operator' => 'isMin',
-                    'settings' => ['number' => 80, 'aggregate' => null],
-                ],
-            ],
-            [
-                'type' => 'author_status',
-                'data' => [
-                    'operator' => 'is',
-                    'settings' => ['value' => 'active'],
-                ],
-            ],
-            [
-                'type' => 'is_published',
-                'data' => [
-                    'operator' => 'isTrue',
-                    'settings' => [],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($activeHighScoreUnpublished->merge($nonMatchingPosts));
-});
-
-it('can filter records using number constraint with sum aggregate on relationship (legacy `relationship()`)', function (): void {
-    // Create user with high total rating across all posts
-    $highTotalUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $highTotalUser->id,
-        'rating' => 8, // Total: 24
-    ]);
-
-    // Create user with low total rating across all posts
-    $lowTotalUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $lowTotalUser->id,
-        'rating' => 2, // Total: 6
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highTotalUser, $lowTotalUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts_rating',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 20, 'aggregate' => 'sum'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highTotalUser])
-        ->assertCanNotSeeTableRecords([$lowTotalUser]);
-});
-
-it('can filter records using number constraint with average aggregate on relationship (legacy `relationship()`)', function (): void {
-    // Create user with high average rating
-    $highAvgUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $highAvgUser->id,
-        'rating' => 9, // Average: 9
-    ]);
-
-    // Create user with low average rating
-    $lowAvgUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $lowAvgUser->id,
-        'rating' => 3, // Average: 3
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts_rating',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 7, 'aggregate' => 'avg'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highAvgUser])
-        ->assertCanNotSeeTableRecords([$lowAvgUser]);
-});
-
-it('can filter records using number constraint with min aggregate on relationship (legacy `relationship()`)', function (): void {
-    // Create user where even the lowest rating is high
-    $highMinUser = User::factory()->create();
-    Post::factory()->create([
-        'author_id' => $highMinUser->id,
-        'rating' => 8,
-    ]);
-    Post::factory()->create([
-        'author_id' => $highMinUser->id,
-        'rating' => 9,
-    ]);
-    Post::factory()->create([
-        'author_id' => $highMinUser->id,
-        'rating' => 10,
-    ]);
-
-    // Create user with at least one low rating
-    $lowMinUser = User::factory()->create();
-    Post::factory()->create([
-        'author_id' => $lowMinUser->id,
-        'rating' => 2, // This is the min
-    ]);
-    Post::factory()->create([
-        'author_id' => $lowMinUser->id,
-        'rating' => 9,
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highMinUser, $lowMinUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts_rating',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 7, 'aggregate' => 'min'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highMinUser])
-        ->assertCanNotSeeTableRecords([$lowMinUser]);
-});
-
-it('can filter records using number constraint with max aggregate on relationship (legacy `relationship()`)', function (): void {
-    // Create user with at least one very high rating
-    $highMaxUser = User::factory()->create();
-    Post::factory()->create([
-        'author_id' => $highMaxUser->id,
-        'rating' => 10, // This is the max
-    ]);
-    Post::factory()->create([
-        'author_id' => $highMaxUser->id,
-        'rating' => 5,
-    ]);
-
-    // Create user where even the highest rating is low
-    $lowMaxUser = User::factory()->create();
-    Post::factory()->create([
-        'author_id' => $lowMaxUser->id,
-        'rating' => 3,
-    ]);
-    Post::factory()->create([
-        'author_id' => $lowMaxUser->id,
-        'rating' => 4, // This is the max
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highMaxUser, $lowMaxUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts_rating',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 8, 'aggregate' => 'max'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highMaxUser])
-        ->assertCanNotSeeTableRecords([$lowMaxUser]);
-});
-
-it('can filter records using number constraint with aggregate and inverse operator (legacy `relationship()`)', function (): void {
-    // Create user with high average rating
-    $highAvgUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $highAvgUser->id,
-        'rating' => 9,
-    ]);
-
-    // Create user with low average rating
-    $lowAvgUser = User::factory()->create();
-    Post::factory()->count(3)->create([
-        'author_id' => $lowAvgUser->id,
-        'rating' => 3,
-    ]);
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'posts_rating',
-                    'data' => [
-                        'operator' => 'isMin.inverse', // Less than
-                        'settings' => ['number' => 7, 'aggregate' => 'avg'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$lowAvgUser])
-        ->assertCanNotSeeTableRecords([$highAvgUser]);
-});
-
-it('can filter records using number constraint with sum aggregate on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
-    // Create user with high total budget across all teams
-    $highTotalUser = User::factory()->create();
-    $highTeams = Team::factory()->count(3)->create(['budget' => 5000]); // Total: 15000
-    $highTotalUser->teams()->attach($highTeams->pluck('id'));
-
-    // Create user with low total budget across all teams
-    $lowTotalUser = User::factory()->create();
-    $lowTeams = Team::factory()->count(2)->create(['budget' => 1000]); // Total: 2000
-    $lowTotalUser->teams()->attach($lowTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highTotalUser, $lowTotalUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams_budget',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 10000, 'aggregate' => 'sum'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highTotalUser])
-        ->assertCanNotSeeTableRecords([$lowTotalUser]);
-});
-
-it('can filter records using number constraint with average aggregate on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
-    // Create user with high average budget
-    $highAvgUser = User::factory()->create();
-    $highTeams = Team::factory()->count(3)->create(['budget' => 8000]); // Average: 8000
-    $highAvgUser->teams()->attach($highTeams->pluck('id'));
-
-    // Create user with low average budget
-    $lowAvgUser = User::factory()->create();
-    $lowTeams = Team::factory()->count(3)->create(['budget' => 2000]); // Average: 2000
-    $lowAvgUser->teams()->attach($lowTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams_budget',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 5000, 'aggregate' => 'avg'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highAvgUser])
-        ->assertCanNotSeeTableRecords([$lowAvgUser]);
-});
-
-it('can filter records using number constraint with min aggregate on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
-    // Create user where even the lowest budget is high
-    $highMinUser = User::factory()->create();
-    $highMinTeams = collect([
-        Team::factory()->create(['budget' => 6000]),
-        Team::factory()->create(['budget' => 8000]),
-        Team::factory()->create(['budget' => 10000]),
-    ]);
-    $highMinUser->teams()->attach($highMinTeams->pluck('id'));
-
-    // Create user with at least one low budget team
-    $lowMinUser = User::factory()->create();
-    $lowMinTeams = collect([
-        Team::factory()->create(['budget' => 1000]), // This is the min
-        Team::factory()->create(['budget' => 9000]),
-    ]);
-    $lowMinUser->teams()->attach($lowMinTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highMinUser, $lowMinUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams_budget',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 5000, 'aggregate' => 'min'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highMinUser])
-        ->assertCanNotSeeTableRecords([$lowMinUser]);
-});
-
-it('can filter records using number constraint with max aggregate on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
-    // Create user with at least one very high budget team
-    $highMaxUser = User::factory()->create();
-    $highMaxTeams = collect([
-        Team::factory()->create(['budget' => 15000]), // This is the max
-        Team::factory()->create(['budget' => 3000]),
-    ]);
-    $highMaxUser->teams()->attach($highMaxTeams->pluck('id'));
-
-    // Create user where even the highest budget is low
-    $lowMaxUser = User::factory()->create();
-    $lowMaxTeams = collect([
-        Team::factory()->create(['budget' => 2000]),
-        Team::factory()->create(['budget' => 3000]), // This is the max
-    ]);
-    $lowMaxUser->teams()->attach($lowMaxTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highMaxUser, $lowMaxUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams_budget',
-                    'data' => [
-                        'operator' => 'isMin',
-                        'settings' => ['number' => 10000, 'aggregate' => 'max'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$highMaxUser])
-        ->assertCanNotSeeTableRecords([$lowMaxUser]);
-});
-
-it('can filter records using number constraint with aggregate and inverse operator on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
-    // Create user with high average budget
-    $highAvgUser = User::factory()->create();
-    $highTeams = Team::factory()->count(3)->create(['budget' => 8000]);
-    $highAvgUser->teams()->attach($highTeams->pluck('id'));
-
-    // Create user with low average budget
-    $lowAvgUser = User::factory()->create();
-    $lowTeams = Team::factory()->count(3)->create(['budget' => 2000]);
-    $lowAvgUser->teams()->attach($lowTeams->pluck('id'));
-
-    livewire(UsersQueryBuilderTable::class)
-        ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
-        ->tap(fn ($livewire) => $livewire
-            ->set('tableDeferredFilters.query_builder.rules', [
-                [
-                    'type' => 'teams_budget',
-                    'data' => [
-                        'operator' => 'isMin.inverse', // Less than
-                        'settings' => ['number' => 5000, 'aggregate' => 'avg'],
-                    ],
-                ],
-            ])
-            ->call('applyTableFilters'))
-        ->assertCanSeeTableRecords([$lowAvgUser])
-        ->assertCanNotSeeTableRecords([$highAvgUser]);
-});
-
-// Relative Date Filtering Tests - IsAfterOperator
-
-it('can filter records using date constraint with is after operator in `absolute` mode', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(5),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'absolute',
-                        'date' => now()->toDateString(),
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with `today` preset', function (): void {
-    $todayPosts = Post::factory()->count(3)->create([
-        'created_at' => now()->startOfDay(),
-    ]);
-
-    $futurePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(5),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($todayPosts->merge($futurePosts)->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'today',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($todayPosts->merge($futurePosts))
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with `this_year` preset', function (): void {
-    $thisYearPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->startOfYear()->addDays(30),
-    ]);
-
-    $lastYearPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subYear(),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($thisYearPosts->merge($lastYearPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'this_year',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($thisYearPosts)
-        ->assertCanNotSeeTableRecords($lastYearPosts);
-});
-
-it('can filter records using date constraint with is after operator with `past_week` preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(3),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(10),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with `past_2_weeks` preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(10),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(20),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_2_weeks',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with `past_month` preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(15),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(45),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with `past_quarter` preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(2),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(4),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_quarter',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with `past_6_months` preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(4),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(8),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_6_months',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with `past_year` preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(6),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(18),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_year',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with `next_week` preset', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(14),
-    ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(3),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-it('can filter records using date constraint with is after operator with `next_month` preset', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(2),
-    ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(15),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-it('can filter records using date constraint with is after operator with custom relative `day` unit past', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(3),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(15),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 10,
-                        'relative_unit' => 'day',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with custom relative `week` unit past', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(10),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subWeeks(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 3,
-                        'relative_unit' => 'week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with custom relative `month` unit past', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(2),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(6),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 4,
-                        'relative_unit' => 'month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with custom relative `year` unit past', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subYear(),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subYears(4),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 2,
-                        'relative_unit' => 'year',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using date constraint with is after operator with custom relative `day` unit future', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(20),
-    ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(3),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 10,
-                        'relative_unit' => 'day',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-it('can filter records using date constraint with is after operator with custom relative `month` unit future', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(5),
-    ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonth(),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 3,
-                        'relative_unit' => 'month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-it('can filter records using date constraint with is after operator inverse with preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(3),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(15),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter.inverse',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using date constraint with is after operator inverse with custom relative', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(3),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(20),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter.inverse',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 10,
-                        'relative_unit' => 'day',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-// Relative Date Filtering Tests - IsBeforeOperator
-
-it('can filter records using date constraint with is before operator in `absolute` mode', function (): void {
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(5),
-    ]);
-
-    $futurePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($oldPosts->merge($futurePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'absolute',
-                        'date' => now()->toDateString(),
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($futurePosts);
-});
-
-it('can filter records using date constraint with is before operator with `today` preset', function (): void {
-    $todayPosts = Post::factory()->count(3)->create([
-        'created_at' => now()->startOfDay(),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(5),
-    ]);
-
-    $futurePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($todayPosts->merge($oldPosts)->merge($futurePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'today',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($todayPosts->merge($oldPosts))
-        ->assertCanNotSeeTableRecords($futurePosts);
-});
-
-it('can filter records using date constraint with is before operator with `next_week` preset', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(3),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(14),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with `next_2_weeks` preset', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(7),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(21),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_2_weeks',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with `next_month` preset', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(15),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(2),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with `next_quarter` preset', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(2),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_quarter',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with `next_6_months` preset', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(4),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(8),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_6_months',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with `next_year` preset', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(6),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(18),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_year',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with `past_week` preset', function (): void {
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(14),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(3),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($oldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using date constraint with is before operator with `past_month` preset', function (): void {
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(2),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(15),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($oldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using date constraint with is before operator with custom relative `day` unit future', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(3),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(20),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 10,
-                        'relative_unit' => 'day',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with custom relative `week` unit future', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(7),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addWeeks(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 3,
-                        'relative_unit' => 'week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with custom relative `month` unit future', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(2),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addMonths(6),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 4,
-                        'relative_unit' => 'month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with custom relative `year` unit future', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addYear(),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addYears(4),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 2,
-                        'relative_unit' => 'year',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($soonPosts)
-        ->assertCanNotSeeTableRecords($laterPosts);
-});
-
-it('can filter records using date constraint with is before operator with custom relative `day` unit past', function (): void {
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(20),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(3),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($oldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 10,
-                        'relative_unit' => 'day',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using date constraint with is before operator with custom relative `month` unit past', function (): void {
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(6),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(2),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($oldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 4,
-                        'relative_unit' => 'month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using date constraint with is before operator inverse with preset', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(3),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(14),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore.inverse',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($laterPosts)
-        ->assertCanNotSeeTableRecords($soonPosts);
-});
-
-it('can filter records using date constraint with is before operator inverse with custom relative', function (): void {
-    $soonPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(5),
-    ]);
-
-    $laterPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(25),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore.inverse',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 15,
-                        'relative_unit' => 'day',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($laterPosts)
-        ->assertCanNotSeeTableRecords($soonPosts);
-});
-
-// Combined relative date tests
-
-it('can filter records using combined `relative` date constraints', function (): void {
-    // Posts created in the last month but before next week
-    $matchingPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(10),
-    ]);
-
-    // Posts created more than a month ago
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(2),
-    ]);
-
-    // Posts created in the future
-    $futurePosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addWeeks(2),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($matchingPosts->merge($oldPosts)->merge($futurePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_month',
-                    ],
-                ],
-            ],
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_week',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($matchingPosts)
-        ->assertCanNotSeeTableRecords($oldPosts->merge($futurePosts));
-});
-
-it('can filter records using `relative` date constraint with relationship', function (): void {
-    $recentAuthor = User::factory()->create(['email_verified_at' => now()->subDays(5)]);
-    $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
-
-    $oldAuthor = User::factory()->create(['email_verified_at' => now()->subMonths(3)]);
-    $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'author.email_verified_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_month',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using `relative` date constraint with OR rules', function (): void {
-    // Posts created in the past week
-    $recentPosts = Post::factory()->count(3)->create([
-        'created_at' => now()->subDays(3),
-        'is_published' => false,
-    ]);
-
-    // Published posts (regardless of date)
-    $publishedPosts = Post::factory()->count(3)->create([
-        'created_at' => now()->subMonths(3),
-        'is_published' => true,
-    ]);
-
-    // Old unpublished posts
-    $oldUnpublishedPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subMonths(2),
-        'is_published' => false,
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($publishedPosts)->merge($oldUnpublishedPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'or',
-                'data' => [
-                    'groups' => [
-                        [
-                            'rules' => [
-                                [
-                                    'type' => 'created_at',
-                                    'data' => [
-                                        'operator' => 'isAfter',
-                                        'settings' => [
-                                            'mode' => 'relative',
-                                            'preset' => 'past_week',
+                            [
+                                'rules' => [
+                                    [
+                                        'type' => 'is_published',
+                                        'data' => [
+                                            'operator' => 'isTrue',
+                                            'settings' => [],
                                         ],
                                     ],
                                 ],
                             ],
                         ],
-                        [
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($highRatedPosts->merge($publishedPosts))
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
+
+    it('can filter records using deeply nested OR and AND rules', function () use ($applyQueryBuilderFilter): void {
+        // Matching: (title contains "Premium" AND rating >= 8) OR (is_published = true AND rating >= 5)
+        $premiumHighRated = Post::factory()->count(2)->create([
+            'title' => 'Premium Product',
+            'rating' => 9,
+            'is_published' => false,
+        ]);
+
+        $publishedMediumRated = Post::factory()->count(2)->create([
+            'title' => 'Standard Product',
+            'rating' => 6,
+            'is_published' => true,
+        ]);
+
+        $nonMatchingPosts = Post::factory()->count(5)->create([
+            'title' => 'Basic Product',
+            'rating' => 3,
+            'is_published' => false,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($premiumHighRated->merge($publishedMediumRated)->merge($nonMatchingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'or',
+                    'data' => [
+                        'groups' => [
+                            [
+                                'rules' => [
+                                    [
+                                        'type' => 'title',
+                                        'data' => [
+                                            'operator' => 'contains',
+                                            'settings' => ['text' => 'Premium'],
+                                        ],
+                                    ],
+                                    [
+                                        'type' => 'rating',
+                                        'data' => [
+                                            'operator' => 'isMin',
+                                            'settings' => ['number' => 8],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                            [
+                                'rules' => [
+                                    [
+                                        'type' => 'is_published',
+                                        'data' => [
+                                            'operator' => 'isTrue',
+                                            'settings' => [],
+                                        ],
+                                    ],
+                                    [
+                                        'type' => 'rating',
+                                        'data' => [
+                                            'operator' => 'isMin',
+                                            'settings' => ['number' => 5],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($premiumHighRated->merge($publishedMediumRated))
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
+
+    it('can filter records using multiple constraints with different data types', function () use ($applyQueryBuilderFilter): void {
+        $targetDate = now()->subDays(2);
+        $author = User::factory()->create(['name' => 'Alice Smith']);
+
+        $matchingPosts = Post::factory()->count(3)->create([
+            'title' => 'Featured Article',
+            'rating' => 7,
+            'is_published' => true,
+            'created_at' => $targetDate,
+            'author_id' => $author->id,
+        ]);
+
+        $nonMatchingPosts = Post::factory()->count(5)->create([
+            'title' => 'Draft Article',
+            'rating' => 2,
+            'is_published' => false,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($matchingPosts->merge($nonMatchingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => 'Featured'],
+                    ],
+                ],
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 5],
+                    ],
+                ],
+                [
+                    'type' => 'is_published',
+                    'data' => [
+                        'operator' => 'isTrue',
+                        'settings' => [],
+                    ],
+                ],
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => ['date' => now()->subDays(1)->toDateString()],
+                    ],
+                ],
+                [
+                    'type' => 'author_name',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => 'Alice'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
+
+    it('can combine multiple OR blocks with AND conditions', function () use ($applyQueryBuilderFilter): void {
+        // Must be published AND ((rating >= 8) OR (title contains "Featured"))
+        $publishedHighRated = Post::factory()->count(2)->create([
+            'title' => 'Regular Post',
+            'rating' => 9,
+            'is_published' => true,
+        ]);
+
+        $publishedFeatured = Post::factory()->count(2)->create([
+            'title' => 'Featured Content',
+            'rating' => 5,
+            'is_published' => true,
+        ]);
+
+        $unpublishedHighRated = Post::factory()->count(2)->create([
+            'title' => 'Regular Post',
+            'rating' => 9,
+            'is_published' => false,
+        ]);
+
+        $unpublishedFeatured = Post::factory()->count(2)->create([
+            'title' => 'Featured Content',
+            'rating' => 5,
+            'is_published' => false,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords(
+                $publishedHighRated
+                    ->merge($publishedFeatured)
+                    ->merge($unpublishedHighRated)
+                    ->merge($unpublishedFeatured)
+            )
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'is_published',
+                    'data' => [
+                        'operator' => 'isTrue',
+                        'settings' => [],
+                    ],
+                ],
+                [
+                    'type' => 'or',
+                    'data' => [
+                        'groups' => [
+                            [
+                                'rules' => [
+                                    [
+                                        'type' => 'rating',
+                                        'data' => [
+                                            'operator' => 'isMin',
+                                            'settings' => ['number' => 8],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                            [
+                                'rules' => [
+                                    [
+                                        'type' => 'title',
+                                        'data' => [
+                                            'operator' => 'contains',
+                                            'settings' => ['text' => 'Featured'],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($publishedHighRated->merge($publishedFeatured))
+            ->assertCanNotSeeTableRecords($unpublishedHighRated->merge($unpublishedFeatured));
+    });
+});
+
+describe('`relationship()` constraints', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using text constraint with relationship method', function () use ($applyQueryBuilderFilter): void {
+        $matchingAuthor = User::factory()->create(['email' => 'john@example.com']);
+        $matchingPosts = Post::factory()->count(5)->create(['author_id' => $matchingAuthor->id]);
+
+        $nonMatchingAuthor = User::factory()->create(['email' => 'jane@different.com']);
+        $nonMatchingPosts = Post::factory()->count(5)->create(['author_id' => $nonMatchingAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($matchingPosts->merge($nonMatchingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.email',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => 'example.com'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
+
+    it('can filter records using boolean constraint with relationship method', function () use ($applyQueryBuilderFilter): void {
+        $activeAuthor = User::factory()->create(['has_email_authentication' => true]);
+        $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
+
+        $inactiveAuthor = User::factory()->create(['has_email_authentication' => false]);
+        $inactivePosts = Post::factory()->count(5)->create(['author_id' => $inactiveAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($activePosts->merge($inactivePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.has_email_authentication',
+                    'data' => [
+                        'operator' => 'isTrue',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($activePosts)
+            ->assertCanNotSeeTableRecords($inactivePosts);
+    });
+
+    it('can filter records using boolean constraint with relationship method and inverse operator', function () use ($applyQueryBuilderFilter): void {
+        $activeAuthor = User::factory()->create(['has_email_authentication' => true]);
+        $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
+
+        $inactiveAuthor = User::factory()->create(['has_email_authentication' => false]);
+        $inactivePosts = Post::factory()->count(5)->create(['author_id' => $inactiveAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($activePosts->merge($inactivePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.has_email_authentication',
+                    'data' => [
+                        'operator' => 'isTrue.inverse',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($inactivePosts)
+            ->assertCanNotSeeTableRecords($activePosts);
+    });
+
+    it('can filter records using number constraint with relationship method', function () use ($applyQueryBuilderFilter): void {
+        $highScoreAuthor = User::factory()->create(['score' => 95]);
+        $highScorePosts = Post::factory()->count(5)->create(['author_id' => $highScoreAuthor->id]);
+
+        $lowScoreAuthor = User::factory()->create(['score' => 45]);
+        $lowScorePosts = Post::factory()->count(5)->create(['author_id' => $lowScoreAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highScorePosts->merge($lowScorePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.score',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 80, 'aggregate' => null],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($highScorePosts)
+            ->assertCanNotSeeTableRecords($lowScorePosts);
+    });
+
+    it('can filter records using number constraint with relationship method and inverse operator', function () use ($applyQueryBuilderFilter): void {
+        $highScoreAuthor = User::factory()->create(['score' => 95]);
+        $highScorePosts = Post::factory()->count(5)->create(['author_id' => $highScoreAuthor->id]);
+
+        $lowScoreAuthor = User::factory()->create(['score' => 45]);
+        $lowScorePosts = Post::factory()->count(5)->create(['author_id' => $lowScoreAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highScorePosts->merge($lowScorePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.score',
+                    'data' => [
+                        'operator' => 'isMin.inverse',
+                        'settings' => ['number' => 80, 'aggregate' => null],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($lowScorePosts)
+            ->assertCanNotSeeTableRecords($highScorePosts);
+    });
+
+    it('can filter records using select constraint with relationship method', function () use ($applyQueryBuilderFilter): void {
+        $activeAuthor = User::factory()->create(['status' => 'active']);
+        $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
+
+        $pendingAuthor = User::factory()->create(['status' => 'pending']);
+        $pendingPosts = Post::factory()->count(5)->create(['author_id' => $pendingAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($activePosts->merge($pendingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.status',
+                    'data' => [
+                        'operator' => 'is',
+                        'settings' => ['value' => 'active'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($activePosts)
+            ->assertCanNotSeeTableRecords($pendingPosts);
+    });
+
+    it('can filter records using select constraint with relationship method and inverse operator', function () use ($applyQueryBuilderFilter): void {
+        $activeAuthor = User::factory()->create(['status' => 'active']);
+        $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
+
+        $pendingAuthor = User::factory()->create(['status' => 'pending']);
+        $pendingPosts = Post::factory()->count(5)->create(['author_id' => $pendingAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($activePosts->merge($pendingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.status',
+                    'data' => [
+                        'operator' => 'is.inverse',
+                        'settings' => ['value' => 'active'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($pendingPosts)
+            ->assertCanNotSeeTableRecords($activePosts);
+    });
+
+    it('can filter records using date constraint with relationship method', function () use ($applyQueryBuilderFilter): void {
+        $recentDate = '2024-06-20';
+        $oldDate = '2024-01-10';
+        $filterDate = '2024-06-15';
+
+        $recentAuthor = User::factory()->create(['email_verified_at' => $recentDate]);
+        $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
+
+        $oldAuthor = User::factory()->create(['email_verified_at' => $oldDate]);
+        $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.email_verified_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => ['date' => $filterDate],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with relationship method and inverse operator', function () use ($applyQueryBuilderFilter): void {
+        $recentDate = '2024-06-20';
+        $oldDate = '2024-01-10';
+        $filterDate = '2024-06-15';
+
+        $recentAuthor = User::factory()->create(['email_verified_at' => $recentDate]);
+        $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
+
+        $oldAuthor = User::factory()->create(['email_verified_at' => $oldDate]);
+        $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.email_verified_at',
+                    'data' => [
+                        'operator' => 'isAfter.inverse',
+                        'settings' => ['date' => $filterDate],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can combine relationship constraints with regular constraints', function () use ($applyQueryBuilderFilter): void {
+        $activeHighScoreAuthor = User::factory()->create([
+            'score' => 95,
+            'status' => 'active',
+        ]);
+        $matchingPosts = Post::factory()->count(3)->create([
+            'author_id' => $activeHighScoreAuthor->id,
+            'is_published' => true,
+        ]);
+
+        $activeHighScoreUnpublished = Post::factory()->count(2)->create([
+            'author_id' => $activeHighScoreAuthor->id,
+            'is_published' => false,
+        ]);
+
+        $inactiveAuthor = User::factory()->create([
+            'score' => 95,
+            'status' => 'inactive',
+        ]);
+        $nonMatchingPosts = Post::factory()->count(3)->create([
+            'author_id' => $inactiveAuthor->id,
+            'is_published' => true,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($matchingPosts->merge($activeHighScoreUnpublished)->merge($nonMatchingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.score',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 80, 'aggregate' => null],
+                    ],
+                ],
+                [
+                    'type' => 'author.status',
+                    'data' => [
+                        'operator' => 'is',
+                        'settings' => ['value' => 'active'],
+                    ],
+                ],
+                [
+                    'type' => 'is_published',
+                    'data' => [
+                        'operator' => 'isTrue',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($activeHighScoreUnpublished->merge($nonMatchingPosts));
+    });
+
+    it('can filter records using number constraint with sum aggregate on relationship', function (): void {
+        $highTotalUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $highTotalUser->id,
+            'rating' => 8, // Total: 24
+        ]);
+
+        $lowTotalUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $lowTotalUser->id,
+            'rating' => 2, // Total: 6
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highTotalUser, $lowTotalUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts.rating',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 20, 'aggregate' => 'sum'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highTotalUser])
+            ->assertCanNotSeeTableRecords([$lowTotalUser]);
+    });
+
+    it('can filter records using number constraint with average aggregate on relationship', function (): void {
+        $highAvgUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $highAvgUser->id,
+            'rating' => 9, // Average: 9
+        ]);
+
+        $lowAvgUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $lowAvgUser->id,
+            'rating' => 3, // Average: 3
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts.rating',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 7, 'aggregate' => 'avg'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highAvgUser])
+            ->assertCanNotSeeTableRecords([$lowAvgUser]);
+    });
+
+    it('can filter records using number constraint with min aggregate on relationship', function (): void {
+        $highMinUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $highMinUser->id,
+            'rating' => 8,
+        ]);
+        Post::factory()->create([
+            'author_id' => $highMinUser->id,
+            'rating' => 9,
+        ]);
+        Post::factory()->create([
+            'author_id' => $highMinUser->id,
+            'rating' => 10,
+        ]);
+
+        $lowMinUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $lowMinUser->id,
+            'rating' => 2, // This is the min
+        ]);
+        Post::factory()->create([
+            'author_id' => $lowMinUser->id,
+            'rating' => 9,
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highMinUser, $lowMinUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts.rating',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 7, 'aggregate' => 'min'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highMinUser])
+            ->assertCanNotSeeTableRecords([$lowMinUser]);
+    });
+
+    it('can filter self-related records using number constraint aggregate with a connection table prefix', function (): void {
+        $databaseConnection = QueryBuilderItem::query()->getConnection();
+        $originalTablePrefix = $databaseConnection->getTablePrefix();
+
+        $databaseConnection->setTablePrefix('fo_');
+
+        try {
+            $matchingParent = QueryBuilderItem::query()->create(['length' => 1]);
+            $matchingParent->children()->create(['length' => 700]);
+
+            $nonMatchingParent = QueryBuilderItem::query()->create(['length' => 1]);
+            $nonMatchingParent->children()->create(['length' => 699]);
+
+            $constraint = NumberConstraint::make('children.length');
+
+            $operator = IsMinOperator::make()
+                ->constraint($constraint)
+                ->settings(['number' => 700, 'aggregate' => 'min']);
+
+            $filteredQuery = $operator->applyToBaseQuery(QueryBuilderItem::query());
+
+            expect($filteredQuery->pluck('id')->all())
+                ->toBe([$matchingParent->id]);
+        } finally {
+            $databaseConnection->setTablePrefix($originalTablePrefix);
+        }
+    });
+
+    it('can filter records using number constraint aggregate on a `latestOfMany()` relationship', function (): void {
+        $matchingUser = User::factory()->create();
+        Post::factory()->create(['author_id' => $matchingUser->id, 'rating' => 3]);
+        Post::factory()->create(['author_id' => $matchingUser->id, 'rating' => 8]);
+
+        $nonMatchingUser = User::factory()->create();
+        Post::factory()->create(['author_id' => $nonMatchingUser->id, 'rating' => 8]);
+        Post::factory()->create(['author_id' => $nonMatchingUser->id, 'rating' => 3]);
+
+        $constraint = NumberConstraint::make('latestPost.rating');
+
+        $operator = IsMinOperator::make()
+            ->constraint($constraint)
+            ->settings(['number' => 7, 'aggregate' => 'min']);
+
+        $filteredQuery = $operator->applyToBaseQuery(User::query());
+
+        expect($filteredQuery->pluck('id')->all())
+            ->toBe([$matchingUser->id]);
+    });
+
+    it('applies constraints defined in the relationship method to the aggregate subquery', function () use ($applyQueryBuilderFilter): void {
+        $matchingUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $matchingUser->id,
+            'is_published' => true,
+            'rating' => 9,
+        ]);
+        Post::factory()->create([
+            'author_id' => $matchingUser->id,
+            'is_published' => false,
+            'rating' => 1,
+        ]);
+
+        $nonMatchingUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $nonMatchingUser->id,
+            'is_published' => true,
+            'rating' => 1,
+        ]);
+        Post::factory()->create([
+            'author_id' => $nonMatchingUser->id,
+            'is_published' => false,
+            'rating' => 9,
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$matchingUser, $nonMatchingUser])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'publishedPosts.rating',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 7, 'aggregate' => 'min'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$matchingUser])
+            ->assertCanNotSeeTableRecords([$nonMatchingUser]);
+    });
+
+    it('applies `wherePivot()` constraints defined in the relationship method to the aggregate subquery', function () use ($applyQueryBuilderFilter): void {
+        $matchingUser = User::factory()->create();
+        $matchingUser->teams()->attach(Team::factory()->create(['budget' => 5000])->id, ['role' => 'owner']);
+        $matchingUser->teams()->attach(Team::factory()->create(['budget' => 100])->id, ['role' => 'member']);
+
+        $nonMatchingUser = User::factory()->create();
+        $nonMatchingUser->teams()->attach(Team::factory()->create(['budget' => 100])->id, ['role' => 'owner']);
+        $nonMatchingUser->teams()->attach(Team::factory()->create(['budget' => 5000])->id, ['role' => 'member']);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$matchingUser, $nonMatchingUser])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'ownedTeams.budget',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 1000, 'aggregate' => 'min'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$matchingUser])
+            ->assertCanNotSeeTableRecords([$nonMatchingUser]);
+    });
+
+    it('can filter records using number constraint with max aggregate on relationship', function (): void {
+        $highMaxUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $highMaxUser->id,
+            'rating' => 10, // This is the max
+        ]);
+        Post::factory()->create([
+            'author_id' => $highMaxUser->id,
+            'rating' => 5,
+        ]);
+
+        $lowMaxUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $lowMaxUser->id,
+            'rating' => 3,
+        ]);
+        Post::factory()->create([
+            'author_id' => $lowMaxUser->id,
+            'rating' => 4, // This is the max
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highMaxUser, $lowMaxUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts.rating',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 8, 'aggregate' => 'max'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highMaxUser])
+            ->assertCanNotSeeTableRecords([$lowMaxUser]);
+    });
+
+    it('can filter records using number constraint with aggregate and inverse operator', function (): void {
+        $highAvgUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $highAvgUser->id,
+            'rating' => 9,
+        ]);
+
+        $lowAvgUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $lowAvgUser->id,
+            'rating' => 3,
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts.rating',
+                        'data' => [
+                            'operator' => 'isMin.inverse', // Less than
+                            'settings' => ['number' => 7, 'aggregate' => 'avg'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$lowAvgUser])
+            ->assertCanNotSeeTableRecords([$highAvgUser]);
+    });
+
+    it('can filter records using number constraint with sum aggregate on `BelongsToMany` relationship', function (): void {
+        $highTotalUser = User::factory()->create();
+        $highTeams = Team::factory()->count(3)->create(['budget' => 5000]); // Total: 15000
+        $highTotalUser->teams()->attach($highTeams->pluck('id'));
+
+        $lowTotalUser = User::factory()->create();
+        $lowTeams = Team::factory()->count(2)->create(['budget' => 1000]); // Total: 2000
+        $lowTotalUser->teams()->attach($lowTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highTotalUser, $lowTotalUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams.budget',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 10000, 'aggregate' => 'sum'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highTotalUser])
+            ->assertCanNotSeeTableRecords([$lowTotalUser]);
+    });
+
+    it('can filter records using number constraint with average aggregate on `BelongsToMany` relationship', function (): void {
+        $highAvgUser = User::factory()->create();
+        $highTeams = Team::factory()->count(3)->create(['budget' => 8000]); // Average: 8000
+        $highAvgUser->teams()->attach($highTeams->pluck('id'));
+
+        $lowAvgUser = User::factory()->create();
+        $lowTeams = Team::factory()->count(3)->create(['budget' => 2000]); // Average: 2000
+        $lowAvgUser->teams()->attach($lowTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams.budget',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 5000, 'aggregate' => 'avg'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highAvgUser])
+            ->assertCanNotSeeTableRecords([$lowAvgUser]);
+    });
+
+    it('can filter records using number constraint with min aggregate on `BelongsToMany` relationship', function (): void {
+        $highMinUser = User::factory()->create();
+        $highMinTeams = collect([
+            Team::factory()->create(['budget' => 6000]),
+            Team::factory()->create(['budget' => 8000]),
+            Team::factory()->create(['budget' => 10000]),
+        ]);
+        $highMinUser->teams()->attach($highMinTeams->pluck('id'));
+
+        $lowMinUser = User::factory()->create();
+        $lowMinTeams = collect([
+            Team::factory()->create(['budget' => 1000]), // This is the min
+            Team::factory()->create(['budget' => 9000]),
+        ]);
+        $lowMinUser->teams()->attach($lowMinTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highMinUser, $lowMinUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams.budget',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 5000, 'aggregate' => 'min'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highMinUser])
+            ->assertCanNotSeeTableRecords([$lowMinUser]);
+    });
+
+    it('can filter records using number constraint with max aggregate on `BelongsToMany` relationship', function (): void {
+        $highMaxUser = User::factory()->create();
+        $highMaxTeams = collect([
+            Team::factory()->create(['budget' => 15000]), // This is the max
+            Team::factory()->create(['budget' => 3000]),
+        ]);
+        $highMaxUser->teams()->attach($highMaxTeams->pluck('id'));
+
+        $lowMaxUser = User::factory()->create();
+        $lowMaxTeams = collect([
+            Team::factory()->create(['budget' => 2000]),
+            Team::factory()->create(['budget' => 3000]), // This is the max
+        ]);
+        $lowMaxUser->teams()->attach($lowMaxTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highMaxUser, $lowMaxUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams.budget',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 10000, 'aggregate' => 'max'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highMaxUser])
+            ->assertCanNotSeeTableRecords([$lowMaxUser]);
+    });
+
+    it('can filter records using number constraint with aggregate and inverse operator on `BelongsToMany` relationship', function (): void {
+        $highAvgUser = User::factory()->create();
+        $highTeams = Team::factory()->count(3)->create(['budget' => 8000]);
+        $highAvgUser->teams()->attach($highTeams->pluck('id'));
+
+        $lowAvgUser = User::factory()->create();
+        $lowTeams = Team::factory()->count(3)->create(['budget' => 2000]);
+        $lowAvgUser->teams()->attach($lowTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams.budget',
+                        'data' => [
+                            'operator' => 'isMin.inverse', // Less than
+                            'settings' => ['number' => 5000, 'aggregate' => 'avg'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$lowAvgUser])
+            ->assertCanNotSeeTableRecords([$highAvgUser]);
+    });
+
+    it('applies `modifyRelationshipQueryUsing()` to the `sum` aggregate subquery, hiding scoped-out rows', function () use ($applyQueryBuilderFilter): void {
+        $inScopeUser = User::factory()->create();
+        Post::factory()->create(['author_id' => $inScopeUser->id, 'rating' => 5, 'is_published' => true]);
+        Post::factory()->create(['author_id' => $inScopeUser->id, 'rating' => 3, 'is_published' => true]);
+
+        $outOfScopeUser = User::factory()->create();
+        Post::factory()->create(['author_id' => $outOfScopeUser->id, 'rating' => 10, 'is_published' => false]);
+        Post::factory()->create(['author_id' => $outOfScopeUser->id, 'rating' => 10, 'is_published' => false]);
+
+        livewire(UsersQueryBuilderTableWithScopedPostsRatingAggregate::class)
+            ->assertCanSeeTableRecords([$inScopeUser, $outOfScopeUser])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'posts_rating',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 7, 'aggregate' => 'sum'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$inScopeUser])
+            ->assertCanNotSeeTableRecords([$outOfScopeUser]);
+    });
+
+    it('applies `modifyRelationshipQueryUsing()` to the `max` aggregate subquery, hiding scoped-out rows', function () use ($applyQueryBuilderFilter): void {
+        $inScopeUser = User::factory()->create();
+        Post::factory()->create(['author_id' => $inScopeUser->id, 'rating' => 8, 'is_published' => true]);
+
+        $outOfScopeUser = User::factory()->create();
+        Post::factory()->create(['author_id' => $outOfScopeUser->id, 'rating' => 10, 'is_published' => false]);
+        Post::factory()->create(['author_id' => $outOfScopeUser->id, 'rating' => 2, 'is_published' => true]);
+
+        livewire(UsersQueryBuilderTableWithScopedPostsRatingAggregate::class)
+            ->assertCanSeeTableRecords([$inScopeUser, $outOfScopeUser])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'posts_rating',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 7, 'aggregate' => 'max'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$inScopeUser])
+            ->assertCanNotSeeTableRecords([$outOfScopeUser]);
+    });
+
+    it('applies `modifyRelationshipQueryUsing()` to the `equals` aggregate subquery, hiding scoped-out rows', function () use ($applyQueryBuilderFilter): void {
+        $inScopeUser = User::factory()->create();
+        Post::factory()->create(['author_id' => $inScopeUser->id, 'rating' => 4, 'is_published' => true]);
+        Post::factory()->create(['author_id' => $inScopeUser->id, 'rating' => 4, 'is_published' => true]);
+
+        $outOfScopeUser = User::factory()->create();
+        Post::factory()->create(['author_id' => $outOfScopeUser->id, 'rating' => 4, 'is_published' => false]);
+        Post::factory()->create(['author_id' => $outOfScopeUser->id, 'rating' => 4, 'is_published' => false]);
+
+        livewire(UsersQueryBuilderTableWithScopedPostsRatingAggregate::class)
+            ->assertCanSeeTableRecords([$inScopeUser, $outOfScopeUser])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'posts_rating',
+                    'data' => [
+                        'operator' => 'equals',
+                        'settings' => ['number' => 8, 'aggregate' => 'sum'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$inScopeUser])
+            ->assertCanNotSeeTableRecords([$outOfScopeUser]);
+    });
+
+});
+
+describe('legacy `relationship()` method', function () use ($applyQueryBuilderFilter): void {
+    it('can filter records using text constraint with relationship method (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $matchingAuthor = User::factory()->create(['email' => 'john@example.com']);
+        $matchingPosts = Post::factory()->count(5)->create(['author_id' => $matchingAuthor->id]);
+
+        $nonMatchingAuthor = User::factory()->create(['email' => 'jane@different.com']);
+        $nonMatchingPosts = Post::factory()->count(5)->create(['author_id' => $nonMatchingAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($matchingPosts->merge($nonMatchingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_email',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => 'example.com'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($nonMatchingPosts);
+    });
+
+    it('can filter records using boolean constraint with relationship method (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $activeAuthor = User::factory()->create(['has_email_authentication' => true]);
+        $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
+
+        $inactiveAuthor = User::factory()->create(['has_email_authentication' => false]);
+        $inactivePosts = Post::factory()->count(5)->create(['author_id' => $inactiveAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($activePosts->merge($inactivePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_has_email_auth',
+                    'data' => [
+                        'operator' => 'isTrue',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($activePosts)
+            ->assertCanNotSeeTableRecords($inactivePosts);
+    });
+
+    it('can filter records using boolean constraint with relationship method and inverse operator (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $activeAuthor = User::factory()->create(['has_email_authentication' => true]);
+        $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
+
+        $inactiveAuthor = User::factory()->create(['has_email_authentication' => false]);
+        $inactivePosts = Post::factory()->count(5)->create(['author_id' => $inactiveAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($activePosts->merge($inactivePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_has_email_auth',
+                    'data' => [
+                        'operator' => 'isTrue.inverse',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($inactivePosts)
+            ->assertCanNotSeeTableRecords($activePosts);
+    });
+
+    it('can filter records using number constraint with relationship method (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $highScoreAuthor = User::factory()->create(['score' => 95]);
+        $highScorePosts = Post::factory()->count(5)->create(['author_id' => $highScoreAuthor->id]);
+
+        $lowScoreAuthor = User::factory()->create(['score' => 45]);
+        $lowScorePosts = Post::factory()->count(5)->create(['author_id' => $lowScoreAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highScorePosts->merge($lowScorePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_score',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 80, 'aggregate' => null],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($highScorePosts)
+            ->assertCanNotSeeTableRecords($lowScorePosts);
+    });
+
+    it('can filter records using number constraint with relationship method and inverse operator (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $highScoreAuthor = User::factory()->create(['score' => 95]);
+        $highScorePosts = Post::factory()->count(5)->create(['author_id' => $highScoreAuthor->id]);
+
+        $lowScoreAuthor = User::factory()->create(['score' => 45]);
+        $lowScorePosts = Post::factory()->count(5)->create(['author_id' => $lowScoreAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($highScorePosts->merge($lowScorePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_score',
+                    'data' => [
+                        'operator' => 'isMin.inverse',
+                        'settings' => ['number' => 80, 'aggregate' => null],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($lowScorePosts)
+            ->assertCanNotSeeTableRecords($highScorePosts);
+    });
+
+    it('can filter records using select constraint with relationship method (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $activeAuthor = User::factory()->create(['status' => 'active']);
+        $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
+
+        $pendingAuthor = User::factory()->create(['status' => 'pending']);
+        $pendingPosts = Post::factory()->count(5)->create(['author_id' => $pendingAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($activePosts->merge($pendingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_status',
+                    'data' => [
+                        'operator' => 'is',
+                        'settings' => ['value' => 'active'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($activePosts)
+            ->assertCanNotSeeTableRecords($pendingPosts);
+    });
+
+    it('can filter records using select constraint with relationship method and inverse operator (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $activeAuthor = User::factory()->create(['status' => 'active']);
+        $activePosts = Post::factory()->count(5)->create(['author_id' => $activeAuthor->id]);
+
+        $pendingAuthor = User::factory()->create(['status' => 'pending']);
+        $pendingPosts = Post::factory()->count(5)->create(['author_id' => $pendingAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($activePosts->merge($pendingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_status',
+                    'data' => [
+                        'operator' => 'is.inverse',
+                        'settings' => ['value' => 'active'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($pendingPosts)
+            ->assertCanNotSeeTableRecords($activePosts);
+    });
+
+    it('can filter records using date constraint with relationship method (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $recentDate = '2024-06-20';
+        $oldDate = '2024-01-10';
+        $filterDate = '2024-06-15';
+
+        $recentAuthor = User::factory()->create(['email_verified_at' => $recentDate]);
+        $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
+
+        $oldAuthor = User::factory()->create(['email_verified_at' => $oldDate]);
+        $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_verified_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => ['date' => $filterDate],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with relationship method and inverse operator (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $recentDate = '2024-06-20';
+        $oldDate = '2024-01-10';
+        $filterDate = '2024-06-15';
+
+        $recentAuthor = User::factory()->create(['email_verified_at' => $recentDate]);
+        $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
+
+        $oldAuthor = User::factory()->create(['email_verified_at' => $oldDate]);
+        $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_verified_at',
+                    'data' => [
+                        'operator' => 'isAfter.inverse',
+                        'settings' => ['date' => $filterDate],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can combine relationship constraints with regular constraints (legacy `relationship()`)', function () use ($applyQueryBuilderFilter): void {
+        $activeHighScoreAuthor = User::factory()->create([
+            'score' => 95,
+            'status' => 'active',
+        ]);
+        $matchingPosts = Post::factory()->count(3)->create([
+            'author_id' => $activeHighScoreAuthor->id,
+            'is_published' => true,
+        ]);
+
+        $activeHighScoreUnpublished = Post::factory()->count(2)->create([
+            'author_id' => $activeHighScoreAuthor->id,
+            'is_published' => false,
+        ]);
+
+        $inactiveAuthor = User::factory()->create([
+            'score' => 95,
+            'status' => 'inactive',
+        ]);
+        $nonMatchingPosts = Post::factory()->count(3)->create([
+            'author_id' => $inactiveAuthor->id,
+            'is_published' => true,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($matchingPosts->merge($activeHighScoreUnpublished)->merge($nonMatchingPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author_score',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 80, 'aggregate' => null],
+                    ],
+                ],
+                [
+                    'type' => 'author_status',
+                    'data' => [
+                        'operator' => 'is',
+                        'settings' => ['value' => 'active'],
+                    ],
+                ],
+                [
+                    'type' => 'is_published',
+                    'data' => [
+                        'operator' => 'isTrue',
+                        'settings' => [],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($activeHighScoreUnpublished->merge($nonMatchingPosts));
+    });
+
+    it('can filter records using number constraint with sum aggregate on relationship (legacy `relationship()`)', function (): void {
+        $highTotalUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $highTotalUser->id,
+            'rating' => 8, // Total: 24
+        ]);
+
+        $lowTotalUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $lowTotalUser->id,
+            'rating' => 2, // Total: 6
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highTotalUser, $lowTotalUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts_rating',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 20, 'aggregate' => 'sum'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highTotalUser])
+            ->assertCanNotSeeTableRecords([$lowTotalUser]);
+    });
+
+    it('can filter records using number constraint with average aggregate on relationship (legacy `relationship()`)', function (): void {
+        $highAvgUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $highAvgUser->id,
+            'rating' => 9, // Average: 9
+        ]);
+
+        $lowAvgUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $lowAvgUser->id,
+            'rating' => 3, // Average: 3
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts_rating',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 7, 'aggregate' => 'avg'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highAvgUser])
+            ->assertCanNotSeeTableRecords([$lowAvgUser]);
+    });
+
+    it('can filter records using number constraint with min aggregate on relationship (legacy `relationship()`)', function (): void {
+        $highMinUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $highMinUser->id,
+            'rating' => 8,
+        ]);
+        Post::factory()->create([
+            'author_id' => $highMinUser->id,
+            'rating' => 9,
+        ]);
+        Post::factory()->create([
+            'author_id' => $highMinUser->id,
+            'rating' => 10,
+        ]);
+
+        $lowMinUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $lowMinUser->id,
+            'rating' => 2, // This is the min
+        ]);
+        Post::factory()->create([
+            'author_id' => $lowMinUser->id,
+            'rating' => 9,
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highMinUser, $lowMinUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts_rating',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 7, 'aggregate' => 'min'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highMinUser])
+            ->assertCanNotSeeTableRecords([$lowMinUser]);
+    });
+
+    it('can filter records using number constraint with max aggregate on relationship (legacy `relationship()`)', function (): void {
+        $highMaxUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $highMaxUser->id,
+            'rating' => 10, // This is the max
+        ]);
+        Post::factory()->create([
+            'author_id' => $highMaxUser->id,
+            'rating' => 5,
+        ]);
+
+        $lowMaxUser = User::factory()->create();
+        Post::factory()->create([
+            'author_id' => $lowMaxUser->id,
+            'rating' => 3,
+        ]);
+        Post::factory()->create([
+            'author_id' => $lowMaxUser->id,
+            'rating' => 4, // This is the max
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highMaxUser, $lowMaxUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts_rating',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 8, 'aggregate' => 'max'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highMaxUser])
+            ->assertCanNotSeeTableRecords([$lowMaxUser]);
+    });
+
+    it('can filter records using number constraint with aggregate and inverse operator (legacy `relationship()`)', function (): void {
+        $highAvgUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $highAvgUser->id,
+            'rating' => 9,
+        ]);
+
+        $lowAvgUser = User::factory()->create();
+        Post::factory()->count(3)->create([
+            'author_id' => $lowAvgUser->id,
+            'rating' => 3,
+        ]);
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'posts_rating',
+                        'data' => [
+                            'operator' => 'isMin.inverse', // Less than
+                            'settings' => ['number' => 7, 'aggregate' => 'avg'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$lowAvgUser])
+            ->assertCanNotSeeTableRecords([$highAvgUser]);
+    });
+
+    it('can filter records using number constraint with sum aggregate on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
+        $highTotalUser = User::factory()->create();
+        $highTeams = Team::factory()->count(3)->create(['budget' => 5000]); // Total: 15000
+        $highTotalUser->teams()->attach($highTeams->pluck('id'));
+
+        $lowTotalUser = User::factory()->create();
+        $lowTeams = Team::factory()->count(2)->create(['budget' => 1000]); // Total: 2000
+        $lowTotalUser->teams()->attach($lowTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highTotalUser, $lowTotalUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams_budget',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 10000, 'aggregate' => 'sum'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highTotalUser])
+            ->assertCanNotSeeTableRecords([$lowTotalUser]);
+    });
+
+    it('can filter records using number constraint with average aggregate on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
+        $highAvgUser = User::factory()->create();
+        $highTeams = Team::factory()->count(3)->create(['budget' => 8000]); // Average: 8000
+        $highAvgUser->teams()->attach($highTeams->pluck('id'));
+
+        $lowAvgUser = User::factory()->create();
+        $lowTeams = Team::factory()->count(3)->create(['budget' => 2000]); // Average: 2000
+        $lowAvgUser->teams()->attach($lowTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams_budget',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 5000, 'aggregate' => 'avg'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highAvgUser])
+            ->assertCanNotSeeTableRecords([$lowAvgUser]);
+    });
+
+    it('can filter records using number constraint with min aggregate on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
+        $highMinUser = User::factory()->create();
+        $highMinTeams = collect([
+            Team::factory()->create(['budget' => 6000]),
+            Team::factory()->create(['budget' => 8000]),
+            Team::factory()->create(['budget' => 10000]),
+        ]);
+        $highMinUser->teams()->attach($highMinTeams->pluck('id'));
+
+        $lowMinUser = User::factory()->create();
+        $lowMinTeams = collect([
+            Team::factory()->create(['budget' => 1000]), // This is the min
+            Team::factory()->create(['budget' => 9000]),
+        ]);
+        $lowMinUser->teams()->attach($lowMinTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highMinUser, $lowMinUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams_budget',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 5000, 'aggregate' => 'min'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highMinUser])
+            ->assertCanNotSeeTableRecords([$lowMinUser]);
+    });
+
+    it('can filter records using number constraint with max aggregate on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
+        $highMaxUser = User::factory()->create();
+        $highMaxTeams = collect([
+            Team::factory()->create(['budget' => 15000]), // This is the max
+            Team::factory()->create(['budget' => 3000]),
+        ]);
+        $highMaxUser->teams()->attach($highMaxTeams->pluck('id'));
+
+        $lowMaxUser = User::factory()->create();
+        $lowMaxTeams = collect([
+            Team::factory()->create(['budget' => 2000]),
+            Team::factory()->create(['budget' => 3000]), // This is the max
+        ]);
+        $lowMaxUser->teams()->attach($lowMaxTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highMaxUser, $lowMaxUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams_budget',
+                        'data' => [
+                            'operator' => 'isMin',
+                            'settings' => ['number' => 10000, 'aggregate' => 'max'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$highMaxUser])
+            ->assertCanNotSeeTableRecords([$lowMaxUser]);
+    });
+
+    it('can filter records using number constraint with aggregate and inverse operator on `BelongsToMany` relationship (legacy `relationship()`)', function (): void {
+        $highAvgUser = User::factory()->create();
+        $highTeams = Team::factory()->count(3)->create(['budget' => 8000]);
+        $highAvgUser->teams()->attach($highTeams->pluck('id'));
+
+        $lowAvgUser = User::factory()->create();
+        $lowTeams = Team::factory()->count(3)->create(['budget' => 2000]);
+        $lowAvgUser->teams()->attach($lowTeams->pluck('id'));
+
+        livewire(UsersQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$highAvgUser, $lowAvgUser])
+            ->tap(fn ($livewire) => $livewire
+                ->set('tableDeferredFilters.query_builder.rules', [
+                    [
+                        'type' => 'teams_budget',
+                        'data' => [
+                            'operator' => 'isMin.inverse', // Less than
+                            'settings' => ['number' => 5000, 'aggregate' => 'avg'],
+                        ],
+                    ],
+                ])
+                ->call('applyTableFilters'))
+            ->assertCanSeeTableRecords([$lowAvgUser])
+            ->assertCanNotSeeTableRecords([$highAvgUser]);
+    });
+});
+
+describe('absolute and relative date filtering', function () use ($applyQueryBuilderFilter): void {
+    beforeEach(function (): void {
+        $this->freezeTime();
+    });
+
+    it('preserves date-only filter boundaries with a globally configured `timezone()`', function (string $operator, array $expectedDates) use ($applyQueryBuilderFilter): void {
+        config(['app.timezone' => 'Europe/London']);
+
+        DateTimePicker::configureUsing(static fn (DateTimePicker $picker) => $picker->timezone('Asia/Tokyo'), during: function () use ($applyQueryBuilderFilter, $operator, $expectedDates): void {
+            $posts = collect(['2025-03-29', '2025-03-30', '2025-03-31'])
+                ->mapWithKeys(static fn (string $date): array => [$date => Post::factory()->create(['created_at' => "{$date} 12:00:00"])]);
+
+            livewire(PostsQueryBuilderTable::class)
+                ->tap($applyQueryBuilderFilter([
+                    [
+                        'type' => 'created_at',
+                        'data' => [
+                            'operator' => $operator,
+                            'settings' => [
+                                'mode' => 'absolute',
+                                'date' => '2025-03-30',
+                            ],
+                        ],
+                    ],
+                ]))
+                ->assertCanSeeTableRecords($posts->only($expectedDates))
+                ->assertCanNotSeeTableRecords($posts->except($expectedDates));
+        });
+    })->with([
+        ['isBefore', ['2025-03-29', '2025-03-30']],
+        ['isDate', ['2025-03-30']],
+        ['isAfter', ['2025-03-30', '2025-03-31']],
+    ]);
+
+    it('can filter records using date constraint with is after operator in `absolute` mode', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(5),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => now()->toDateString(),
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `today` preset', function () use ($applyQueryBuilderFilter): void {
+        $todayPosts = Post::factory()->count(3)->create([
+            'created_at' => now()->startOfDay(),
+        ]);
+
+        $futurePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(5),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($todayPosts->merge($futurePosts)->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'today',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($todayPosts->merge($futurePosts))
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `this_year` preset', function () use ($applyQueryBuilderFilter): void {
+        $thisYearPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->startOfYear()->addDays(30),
+        ]);
+
+        $lastYearPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subYear(),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($thisYearPosts->merge($lastYearPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'this_year',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($thisYearPosts)
+            ->assertCanNotSeeTableRecords($lastYearPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `past_week` preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(3),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(10),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `past_2_weeks` preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(10),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(20),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_2_weeks',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `past_month` preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(15),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(45),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `past_quarter` preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(2),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(4),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_quarter',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `past_6_months` preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(4),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(8),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_6_months',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `past_year` preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(6),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(18),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_year',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `next_week` preset', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(14),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(3),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using date constraint with is after operator with `next_month` preset', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(2),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(15),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using date constraint with is after operator with custom relative `day` unit past', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(3),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(15),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 10,
+                            'relative_unit' => 'day',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with custom relative `week` unit past', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(10),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subWeeks(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 3,
+                            'relative_unit' => 'week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with custom relative `month` unit past', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(2),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(6),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 4,
+                            'relative_unit' => 'month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with custom relative `year` unit past', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subYear(),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subYears(4),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 2,
+                            'relative_unit' => 'year',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using date constraint with is after operator with custom relative `day` unit future', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(20),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(3),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 10,
+                            'relative_unit' => 'day',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using date constraint with is after operator with custom relative `month` unit future', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(5),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonth(),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 3,
+                            'relative_unit' => 'month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using date constraint with is after operator inverse with preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(3),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(15),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter.inverse',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using date constraint with is after operator inverse with custom relative', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(3),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(20),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter.inverse',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 10,
+                            'relative_unit' => 'day',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using date constraint with is before operator in `absolute` mode', function () use ($applyQueryBuilderFilter): void {
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(5),
+        ]);
+
+        $futurePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($oldPosts->merge($futurePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => now()->toDateString(),
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($futurePosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `today` preset', function () use ($applyQueryBuilderFilter): void {
+        $todayPosts = Post::factory()->count(3)->create([
+            'created_at' => now()->startOfDay(),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(5),
+        ]);
+
+        $futurePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($todayPosts->merge($oldPosts)->merge($futurePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'today',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($todayPosts->merge($oldPosts))
+            ->assertCanNotSeeTableRecords($futurePosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `next_week` preset', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(3),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(14),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `next_2_weeks` preset', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(7),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(21),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_2_weeks',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `next_month` preset', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(15),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(2),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `next_quarter` preset', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(2),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_quarter',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `next_6_months` preset', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(4),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(8),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_6_months',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `next_year` preset', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(6),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(18),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_year',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `past_week` preset', function () use ($applyQueryBuilderFilter): void {
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(14),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(3),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($oldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with `past_month` preset', function () use ($applyQueryBuilderFilter): void {
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(2),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(15),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($oldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with custom relative `day` unit future', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(3),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(20),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 10,
+                            'relative_unit' => 'day',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with custom relative `week` unit future', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(7),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addWeeks(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 3,
+                            'relative_unit' => 'week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with custom relative `month` unit future', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(2),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addMonths(6),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 4,
+                            'relative_unit' => 'month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with custom relative `year` unit future', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addYear(),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addYears(4),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 2,
+                            'relative_unit' => 'year',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($soonPosts)
+            ->assertCanNotSeeTableRecords($laterPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with custom relative `day` unit past', function () use ($applyQueryBuilderFilter): void {
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(20),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(3),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($oldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 10,
+                            'relative_unit' => 'day',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using date constraint with is before operator with custom relative `month` unit past', function () use ($applyQueryBuilderFilter): void {
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(6),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(2),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($oldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 4,
+                            'relative_unit' => 'month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using date constraint with is before operator inverse with preset', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(3),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(14),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore.inverse',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($laterPosts)
+            ->assertCanNotSeeTableRecords($soonPosts);
+    });
+
+    it('can filter records using date constraint with is before operator inverse with custom relative', function () use ($applyQueryBuilderFilter): void {
+        $soonPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(5),
+        ]);
+
+        $laterPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(25),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($soonPosts->merge($laterPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore.inverse',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 15,
+                            'relative_unit' => 'day',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($laterPosts)
+            ->assertCanNotSeeTableRecords($soonPosts);
+    });
+
+    it('can filter records using combined `relative` date constraints', function () use ($applyQueryBuilderFilter): void {
+        $matchingPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(10),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(2),
+        ]);
+
+        $futurePosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addWeeks(2),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($matchingPosts->merge($oldPosts)->merge($futurePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_month',
+                        ],
+                    ],
+                ],
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_week',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($matchingPosts)
+            ->assertCanNotSeeTableRecords($oldPosts->merge($futurePosts));
+    });
+
+    it('can filter records using `relative` date constraint with relationship', function () use ($applyQueryBuilderFilter): void {
+        $recentAuthor = User::factory()->create(['email_verified_at' => now()->subDays(5)]);
+        $recentPosts = Post::factory()->count(5)->create(['author_id' => $recentAuthor->id]);
+
+        $oldAuthor = User::factory()->create(['email_verified_at' => now()->subMonths(3)]);
+        $oldPosts = Post::factory()->count(5)->create(['author_id' => $oldAuthor->id]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'author.email_verified_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_month',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using `relative` date constraint with OR rules', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(3)->create([
+            'created_at' => now()->subDays(3),
+            'is_published' => false,
+        ]);
+
+        $publishedPosts = Post::factory()->count(3)->create([
+            'created_at' => now()->subMonths(3),
+            'is_published' => true,
+        ]);
+
+        $oldUnpublishedPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subMonths(2),
+            'is_published' => false,
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($publishedPosts)->merge($oldUnpublishedPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'or',
+                    'data' => [
+                        'groups' => [
+                            [
+                                'rules' => [
+                                    [
+                                        'type' => 'created_at',
+                                        'data' => [
+                                            'operator' => 'isAfter',
+                                            'settings' => [
+                                                'mode' => 'relative',
+                                                'preset' => 'past_week',
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                            [
+                                'rules' => [
+                                    [
+                                        'type' => 'is_published',
+                                        'data' => [
+                                            'operator' => 'isTrue',
+                                            'settings' => [],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts->merge($publishedPosts))
+            ->assertCanNotSeeTableRecords($oldUnpublishedPosts);
+    });
+
+    it('can filter records using `relative` date without `mode` defaults to `absolute` for backwards compatibility', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->addDays(5),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'created_at' => now()->subDays(5),
+        ]);
+
+        // When mode is not specified, it should default to absolute behavior
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => ['date' => now()->toDateString()],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator in `absolute` mode', function () use ($applyQueryBuilderFilter): void {
+        $beforeThresholdPost = Post::factory()->create([
+            'published_at' => '2026-07-13 09:00:00',
+        ]);
+
+        $afterThresholdPost = Post::factory()->create([
+            'published_at' => '2026-07-13 15:00:00',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$beforeThresholdPost, $afterThresholdPost])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => '2026-07-13 12:00:00',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$afterThresholdPost])
+            ->assertCanNotSeeTableRecords([$beforeThresholdPost]);
+    });
+
+    it('can filter records using datetime constraint with is after operator when the Filament timezone differs from the app timezone', function () use ($applyQueryBuilderFilter): void {
+        config(['app.timezone' => 'UTC']);
+        FilamentTimezone::set('America/New_York');
+
+        $beforeThresholdPost = Post::factory()->create([
+            'published_at' => '2026-07-13 15:00:00',
+        ]);
+
+        $afterThresholdPost = Post::factory()->create([
+            'published_at' => '2026-07-13 17:00:00',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$beforeThresholdPost, $afterThresholdPost])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => '2026-07-13 12:00:00',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$afterThresholdPost])
+            ->assertCanNotSeeTableRecords([$beforeThresholdPost])
+            ->assertSee('Published at is after Mon, Jul 13, 2026 12:00:00');
+    });
+
+    it('can filter records using datetime constraint with is before operator when the Filament timezone differs from the app timezone', function () use ($applyQueryBuilderFilter): void {
+        config(['app.timezone' => 'UTC']);
+        FilamentTimezone::set('America/New_York');
+
+        // The cutoff of `12:00:00` is entered in the Filament timezone (`America/New_York`), so it
+        // must be dehydrated to `16:00:00` in the app timezone (`UTC`) before querying, while the
+        // summary continues to display the raw `12:00:00` the user entered.
+        $beforeThresholdPost = Post::factory()->create([
+            'published_at' => '2026-07-13 15:00:00',
+        ]);
+
+        $afterThresholdPost = Post::factory()->create([
+            'published_at' => '2026-07-13 17:00:00',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$beforeThresholdPost, $afterThresholdPost])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => '2026-07-13 12:00:00',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$beforeThresholdPost])
+            ->assertCanNotSeeTableRecords([$afterThresholdPost])
+            ->assertSee('Published at is before Mon, Jul 13, 2026 12:00:00');
+    });
+
+    it('applies datetime constraints and summaries from the applied state, not unapplied deferred edits', function () use ($applyQueryBuilderFilter): void {
+        $earlyPost = Post::factory()->create([
+            'published_at' => '2026-07-13 10:00:00',
+        ]);
+
+        $latePost = Post::factory()->create([
+            'published_at' => '2026-07-13 20:00:00',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$earlyPost, $latePost])
+            // Apply a rule that only matches the late post.
+            ->tap($applyQueryBuilderFilter([
+                'rule-uuid' => [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => '2026-07-13 15:00:00',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$latePost])
+            ->assertCanNotSeeTableRecords([$earlyPost])
+            ->assertSee('Published at is after Mon, Jul 13, 2026 15:00:00')
+            // Edit the deferred rule and add another rule, *without* applying either change.
+            ->set('tableDeferredFilters.query_builder.rules', [
+                'rule-uuid' => [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => '2026-07-13 05:00:00',
+                        ],
+                    ],
+                ],
+                'additional-rule-uuid' => [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => '2026-07-13 23:00:00',
+                        ],
+                    ],
+                ],
+            ])
+            // The query, summary, and active count must still reflect the one applied rule,
+            // not either unapplied deferred change.
+            ->assertCanSeeTableRecords([$latePost])
+            ->assertCanNotSeeTableRecords([$earlyPost])
+            ->assertSee('Published at is after Mon, Jul 13, 2026 15:00:00')
+            ->assertDontSee('Published at is after Mon, Jul 13, 2026 05:00:00')
+            ->assertDontSee('Published at is before Mon, Jul 13, 2026 23:00:00')
+            ->tap(function (Testable $testable): void {
+                expect($testable->instance()->getTable()->getActiveFiltersCount())->toBe(1);
+            });
+    });
+
+    it('uses the applied state after a rule has been deleted from the unapplied deferred form', function (): void {
+        $earlyPost = Post::factory()->create([
+            'published_at' => '2026-07-13 10:00:00',
+        ]);
+
+        $latePost = Post::factory()->create([
+            'published_at' => '2026-07-13 20:00:00',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$earlyPost, $latePost])
+            // Apply a rule that only matches the late post.
+            ->set('tableDeferredFilters.query_builder.rules', [
+                'rule-uuid' => [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => '2026-07-13 15:00:00',
+                        ],
+                    ],
+                ],
+            ])
+            ->call('applyTableFilters')
+            ->assertCanSeeTableRecords([$latePost])
+            ->assertCanNotSeeTableRecords([$earlyPost])
+            ->assertSee('Published at is after Mon, Jul 13, 2026 15:00:00')
+            // Delete the rule from the deferred form, *without* applying it.
+            ->callAction(TestAction::make('delete')
+                ->schemaComponent('query_builder.rules', schema: 'tableFiltersForm')
+                ->arguments(['item' => 'rule-uuid']))
+            // Sorting renders the whole table again, so the indicators are rebuilt.
+            ->sortTable('rating')
+            // The query and the summary must still reflect the applied rule, even though the deferred
+            // form no longer has a block for it.
+            ->assertCanSeeTableRecords([$latePost])
+            ->assertCanNotSeeTableRecords([$earlyPost])
+            ->assertSee('Published at is after Mon, Jul 13, 2026 15:00:00')
+            ->tap(function (Testable $testable): void {
+                $livewire = $testable->instance();
+
+                expect($livewire->getTable()->getActiveFiltersCount())
+                    ->toBe(1)
+                    ->and($livewire->getTableFiltersForm()->getStatePath())
+                    ->toBe('tableDeferredFilters');
+            })
+            // Applying the empty deferred state removes the applied rule everywhere.
+            ->call('applyTableFilters')
+            ->assertCanSeeTableRecords([$earlyPost, $latePost])
+            ->assertDontSee('Published at is after Mon, Jul 13, 2026 15:00:00')
+            ->tap(function (Testable $testable): void {
+                expect($testable->instance()->getTable()->getActiveFiltersCount())->toBe(0);
+            });
+    });
+
+    it('uses the applied state after a nested rule has been deleted from the unapplied deferred form', function (): void {
+        $earlyPost = Post::factory()->create([
+            'published_at' => '2026-07-13 10:00:00',
+        ]);
+
+        $middlePost = Post::factory()->create([
+            'published_at' => '2026-07-13 13:00:00',
+        ]);
+
+        $latePost = Post::factory()->create([
+            'published_at' => '2026-07-13 20:00:00',
+        ]);
+
+        $appliedRules = [
+            'or-rule-uuid' => [
+                'type' => 'or',
+                'data' => [
+                    'groups' => [
+                        'after-group-uuid' => [
                             'rules' => [
-                                [
-                                    'type' => 'is_published',
+                                'after-rule-uuid' => [
+                                    'type' => 'published_at',
                                     'data' => [
-                                        'operator' => 'isTrue',
-                                        'settings' => [],
+                                        'operator' => 'isAfter',
+                                        'settings' => [
+                                            'mode' => 'absolute',
+                                            'date' => '2026-07-13 15:00:00',
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        'before-group-uuid' => [
+                            'rules' => [
+                                'before-rule-uuid' => [
+                                    'type' => 'published_at',
+                                    'data' => [
+                                        'operator' => 'isBefore',
+                                        'settings' => [
+                                            'mode' => 'absolute',
+                                            'date' => '2026-07-13 12:00:00',
+                                        ],
                                     ],
                                 ],
                             ],
@@ -3363,584 +4407,1315 @@ it('can filter records using `relative` date constraint with OR rules', function
                     ],
                 ],
             ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts->merge($publishedPosts))
-        ->assertCanNotSeeTableRecords($oldUnpublishedPosts);
-});
+        ];
 
-it('can filter records using `relative` date without `mode` defaults to `absolute` for backwards compatibility', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->addDays(5),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'created_at' => now()->subDays(5),
-    ]);
-
-    // When mode is not specified, it should default to absolute behavior
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'created_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => ['date' => now()->toDateString()],
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$earlyPost, $middlePost, $latePost])
+            ->set('tableDeferredFilters.query_builder.rules', $appliedRules)
+            ->call('applyTableFilters')
+            ->assertCanSeeTableRecords([$earlyPost, $latePost])
+            ->assertCanNotSeeTableRecords([$middlePost])
+            ->assertSee('Published at is after Mon, Jul 13, 2026 15:00:00')
+            ->assertSee('Published at is before Mon, Jul 13, 2026 12:00:00')
+            ->set('tableDeferredFilters.query_builder.rules', [
+                'or-rule-uuid' => [
+                    'type' => 'or',
+                    'data' => [
+                        'groups' => [
+                            'after-group-uuid' => ['rules' => []],
+                            'before-group-uuid' => $appliedRules['or-rule-uuid']['data']['groups']['before-group-uuid'],
+                        ],
+                    ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
+            ])
+            ->sortTable('rating')
+            ->assertCanSeeTableRecords([$earlyPost, $latePost])
+            ->assertCanNotSeeTableRecords([$middlePost])
+            ->assertSee('Published at is after Mon, Jul 13, 2026 15:00:00')
+            ->assertSee('Published at is before Mon, Jul 13, 2026 12:00:00')
+            ->tap(function (Testable $testable): void {
+                expect($testable->instance()->getTable()->getActiveFiltersCount())->toBe(2);
+            });
+    });
+
+    it('can filter records using datetime constraint with is after operator with `this_minute` preset', function () use ($applyQueryBuilderFilter): void {
+        $currentMinutePosts = Post::factory()->count(3)->create([
+            'published_at' => now()->startOfMinute()->addSeconds(30),
+        ]);
+
+        $futurePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addMinutes(5),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($currentMinutePosts->merge($futurePosts)->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'this_minute',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($currentMinutePosts->merge($futurePosts))
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `this_hour` preset', function () use ($applyQueryBuilderFilter): void {
+        $currentHourPosts = Post::factory()->count(3)->create([
+            'published_at' => now()->startOfHour()->addMinutes(30),
+        ]);
+
+        $futurePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addHours(5),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subHours(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($currentHourPosts->merge($futurePosts)->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'this_hour',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($currentHourPosts->merge($futurePosts))
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `past_minute` preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subSeconds(30),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_minute',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `past_hour` preset', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(30),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subHours(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_hour',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `next_minute` preset', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addMinutes(5),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addSeconds(30),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_minute',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `next_hour` preset', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addHours(5),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addMinutes(30),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'next_hour',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `custom` preset and `second` unit in past tense', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subSeconds(15),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 30,
+                            'relative_unit' => 'second',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `custom` preset and `minute` unit in past tense', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(5),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(30),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 10,
+                            'relative_unit' => 'minute',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `custom` preset and `hour` unit in past tense', function () use ($applyQueryBuilderFilter): void {
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subHours(1),
+        ]);
+
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subHours(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 3,
+                            'relative_unit' => 'hour',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($recentPosts)
+            ->assertCanNotSeeTableRecords($oldPosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `custom` preset and `second` unit in future tense', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addMinutes(5),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addSeconds(15),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 30,
+                            'relative_unit' => 'second',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `custom` preset and `minute` unit in future tense', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addMinutes(30),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addMinutes(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 10,
+                            'relative_unit' => 'minute',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using datetime constraint with is after operator with `custom` preset and `hour` unit in future tense', function () use ($applyQueryBuilderFilter): void {
+        $farFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addHours(5),
+        ]);
+
+        $nearFuturePosts = Post::factory()->count(5)->create([
+            'published_at' => now()->addHours(1),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isAfter',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'future',
+                            'relative_value' => 3,
+                            'relative_unit' => 'hour',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($farFuturePosts)
+            ->assertCanNotSeeTableRecords($nearFuturePosts);
+    });
+
+    it('can filter records using datetime constraint with is before operator in `absolute` mode', function () use ($applyQueryBuilderFilter): void {
+        $beforeThresholdPost = Post::factory()->create([
+            'published_at' => '2026-07-13 09:00:00',
+        ]);
+
+        $afterThresholdPost = Post::factory()->create([
+            'published_at' => '2026-07-13 15:00:00',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords([$beforeThresholdPost, $afterThresholdPost])
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'absolute',
+                            'date' => '2026-07-13 12:00:00',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords([$beforeThresholdPost])
+            ->assertCanNotSeeTableRecords([$afterThresholdPost]);
+    });
+
+    it('can filter records using datetime constraint with is before operator with `this_minute` preset', function () use ($applyQueryBuilderFilter): void {
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(5),
+        ]);
+
+        $currentMinutePosts = Post::factory()->count(3)->create([
+            'published_at' => now()->startOfMinute()->addSeconds(30),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($oldPosts->merge($currentMinutePosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'this_minute',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($currentMinutePosts);
+    });
+
+    it('can filter records using datetime constraint with is before operator with `this_hour` preset', function () use ($applyQueryBuilderFilter): void {
+        $oldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subHours(5),
+        ]);
+
+        $currentHourPosts = Post::factory()->count(3)->create([
+            'published_at' => now()->startOfHour()->addMinutes(30),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($oldPosts->merge($currentHourPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'this_hour',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($oldPosts)
+            ->assertCanNotSeeTableRecords($currentHourPosts);
+    });
+
+    it('can filter records using datetime constraint with is before operator with `past_minute` preset', function () use ($applyQueryBuilderFilter): void {
+        $veryOldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(5),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subSeconds(30),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_minute',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($veryOldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using datetime constraint with is before operator with `past_hour` preset', function () use ($applyQueryBuilderFilter): void {
+        $veryOldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subHours(5),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(30),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'past_hour',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($veryOldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using datetime constraint with is before operator with `custom` preset and `second` unit', function () use ($applyQueryBuilderFilter): void {
+        $veryOldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(5),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subSeconds(15),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 30,
+                            'relative_unit' => 'second',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($veryOldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using datetime constraint with is before operator with `custom` preset and `minute` unit', function () use ($applyQueryBuilderFilter): void {
+        $veryOldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(30),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subMinutes(5),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 10,
+                            'relative_unit' => 'minute',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($veryOldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can filter records using datetime constraint with is before operator with `custom` preset and `hour` unit', function () use ($applyQueryBuilderFilter): void {
+        $veryOldPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subHours(5),
+        ]);
+
+        $recentPosts = Post::factory()->count(5)->create([
+            'published_at' => now()->subHours(1),
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'published_at',
+                    'data' => [
+                        'operator' => 'isBefore',
+                        'settings' => [
+                            'mode' => 'relative',
+                            'preset' => 'custom',
+                            'tense' => 'past',
+                            'relative_value' => 3,
+                            'relative_unit' => 'hour',
+                        ],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($veryOldPosts)
+            ->assertCanNotSeeTableRecords($recentPosts);
+    });
+
+    it('can delete a rule in the query builder filter in the browser', function (): void {
+        Artisan::call('filament:assets');
+
+        $this->actingAs(User::factory()->create());
+
+        visit('/query-builder-table-browser-test')
+            ->click('button[title="Filter"]')
+            ->click('text=Add rule')
+            ->click('.fi-dropdown-list-item >> text=Title')
+            ->assertPresent('.fi-fo-builder-item')
+            ->click('.fi-fo-builder-item button[title="Delete"]')
+            ->assertNotPresent('.fi-fo-builder-item')
+            ->assertNoSmoke();
+    });
 });
 
-// Time-Based Date Filtering Tests
+describe('properties', function () use ($applyQueryBuilderFilter): void {
+    it('keeps grouped `constraints()` addressable by name and allows them to be regrouped', function (): void {
+        $queryBuilder = QueryBuilder::make()->table(livewire(PostsQueryBuilderTable::class)->instance()->getTable())
+            ->constraints([
+                'Content' => [TextConstraint::make('title'), TextConstraint::make('content')],
+                DateConstraint::make('published_at'),
+                'Empty' => [],
+            ]);
 
-it('can filter records using datetime constraint with is after operator with `this_minute` preset', function (): void {
-    $currentMinutePosts = Post::factory()->count(3)->create([
-        'published_at' => now()->startOfMinute()->addSeconds(30),
+        expect(array_keys($queryBuilder->getConstraints()))->toBe(['title', 'content', 'published_at'])
+            ->and($queryBuilder->getConstraint('title')?->getName())->toBe('title')
+            ->and(array_keys($queryBuilder->getGroupedConstraints()))->toBe([0, 'Content']);
+
+        $queryBuilder->constraints(['Publishing' => [TextConstraint::make('title')], TextConstraint::make('content')]);
+
+        expect(array_keys($queryBuilder->getGroupedConstraints()))->toBe([0, 1, 'Publishing'])
+            ->and($queryBuilder->getGroupedConstraints()['Publishing'][0]->getName())->toBe('title');
+
+        $queryBuilder = QueryBuilder::make()->table($queryBuilder->getTable())
+            ->constraints([TextConstraint::make('title')])
+            ->constraints([
+                'Publishing' => [DateConstraint::make('published_at')],
+                'Content' => [TextConstraint::make('title')],
+            ]);
+
+        expect(array_keys($queryBuilder->getGroupedConstraints()))->toBe(['Publishing', 'Content']);
+    });
+
+    it('applies nested rules with grouped constraints without changing query semantics', function () use ($applyQueryBuilderFilter): void {
+        $this->actingAs(User::factory()->create());
+
+        $titleMatch = Post::factory()->create(['title' => 'Autumn news', 'content' => 'Ordinary update']);
+        $contentMatch = Post::factory()->create(['title' => 'Other news', 'content' => 'Autumn highlights']);
+        $nonMatch = Post::factory()->create(['title' => 'Other news', 'content' => 'Ordinary update']);
+
+        livewire(QueryBuilderTableBrowserTest::class, ['grouped' => true])
+            ->tap($applyQueryBuilderFilter([
+                ['type' => 'or', 'data' => ['groups' => [
+                    ['rules' => [['type' => 'title', 'data' => ['operator' => 'contains', 'settings' => ['text' => 'Autumn']]]]],
+                    ['rules' => [['type' => 'content', 'data' => ['operator' => 'contains', 'settings' => ['text' => 'Autumn']]]]],
+                ]]],
+            ]))
+            ->assertCanSeeTableRecords([$titleMatch, $contentMatch])
+            ->assertCanNotSeeTableRecords([$nonMatch]);
+    });
+
+    it('returns `queryBuilder` from `getDefaultName()`', function (): void {
+        expect(QueryBuilder::getDefaultName())->toBe('queryBuilder');
+    });
+
+    it('can set `constraintPickerColumns()` with an integer', function (): void {
+        $queryBuilder = QueryBuilder::make();
+        $queryBuilder->constraintPickerColumns(3);
+
+        expect($queryBuilder->getConstraintPickerColumns('lg'))->toBe(3);
+    });
+
+    it('can set `constraintPickerColumns()` with an array', function (): void {
+        $queryBuilder = QueryBuilder::make();
+        $queryBuilder->constraintPickerColumns(['default' => 1, 'sm' => 2, 'lg' => 3]);
+
+        expect($queryBuilder->getConstraintPickerColumns('default'))->toBe(1);
+        expect($queryBuilder->getConstraintPickerColumns('sm'))->toBe(2);
+        expect($queryBuilder->getConstraintPickerColumns('lg'))->toBe(3);
+    });
+
+    it('returns default columns when `constraintPickerColumns()` is not set', function (): void {
+        $queryBuilder = QueryBuilder::make();
+        $columns = $queryBuilder->getConstraintPickerColumns();
+
+        expect($columns)->toBeArray();
+    });
+
+    it('returns `null` for unset breakpoint in `getConstraintPickerColumns()`', function (): void {
+        $queryBuilder = QueryBuilder::make();
+
+        expect($queryBuilder->getConstraintPickerColumns('2xl'))->toBeNull();
+    });
+
+    it('can set `constraintPickerWidth()`', function (): void {
+        $queryBuilder = QueryBuilder::make();
+        $queryBuilder->constraintPickerWidth('xl');
+
+        expect($queryBuilder->getConstraintPickerWidth())->toBe('xl');
+    });
+
+    it('can set `constraintPickerWidth()` with a `Closure`', function (): void {
+        $queryBuilder = QueryBuilder::make();
+        $queryBuilder->constraintPickerWidth(static fn (): string => 'lg');
+
+        expect($queryBuilder->getConstraintPickerWidth())->toBe('lg');
+    });
+
+    it('returns `null` for `getConstraintPickerWidth()` by default', function (): void {
+        $queryBuilder = QueryBuilder::make();
+
+        expect($queryBuilder->getConstraintPickerWidth())->toBeNull();
+    });
+
+    it('can set `constraints()` and retrieve with `getConstraint()`', function (): void {
+        $constraint = TextConstraint::make('title');
+
+        $queryBuilder = QueryBuilder::make()
+            ->table(livewire(PostsQueryBuilderTable::class)->instance()->getTable())
+            ->constraints([$constraint]);
+
+        expect($queryBuilder->getConstraint('title'))->toBe($constraint)
+            ->and($queryBuilder->getConstraints())->toBe(['title' => $constraint]);
+    });
+});
+
+it('uses `getFormSchema()` overrides when building operator settings', function (): void {
+    $operator = new class('contains') extends ContainsOperator
+    {
+        public function getFormSchema(): array
+        {
+            return [
+                ...parent::getFormSchema(),
+                TextInput::make('extra'),
+            ];
+        }
+    };
+
+    $schema = Schema::make(TestLivewire::make())->statePath('data')->components([
+        RuleBuilder::make('rules')->constraints([
+            TextConstraint::make('title')->operators([$operator]),
+        ]),
     ]);
+    $schema->fill(['rules' => [[
+        'type' => 'title',
+        'data' => ['operator' => 'contains', 'settings' => ['text' => 'Needle', 'extra' => 'Custom setting']],
+    ]]]);
 
-    $futurePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addMinutes(5),
-    ]);
+    $fields = collect($schema->getFlatComponents(withHidden: true))
+        ->filter(static fn ($component): bool => $component instanceof TextInput)
+        ->mapWithKeys(static fn (TextInput $component): array => [$component->getName() => $component->getState()])
+        ->all();
 
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(5),
-    ]);
+    expect($fields)->toBe(['text' => 'Needle', 'extra' => 'Custom setting']);
+});
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($currentMinutePosts->merge($futurePosts)->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
+it('groups the OR block using its translated heading only when attributes are grouped', function (bool $hasGroups, ?string $label): void {
+    $this->actingAs(User::factory()->create());
+
+    if ($label !== null) {
+        app('translator')->get('filament-query-builder::query-builder');
+        app('translator')->addLines(['query-builder.form.or_groups.block.picker_group' => $label], 'en', 'filament-query-builder');
+    }
+
+    $label ??= 'Logic';
+    $livewire = livewire(QueryBuilderTableBrowserTest::class, ['grouped' => $hasGroups]);
+    $filter = $livewire->instance()->getTable()->getFilter('query_builder');
+    $builder = $filter->getForm()->getComponent(static fn ($component): bool => $component instanceof RuleBuilder);
+
+    $html = $builder->toHtml();
+    $document = new DOMDocument;
+    @$document->loadHTML($html);
+    $xpath = new DOMXPath($document);
+
+    $orButtons = $xpath->query('//button[normalize-space(.)="OR condition"]');
+
+    expect($orButtons->length)->toBe(1)
+        ->and($xpath->query('ancestor::*[@role="group" and @aria-label="' . $label . '"]', $orButtons->item(0))->length)->toBe((int) ($hasGroups && ($label !== '')));
+
+    if ($hasGroups && ($label === 'Content')) {
+        expect($xpath->query('//*[@role="group" and @aria-label="Content"]//button')->length)->toBe(2);
+    }
+})->with(['flat' => false, 'grouped' => true])->with([
+    'default' => null,
+    'custom' => 'Conditions',
+    'numeric' => '0',
+    'existing group' => 'Content',
+    'ungrouped' => '',
+]);
+
+it('preserves constraint picker groups inside nested OR conditions', function (): void {
+    Artisan::call('filament:assets');
+    $this->actingAs(User::factory()->create());
+
+    $addRule = '.fi-fo-builder-block-picker > .fi-dropdown-trigger button[aria-haspopup="menu"]';
+    $contentGroup = '[role="group"][aria-label="Content"]:visible';
+    $detailsGroup = '[role="group"][aria-label="Details"]:visible';
+    $logicGroup = '[role="group"][aria-label="Logic"]:visible';
+
+    $page = visit('/query-builder-table-browser-test?grouped=1');
+
+    $page->click('button[title="Filter"]');
+    $page->page()->locator($addRule)->click();
+
+    $page
+        ->assertVisible($contentGroup)
+        ->assertVisible($detailsGroup)
+        ->assertVisible($logicGroup)
+        ->assertNoAccessibilityIssues()
+        ->click($logicGroup . ' button')
+        ->assertMissing($logicGroup)
+        ->assertCount($addRule, 3);
+
+    $page->page()->locator(':nth-match(' . $addRule . ', 2)')->click();
+
+    $page
+        ->assertVisible($contentGroup)
+        ->assertVisible($detailsGroup)
+        ->assertVisible($logicGroup)
+        ->click($detailsGroup . ' button')
+        ->assertNoSmoke()
+        ->assertMissing($detailsGroup)
+        ->assertNoAccessibilityIssues();
+
+    $darkPage = $page->inDarkMode();
+    $darkPage->click('button[title="Filter"]');
+    $darkPage->page()->locator($addRule)->click();
+    $darkPage->assertVisible($logicGroup)
+        ->assertNoAccessibilityIssues()
+        ->click($logicGroup . ' button')
+        ->assertCount($addRule, 3);
+    $darkPage->page()->locator(':nth-match(' . $addRule . ', 2)')->click();
+    $darkPage->click($detailsGroup . ' button')
+        ->assertMissing($detailsGroup)
+        ->assertNoAccessibilityIssues();
+});
+
+describe('rule limits', function () use ($applyQueryBuilderFilter): void {
+    it('has no rule limits by default', function (): void {
+        $queryBuilder = QueryBuilder::make();
+
+        expect($queryBuilder->getMaxRules())->toBeNull()
+            ->and($queryBuilder->getMaxNestingDepth())->toBeNull();
+    });
+
+    it('reports no rule tree as exceeding via `exceedsRuleLimits()` when no limits are set', function (): void {
+        $rule = [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ];
+
+        $queryBuilder = QueryBuilder::make();
+
+        expect($queryBuilder->exceedsRuleLimits(array_fill(0, 500, $rule)))->toBeFalse();
+    });
+
+    it('can set `maxRules()` and `maxNestingDepth()`, including with a `Closure`', function (): void {
+        $queryBuilder = QueryBuilder::make()
+            ->maxRules(5)
+            ->maxNestingDepth(fn (): int => 3);
+
+        expect($queryBuilder->getMaxRules())->toBe(5)
+            ->and($queryBuilder->getMaxNestingDepth())->toBe(3);
+    });
+
+    it('does not report a rule tree within limits as exceeding via `exceedsRuleLimits()`', function (): void {
+        $rule = [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ];
+
+        $queryBuilder = QueryBuilder::make()
+            ->maxRules(3)
+            ->maxNestingDepth(2);
+
+        expect($queryBuilder->exceedsRuleLimits([$rule, $rule, $rule]))->toBeFalse();
+    });
+
+    it('reports a rule tree exceeding `maxRules()` as exceeding via `exceedsRuleLimits()`', function (): void {
+        $rule = [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ];
+
+        $queryBuilder = QueryBuilder::make()->maxRules(2);
+
+        expect($queryBuilder->exceedsRuleLimits([$rule, $rule, $rule]))->toBeTrue();
+    });
+
+    it('does not count "or" blocks or their groups towards `maxRules()`', function (): void {
+        $rule = [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ];
+
+        $tree = [
             [
-                'type' => 'published_at',
+                'type' => 'or',
                 'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'this_minute',
+                    'groups' => [
+                        ['rules' => [$rule]],
+                        ['rules' => [$rule]],
                     ],
                 ],
             ],
-        ]))
-        ->assertCanSeeTableRecords($currentMinutePosts->merge($futurePosts))
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
+        ];
 
-it('can filter records using datetime constraint with is after operator with `this_hour` preset', function (): void {
-    $currentHourPosts = Post::factory()->count(3)->create([
-        'published_at' => now()->startOfHour()->addMinutes(30),
-    ]);
+        expect(QueryBuilder::make()->maxRules(2)->exceedsRuleLimits($tree))->toBeFalse();
 
-    $futurePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addHours(5),
-    ]);
+        $tree[0]['data']['groups'][0]['rules'][] = $rule;
 
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subHours(5),
-    ]);
+        expect(QueryBuilder::make()->maxRules(2)->exceedsRuleLimits($tree))->toBeTrue();
+    });
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($currentHourPosts->merge($futurePosts)->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
+    it('reports a rule tree exceeding `maxNestingDepth()` as exceeding via `exceedsRuleLimits()`', function (): void {
+        $rule = [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ];
+
+        for ($iteration = 0; $iteration < 3; $iteration++) {
+            $rule = [
+                'type' => 'or',
                 'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'this_hour',
+                    'groups' => [
+                        ['rules' => [$rule]],
+                    ],
+                ],
+            ];
+        }
+
+        $queryBuilder = QueryBuilder::make()->maxNestingDepth(2);
+
+        expect($queryBuilder->exceedsRuleLimits([$rule]))->toBeTrue();
+    });
+
+    it('applies a rule tree that is within the default limits normally', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Test Post Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        livewire(PostsQueryBuilderTable::class)
+            ->assertCanSeeTableRecords($posts->merge($otherPosts))
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'title',
+                    'data' => [
+                        'operator' => 'contains',
+                        'settings' => ['text' => 'Test Post'],
+                    ],
+                ],
+            ]))
+            ->assertCanSeeTableRecords($posts)
+            ->assertCanNotSeeTableRecords($otherPosts);
+    });
+
+    it('safely ignores a rule tree that exceeds `maxRules()`, applying no constraints', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Test Post Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        // Build a tree of 4 rules, one over the configured `maxRules()` of 3. Applied individually,
+        // these would hide `$otherPosts`, so seeing every record proves the constraints were ignored.
+        $rules = array_fill(0, 4, [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ]);
+
+        QueryBuilder::configureUsing(
+            fn (QueryBuilder $queryBuilder) => $queryBuilder->maxRules(3),
+            during: fn () => livewire(PostsQueryBuilderTable::class)
+                ->assertCanSeeTableRecords($posts->merge($otherPosts))
+                ->tap($applyQueryBuilderFilter($rules))
+                ->assertCanSeeTableRecords($posts->merge($otherPosts))
+                ->assertHasNoErrors(),
+        );
+    });
+
+    it('safely ignores a rule tree that exceeds `maxNestingDepth()`, applying no constraints', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Test Post Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        $rule = [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ];
+
+        // Nest the filtering rule inside three "or" blocks, one level deeper than the configured
+        // `maxNestingDepth()` of 2. Seeing every record proves the constraints were ignored.
+        for ($iteration = 0; $iteration < 3; $iteration++) {
+            $rule = [
+                'type' => 'or',
+                'data' => [
+                    'groups' => [
+                        ['rules' => [$rule]],
+                    ],
+                ],
+            ];
+        }
+
+        QueryBuilder::configureUsing(
+            fn (QueryBuilder $queryBuilder) => $queryBuilder->maxNestingDepth(2),
+            during: fn () => livewire(PostsQueryBuilderTable::class)
+                ->assertCanSeeTableRecords($posts->merge($otherPosts))
+                ->tap($applyQueryBuilderFilter([$rule]))
+                ->assertCanSeeTableRecords($posts->merge($otherPosts))
+                ->assertHasNoErrors(),
+        );
+    });
+
+    it('counts only leaf conditions via `RuleBuilder::countTreeRules()`, not "or" containers', function (): void {
+        $ruleBuilder = RuleBuilder::make('rules');
+
+        $rule = [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ];
+
+        expect($ruleBuilder->countTreeRules([$rule, $rule]))->toBe(2);
+
+        $tree = [
+            $rule,
+            [
+                'type' => 'or',
+                'data' => [
+                    'groups' => [
+                        ['rules' => [$rule, $rule]],
+                        ['rules' => [$rule]],
                     ],
                 ],
             ],
-        ]))
-        ->assertCanSeeTableRecords($currentHourPosts->merge($futurePosts))
-        ->assertCanNotSeeTableRecords($oldPosts);
+        ];
+
+        expect($ruleBuilder->countTreeRules($tree))->toBe(4);
+    });
+
+    it('only offers the "or" block via `canAddOrBlock()` while within `maxNestingDepth()`', function (): void {
+        expect(RuleBuilder::make('rules')->canAddOrBlock())->toBeTrue();
+
+        expect(RuleBuilder::make('rules')->maxNestingDepth(2)->nestingDepth(1)->canAddOrBlock())->toBeTrue();
+
+        expect(RuleBuilder::make('rules')->maxNestingDepth(2)->nestingDepth(2)->canAddOrBlock())->toBeFalse();
+    });
+
+    it('offers no pickable blocks in the rule builder once at the `maxRules()` limit', function (): void {
+        // The picker dropdown opens regardless of the disabled add button, so an empty block list is what actually prevents adding.
+        $rules = array_fill(0, 4, [
+            'type' => 'title',
+            'data' => [
+                'operator' => 'contains',
+                'settings' => ['text' => 'Test Post'],
+            ],
+        ]);
+
+        QueryBuilder::configureUsing(
+            fn (QueryBuilder $queryBuilder) => $queryBuilder->maxRules(3),
+            during: function () use ($rules): void {
+                $livewire = livewire(PostsQueryBuilderTable::class)
+                    ->set('tableDeferredFilters.query_builder.rules', $rules);
+
+                $ruleBuilder = $livewire->instance()
+                    ->getTableFiltersForm()
+                    ->getComponent(fn ($component): bool => $component instanceof RuleBuilder, withHidden: true);
+
+                expect($ruleBuilder)->toBeInstanceOf(RuleBuilder::class)
+                    ->and($ruleBuilder->isAtRuleLimit())->toBeTrue()
+                    ->and($ruleBuilder->getBlockPickerBlocks())->toBe([]);
+            },
+        );
+    });
+
+    it('applies a rule tree normally when a limit is configured but not exceeded', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(10)->create([
+            'title' => 'Test Post Title',
+        ]);
+
+        $otherPosts = Post::factory()->count(5)->create([
+            'title' => 'Different Title',
+        ]);
+
+        QueryBuilder::configureUsing(
+            fn (QueryBuilder $queryBuilder) => $queryBuilder->maxRules(3)->maxNestingDepth(2),
+            during: fn () => livewire(PostsQueryBuilderTable::class)
+                ->assertCanSeeTableRecords($posts->merge($otherPosts))
+                ->tap($applyQueryBuilderFilter([
+                    [
+                        'type' => 'title',
+                        'data' => [
+                            'operator' => 'contains',
+                            'settings' => ['text' => 'Test Post'],
+                        ],
+                    ],
+                ]))
+                ->assertCanSeeTableRecords($posts)
+                ->assertCanNotSeeTableRecords($otherPosts),
+        );
+    });
 });
 
-it('can filter records using datetime constraint with is after operator with `past_minute` preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subSeconds(30),
-    ]);
+describe('date operator setting tampering', function () use ($applyQueryBuilderFilter): void {
+    it('does not error when a tampered `isMonth` setting is a non-scalar array', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(5)->create();
 
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_minute',
+        // Security: a tampered Livewire request can set `settings.month` to an array. The
+        // `month` field is a `Select`, so building its `in:` validation rule reads the state
+        // through `OptionStateCast`, which would `strval()` the array and throw (HTTP 500)
+        // before validation could reject it. The request must stay healthy and the constraint
+        // must be skipped, so the table still loads.
+        livewire(PostsQueryBuilderTable::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isMonth',
+                        'settings' => ['month' => ['1']],
                     ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
+            ]))
+            ->assertOk()
+            ->assertCanSeeTableRecords($posts);
+    });
+
+    it('does not error when a tampered `isYear` setting is a non-scalar array', function () use ($applyQueryBuilderFilter): void {
+        $posts = Post::factory()->count(5)->create();
+
+        // Security: a tampered Livewire request can set `settings.year` to an array. The
+        // `year` field is a `TextInput` with the `integer` rule, which rejects the array
+        // before it reaches `whereYear()`, so the request must stay healthy and the table
+        // must still load.
+        livewire(PostsQueryBuilderTable::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'created_at',
+                    'data' => [
+                        'operator' => 'isYear',
+                        'settings' => ['year' => ['2024']],
+                    ],
+                ],
+            ]))
+            ->assertOk()
+            ->assertCanSeeTableRecords($posts);
+    });
+
+    it('skips the constraint when `IsMonthOperator::apply()` receives a tampered non-scalar setting', function (): void {
+        // Defense-in-depth: form validation is the primary defense, but this bypasses it by
+        // invoking `apply()` directly to confirm the operator fails closed rather than passing
+        // an array to `whereMonth()`.
+        $posts = Post::factory()->count(3)->create();
+
+        $constraint = DateConstraint::make('created_at');
+
+        $operator = IsMonthOperator::make()
+            ->constraint($constraint)
+            ->settings(['month' => ['1']]);
+
+        $filtered = $operator->apply(Post::query(), 'created_at');
+
+        expect($filtered->count())->toBe($posts->count());
+    });
+
+    it('skips the constraint when `IsYearOperator::apply()` receives a tampered non-scalar setting', function (): void {
+        // Defense-in-depth: form validation is the primary defense, but this bypasses it by
+        // invoking `apply()` directly to confirm the operator fails closed rather than passing
+        // an array to `whereYear()`.
+        $posts = Post::factory()->count(3)->create();
+
+        $constraint = DateConstraint::make('created_at');
+
+        $operator = IsYearOperator::make()
+            ->constraint($constraint)
+            ->settings(['year' => ['2024']]);
+
+        $filtered = $operator->apply(Post::query(), 'created_at');
+
+        expect($filtered->count())->toBe($posts->count());
+    });
+
+    it('skips the constraint and renders the summary when a date operator receives a tampered non-scalar setting', function (string $operatorClass): void {
+        // Defense-in-depth: form validation is the primary defense, but this bypasses it by
+        // invoking `apply()` / `getSummary()` directly to confirm the operator fails closed
+        // rather than passing an array to `whereDate()` or `Carbon::parse()`.
+        $posts = Post::factory()->count(3)->create();
+
+        $constraint = DateConstraint::make('created_at');
+
+        $operator = $operatorClass::make()
+            ->constraint($constraint)
+            ->settings(['date' => ['2024-01-01']]);
+
+        $filtered = $operator->apply(Post::query(), 'created_at');
+
+        expect($filtered->count())->toBe($posts->count())
+            ->and($operator->getSummary())->toBeString();
+    })->with([
+        IsDateOperator::class,
+        IsAfterOperator::class,
+        IsBeforeOperator::class,
+    ]);
 });
 
-it('can filter records using datetime constraint with is after operator with `past_hour` preset', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(30),
+describe('number operator setting tampering', function () use ($applyQueryBuilderFilter): void {
+    it('skips the constraint and renders the summary when a number operator receives a tampered non-scalar setting', function (string $operatorClass): void {
+        // Defense-in-depth: form validation is the primary defense, but this bypasses it by
+        // invoking `apply()` / `getSummary()` directly to confirm the operator fails closed
+        // rather than passing an array to `floatval()` or `Number::format()`.
+        $posts = Post::factory()->count(3)->create();
+
+        $constraint = NumberConstraint::make('rating');
+
+        $operator = $operatorClass::make()
+            ->constraint($constraint)
+            ->settings(['number' => ['5']]);
+
+        $filtered = $operator->apply(Post::query(), 'rating');
+
+        expect($filtered->count())->toBe($posts->count())
+            ->and($operator->getSummary())->toBeString();
+    })->with([
+        NumberEqualsOperator::class,
+        IsMinOperator::class,
+        IsMaxOperator::class,
     ]);
 
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subHours(5),
-    ]);
+    it('does not error when a tampered `aggregate` setting is a non-scalar array', function () use ($applyQueryBuilderFilter): void {
+        // Unlike the other number settings, the `aggregate` select is not rejected by
+        // validation, so a tampered array would reach `array_key_exists()` in `getAggregate()`
+        // and throw a `TypeError` (HTTP 500). The operator must treat it as no aggregate.
+        $posts = Post::factory()->count(5)->create(['rating' => 5]);
 
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_hour',
+        livewire(PostsQueryBuilderTable::class)
+            ->tap($applyQueryBuilderFilter([
+                [
+                    'type' => 'rating',
+                    'data' => [
+                        'operator' => 'isMin',
+                        'settings' => ['number' => 1, 'aggregate' => ['tampered']],
                     ],
                 ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
+            ]))
+            ->assertOk()
+            ->assertCanSeeTableRecords($posts);
+    });
 });
 
-it('can filter records using datetime constraint with is after operator with `next_minute` preset', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addMinutes(5),
+describe('relationship count operator setting tampering', function (): void {
+    it('skips the constraint and renders the summary when a count operator receives a tampered non-scalar setting', function (string $operatorClass): void {
+        // Defense-in-depth: form validation is the primary defense, but this bypasses it by
+        // invoking `apply()` / `getSummary()` directly to confirm the operator fails closed
+        // rather than passing an array to the translator (summary) or `has()` (apply).
+        $author = User::factory()->create();
+        $posts = Post::factory()->count(3)->create(['author_id' => $author->id]);
+
+        $constraint = RelationshipConstraint::make('author');
+
+        $operator = $operatorClass::make()
+            ->constraint($constraint)
+            ->settings(['count' => ['tampered']]);
+
+        $filtered = $operator->applyToBaseQuery(Post::query());
+
+        expect($filtered->count())->toBe($posts->count())
+            ->and($operator->getSummary())->toBeString();
+    })->with([
+        RelationshipHasMinOperator::class,
+        RelationshipHasMaxOperator::class,
+        RelationshipEqualsOperator::class,
     ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addSeconds(30),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_minute',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-it('can filter records using datetime constraint with is after operator with `next_hour` preset', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addHours(5),
-    ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addMinutes(30),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'next_hour',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-it('can filter records using datetime constraint with is after operator with `custom` preset and `second` unit in past tense', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subSeconds(15),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 30,
-                        'relative_unit' => 'second',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using datetime constraint with is after operator with `custom` preset and `minute` unit in past tense', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(5),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(30),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 10,
-                        'relative_unit' => 'minute',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using datetime constraint with is after operator with `custom` preset and `hour` unit in past tense', function (): void {
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subHours(1),
-    ]);
-
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subHours(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($recentPosts->merge($oldPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 3,
-                        'relative_unit' => 'hour',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($recentPosts)
-        ->assertCanNotSeeTableRecords($oldPosts);
-});
-
-it('can filter records using datetime constraint with is after operator with `custom` preset and `second` unit in future tense', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addMinutes(5),
-    ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addSeconds(15),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 30,
-                        'relative_unit' => 'second',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-it('can filter records using datetime constraint with is after operator with `custom` preset and `minute` unit in future tense', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addMinutes(30),
-    ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addMinutes(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 10,
-                        'relative_unit' => 'minute',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-it('can filter records using datetime constraint with is after operator with `custom` preset and `hour` unit in future tense', function (): void {
-    $farFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addHours(5),
-    ]);
-
-    $nearFuturePosts = Post::factory()->count(5)->create([
-        'published_at' => now()->addHours(1),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($farFuturePosts->merge($nearFuturePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isAfter',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'future',
-                        'relative_value' => 3,
-                        'relative_unit' => 'hour',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($farFuturePosts)
-        ->assertCanNotSeeTableRecords($nearFuturePosts);
-});
-
-// IsBeforeOperator Time-Based Tests
-
-it('can filter records using datetime constraint with is before operator with `this_minute` preset', function (): void {
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(5),
-    ]);
-
-    $currentMinutePosts = Post::factory()->count(3)->create([
-        'published_at' => now()->startOfMinute()->addSeconds(30),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($oldPosts->merge($currentMinutePosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'this_minute',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($currentMinutePosts);
-});
-
-it('can filter records using datetime constraint with is before operator with `this_hour` preset', function (): void {
-    $oldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subHours(5),
-    ]);
-
-    $currentHourPosts = Post::factory()->count(3)->create([
-        'published_at' => now()->startOfHour()->addMinutes(30),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($oldPosts->merge($currentHourPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'this_hour',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($oldPosts)
-        ->assertCanNotSeeTableRecords($currentHourPosts);
-});
-
-it('can filter records using datetime constraint with is before operator with `past_minute` preset', function (): void {
-    $veryOldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(5),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subSeconds(30),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_minute',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($veryOldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using datetime constraint with is before operator with `past_hour` preset', function (): void {
-    $veryOldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subHours(5),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(30),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'past_hour',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($veryOldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using datetime constraint with is before operator with `custom` preset and `second` unit', function (): void {
-    $veryOldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(5),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subSeconds(15),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 30,
-                        'relative_unit' => 'second',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($veryOldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using datetime constraint with is before operator with `custom` preset and `minute` unit', function (): void {
-    $veryOldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(30),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subMinutes(5),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 10,
-                        'relative_unit' => 'minute',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($veryOldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
-});
-
-it('can filter records using datetime constraint with is before operator with `custom` preset and `hour` unit', function (): void {
-    $veryOldPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subHours(5),
-    ]);
-
-    $recentPosts = Post::factory()->count(5)->create([
-        'published_at' => now()->subHours(1),
-    ]);
-
-    livewire(PostsQueryBuilderTable::class)
-        ->assertCanSeeTableRecords($veryOldPosts->merge($recentPosts))
-        ->tap(applyQueryBuilderFilter([
-            [
-                'type' => 'published_at',
-                'data' => [
-                    'operator' => 'isBefore',
-                    'settings' => [
-                        'mode' => 'relative',
-                        'preset' => 'custom',
-                        'tense' => 'past',
-                        'relative_value' => 3,
-                        'relative_unit' => 'hour',
-                    ],
-                ],
-            ],
-        ]))
-        ->assertCanSeeTableRecords($veryOldPosts)
-        ->assertCanNotSeeTableRecords($recentPosts);
 });

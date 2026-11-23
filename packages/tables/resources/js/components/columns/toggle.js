@@ -1,71 +1,11 @@
-export default function toggleTableColumn({ name, recordKey, state }) {
+import editableTableColumn from '../../utilities/editable-table-column.js'
+
+export default function toggleTableColumn(configuration) {
     return {
-        error: undefined,
-
-        isLoading: false,
-
-        state,
+        ...editableTableColumn(configuration),
 
         init() {
-            Livewire.hook(
-                'commit',
-                ({ component, commit, succeed, fail, respond }) => {
-                    succeed(({ snapshot, effect }) => {
-                        this.$nextTick(() => {
-                            if (this.isLoading) {
-                                return
-                            }
-
-                            if (
-                                component.id !==
-                                this.$root.closest('[wire\\:id]')?.attributes[
-                                    'wire:id'
-                                ].value
-                            ) {
-                                return
-                            }
-
-                            const serverState = this.getServerState()
-
-                            if (
-                                serverState === undefined ||
-                                Alpine.raw(this.state) === serverState
-                            ) {
-                                return
-                            }
-
-                            this.state = serverState
-                        })
-                    })
-                },
-            )
-
-            this.$watch('state', async () => {
-                const serverState = this.getServerState()
-
-                if (
-                    serverState === undefined ||
-                    Alpine.raw(this.state) === serverState
-                ) {
-                    return
-                }
-
-                this.isLoading = true
-
-                const response = await this.$wire.updateTableColumnState(
-                    name,
-                    recordKey,
-                    this.state,
-                )
-
-                this.error = response?.error ?? undefined
-
-                if (!this.error && this.$refs.serverState) {
-                    this.$refs.serverState.value = this.state ? '1' : '0'
-                }
-
-                this.isLoading = false
-            })
+            this.initEditableColumn()
         },
 
         getServerState() {
@@ -74,6 +14,15 @@ export default function toggleTableColumn({ name, recordKey, state }) {
             }
 
             return [1, '1'].includes(this.$refs.serverState.value)
+        },
+
+        toggleState(element) {
+            if (element.hasAttribute('disabled')) {
+                return
+            }
+
+            this.clearError()
+            this.state = !this.state
         },
     }
 }

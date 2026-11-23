@@ -3,10 +3,13 @@
 namespace Filament\Pages;
 
 use BackedEnum;
+use Closure;
+use Exception;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Clusters\Cluster;
 use Filament\Facades\Filament;
+use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\Schemas\Components\Component;
@@ -14,6 +17,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Livewire;
 use Filament\Schemas\Components\RenderHook;
 use Filament\Schemas\Schema;
+use Filament\Support\Components\Attributes\Unexposed;
 use Filament\View\PanelsRenderHook;
 use Filament\Widgets\Widget;
 use Filament\Widgets\WidgetConfiguration;
@@ -25,6 +29,9 @@ use UnitEnum;
 
 use function Filament\Support\original_request;
 
+/**
+ * @template TConfiguration of PageConfiguration = PageConfiguration
+ */
 abstract class Page extends BasePage
 {
     use Concerns\CanAuthorizeAccess;
@@ -40,7 +47,14 @@ abstract class Page extends BasePage
      */
     protected static ?string $cluster = null;
 
+    protected static ?string $breadcrumb = null;
+
     protected static bool $isDiscovered = true;
+
+    /**
+     * @var ?class-string<TConfiguration>
+     */
+    protected static ?string $configurationClass = null;
 
     protected static string | UnitEnum | null $navigationGroup = null;
 
@@ -70,6 +84,7 @@ abstract class Page extends BasePage
 
     protected string $view = 'filament-panels::pages.page';
 
+    #[Unexposed]
     public function getLayout(): string
     {
         return static::$layout ?? 'filament-panels::components.layout.index';
@@ -78,8 +93,20 @@ abstract class Page extends BasePage
     /**
      * @param  array<mixed>  $parameters
      */
-    public static function getUrl(array $parameters = [], bool $isAbsolute = true, ?string $panel = null, ?Model $tenant = null): string
+    #[Unexposed]
+    public static function getUrl(array $parameters = [], bool $isAbsolute = true, ?string $panel = null, ?Model $tenant = null, bool $shouldGuessMissingParameters = false, ?string $configuration = null): string
     {
+        if (filled($configuration)) {
+            return static::withConfiguration($configuration, static fn (): string => static::getUrl(
+                $parameters,
+                $isAbsolute,
+                $panel,
+                $tenant,
+                $shouldGuessMissingParameters,
+                configuration: null,
+            ));
+        }
+
         if (blank($panel) || ($panel = Filament::getPanel($panel))->hasTenancy()) {
             $parameters['tenant'] ??= ($tenant ?? Filament::getTenant());
         }
@@ -87,19 +114,21 @@ abstract class Page extends BasePage
         return route(static::getRouteName($panel), $parameters, $isAbsolute);
     }
 
-    public static function registerRoutes(Panel $panel): void
+    #[Unexposed]
+    public static function registerRoutes(Panel $panel, ?PageConfiguration $configuration = null): void
     {
         if (filled(static::getCluster())) {
             Route::name(static::prependClusterRouteBaseName($panel, 'pages.'))
                 ->prefix(static::prependClusterSlug($panel, ''))
-                ->group(fn () => static::routes($panel));
+                ->group(fn () => static::routes($panel, $configuration));
 
             return;
         }
 
-        Route::name('pages.')->group(fn () => static::routes($panel));
+        Route::name('pages.')->group(fn () => static::routes($panel, $configuration));
     }
 
+    #[Unexposed]
     public static function registerNavigationItems(): void
     {
         if (filled(static::getCluster())) {
@@ -121,15 +150,19 @@ abstract class Page extends BasePage
     /**
      * @return array<NavigationItem>
      */
+    #[Unexposed]
     public static function getNavigationItems(): array
     {
+        $activeRoutePattern = static::getNavigationItemActiveRoutePattern();
+
         return [
             NavigationItem::make(static::getNavigationLabel())
+                ->key(static::class)
                 ->group(static::getNavigationGroup())
                 ->parentItem(static::getNavigationParentItem())
                 ->icon(static::getNavigationIcon())
                 ->activeIcon(static::getActiveNavigationIcon())
-                ->isActiveWhen(fn (): bool => original_request()->routeIs(static::getNavigationItemActiveRoutePattern()))
+                ->activeWhen(fn (): bool => original_request()->routeIs($activeRoutePattern))
                 ->sort(static::getNavigationSort())
                 ->badge(static::getNavigationBadge(), color: static::getNavigationBadgeColor())
                 ->badgeTooltip(static::getNavigationBadgeTooltip())
@@ -140,11 +173,13 @@ abstract class Page extends BasePage
     /**
      * @return string | array<string>
      */
+    #[Unexposed]
     public static function getNavigationItemActiveRoutePattern(): string | array
     {
         return static::getRouteName();
     }
 
+    #[Unexposed]
     public static function getRouteName(?Panel $panel = null): string
     {
         $panel ??= Filament::getCurrentOrDefaultPanel();
@@ -155,39 +190,223 @@ abstract class Page extends BasePage
         return $panel->generateRouteName($routeName);
     }
 
-    /**
-     * @return array<string>
-     */
-    public function getBreadcrumbs(): array
+    #[Unexposed]
+    public function getBreadcrumb(): ?string
     {
-        if (filled($cluster = static::getCluster())) {
-            return $cluster::unshiftClusterBreadcrumbs([]);
-        }
-
-        return [];
+        return static::$breadcrumb;
     }
 
+    /**
+     * @return array<string | Htmlable>
+     */
+    #[Unexposed]
+    public function getBreadcrumbs(): array
+    {
+        $breadcrumb = $this->getBreadcrumb();
+
+        if (Filament::getCurrentOrDefaultPanel()->hasNavigationHierarchyInBreadcrumbs()) {
+            $navigationHierarchyBreadcrumbs = $this->getNavigationHierarchyBreadcrumbs();
+
+            if ($navigationHierarchyBreadcrumbs !== null) {
+                return [
+                    ...$navigationHierarchyBreadcrumbs,
+                    $breadcrumb ?? $this->getTitle(),
+                ];
+            }
+        }
+
+        $breadcrumbs = filled($cluster = static::getCluster())
+            ? $cluster::prependClusterBreadcrumbs([])
+            : [];
+
+        if ($breadcrumb !== null) {
+            $breadcrumbs[] = $breadcrumb;
+        }
+
+        return $breadcrumbs;
+    }
+
+    /**
+     * @return array<string | Htmlable> | null
+     */
+    protected function getNavigationHierarchyBreadcrumbs(): ?array
+    {
+        if (filled($cluster = static::getCluster())) {
+            $clusterBreadcrumbs = $this->getNavigationBreadcrumbs(
+                $cluster,
+                static fn (): string => $cluster::getNavigationUrl(),
+            );
+            $pageBreadcrumbs = $this->getNavigationBreadcrumbs(
+                $this->getSubNavigationBreadcrumbItemKey(),
+                fn (): ?string => $this->getSubNavigationBreadcrumbItemUrl(),
+                $this->getCachedSubNavigation(),
+            );
+
+            if (($clusterBreadcrumbs === null) || ($pageBreadcrumbs === null)) {
+                return null;
+            }
+
+            return [
+                ...$clusterBreadcrumbs,
+                $cluster::getUrl() => $cluster::getClusterBreadcrumb(),
+                ...$pageBreadcrumbs,
+            ];
+        }
+
+        return $this->getNavigationBreadcrumbs(
+            $this->getNavigationBreadcrumbItemKey(),
+            fn (): ?string => $this->getNavigationBreadcrumbItemUrl(),
+        );
+    }
+
+    protected function getNavigationBreadcrumbItemKey(): string
+    {
+        return static::class;
+    }
+
+    protected function getNavigationBreadcrumbItemUrl(): ?string
+    {
+        if (! static::shouldRegisterNavigation()) {
+            return null;
+        }
+
+        return static::getNavigationUrl();
+    }
+
+    protected function getSubNavigationBreadcrumbItemKey(): string
+    {
+        return $this->getNavigationBreadcrumbItemKey();
+    }
+
+    protected function getSubNavigationBreadcrumbItemUrl(): ?string
+    {
+        return $this->getNavigationBreadcrumbItemUrl();
+    }
+
+    /**
+     * @param  Closure(): ?string  $navigationItemUrl
+     * @param  ?array<NavigationGroup>  $navigation
+     * @return array<string | Htmlable> | null
+     */
+    protected function getNavigationBreadcrumbs(string $navigationItemKey, Closure $navigationItemUrl, ?array $navigation = null): ?array
+    {
+        if ($navigation === null) {
+            $panel = Filament::getCurrentOrDefaultPanel();
+
+            if (! $panel->hasNavigation()) {
+                return null;
+            }
+
+            $navigation = $panel->getNavigation();
+        }
+
+        foreach ($navigation as $navigationGroup) {
+            $breadcrumbs = $this->getNavigationItemBreadcrumbs(
+                $navigationItemKey,
+                $navigationItemUrl,
+                $navigationGroup->getItems(),
+            );
+
+            if ($breadcrumbs === null) {
+                continue;
+            }
+
+            if (filled($navigationGroupLabel = $navigationGroup->getLabel())) {
+                $breadcrumbs = [
+                    $navigationGroupLabel,
+                    ...$breadcrumbs,
+                ];
+            }
+
+            return $breadcrumbs;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  Closure(): ?string  $navigationItemUrl
+     * @param  iterable<NavigationItem>  $navigationItems
+     * @return array<string | Htmlable> | null
+     */
+    protected function getNavigationItemBreadcrumbs(string $navigationItemKey, Closure $navigationItemUrl, iterable $navigationItems): ?array
+    {
+        foreach ($navigationItems as $navigationItem) {
+            if ($navigationItem->getKey() === $navigationItemKey) {
+                $resolvedNavigationItemUrl = $navigationItemUrl();
+
+                if (filled($resolvedNavigationItemUrl) && ($navigationItem->getUrl() === $resolvedNavigationItemUrl)) {
+                    return [];
+                }
+            }
+
+            $breadcrumbs = $this->getNavigationItemBreadcrumbs(
+                $navigationItemKey,
+                $navigationItemUrl,
+                $navigationItem->getChildItems(),
+            );
+
+            if ($breadcrumbs === null) {
+                continue;
+            }
+
+            $navigationItemUrl = $navigationItem->getUrl();
+
+            return [
+                ...(filled($navigationItemUrl)
+                    ? [$navigationItemUrl => $navigationItem->getLabel()]
+                    : [$navigationItem->getLabel()]),
+                ...$breadcrumbs,
+            ];
+        }
+
+        return null;
+    }
+
+    #[Unexposed]
     public static function getNavigationGroup(): string | UnitEnum | null
     {
         return static::$navigationGroup;
     }
 
+    #[Unexposed]
+    public static function navigationGroup(string | UnitEnum | null $group): void
+    {
+        static::$navigationGroup = $group;
+    }
+
+    #[Unexposed]
     public static function getNavigationParentItem(): ?string
     {
         return static::$navigationParentItem;
     }
 
-    public static function getActiveNavigationIcon(): string | BackedEnum | Htmlable | null
+    #[Unexposed]
+    public static function navigationParentItem(?string $item): void
     {
-        return static::$activeNavigationIcon ?? static::getNavigationIcon();
+        static::$navigationParentItem = $item;
     }
 
+    #[Unexposed]
     public static function getNavigationIcon(): string | BackedEnum | Htmlable | null
     {
         return static::$navigationIcon;
     }
 
-    public static function getNavigationLabel(): string
+    #[Unexposed]
+    public static function navigationIcon(string | BackedEnum $icon): void
+    {
+        static::$navigationIcon = $icon;
+    }
+
+    #[Unexposed]
+    public static function getActiveNavigationIcon(): string | BackedEnum | Htmlable | null
+    {
+        return static::$activeNavigationIcon ?? static::getNavigationIcon();
+    }
+
+    #[Unexposed]
+    public static function getNavigationLabel(): string | Htmlable
     {
         return static::$navigationLabel ?? static::$title ?? str(class_basename(static::class))
             ->kebab()
@@ -195,39 +414,58 @@ abstract class Page extends BasePage
             ->ucwords();
     }
 
+    #[Unexposed]
     public static function getNavigationBadge(): ?string
     {
         return null;
     }
 
-    /**
-     * @return string | array<string> | null
-     */
-    public static function getNavigationBadgeColor(): string | array | null
-    {
-        return null;
-    }
-
+    #[Unexposed]
     public static function getNavigationBadgeTooltip(): string | Htmlable | null
     {
         return static::$navigationBadgeTooltip;
     }
 
+    /**
+     * @return string | array<string> | null
+     */
+    #[Unexposed]
+    public static function getNavigationBadgeColor(): string | array | null
+    {
+        return null;
+    }
+
+    #[Unexposed]
     public static function getNavigationSort(): ?int
     {
         return static::$navigationSort;
     }
 
+    #[Unexposed]
+    public static function navigationLabel(?string $label): void
+    {
+        static::$navigationLabel = $label;
+    }
+
+    #[Unexposed]
+    public static function navigationSort(?int $sort): void
+    {
+        static::$navigationSort = $sort;
+    }
+
+    #[Unexposed]
     public static function getNavigationUrl(): string
     {
         return static::getUrl();
     }
 
+    #[Unexposed]
     public function getFooter(): ?View
     {
         return null;
     }
 
+    #[Unexposed]
     public function getHeader(): ?View
     {
         return null;
@@ -246,6 +484,7 @@ abstract class Page extends BasePage
      *
      * @return array<class-string<Widget> | WidgetConfiguration>
      */
+    #[Unexposed]
     public function getVisibleHeaderWidgets(): array
     {
         return $this->filterVisibleWidgets($this->getHeaderWidgets());
@@ -254,6 +493,7 @@ abstract class Page extends BasePage
     /**
      * @return int | array<string, ?int>
      */
+    #[Unexposed]
     public function getHeaderWidgetsColumns(): int | array
     {
         return 2;
@@ -272,6 +512,7 @@ abstract class Page extends BasePage
      *
      * @return array<class-string<Widget> | WidgetConfiguration>
      */
+    #[Unexposed]
     public function getVisibleFooterWidgets(): array
     {
         return $this->filterVisibleWidgets($this->getFooterWidgets());
@@ -304,6 +545,7 @@ abstract class Page extends BasePage
     /**
      * @return int | array<string, ?int>
      */
+    #[Unexposed]
     public function getFooterWidgetsColumns(): int | array
     {
         return 2;
@@ -312,16 +554,19 @@ abstract class Page extends BasePage
     /**
      * @return array<string, mixed>
      */
+    #[Unexposed]
     public function getWidgetData(): array
     {
         return [];
     }
 
+    #[Unexposed]
     public static function shouldRegisterNavigation(): bool
     {
         return static::$shouldRegisterNavigation;
     }
 
+    #[Unexposed]
     public static function isDiscovered(): bool
     {
         return static::$isDiscovered;
@@ -330,11 +575,13 @@ abstract class Page extends BasePage
     /**
      * @return class-string<Cluster> | null
      */
+    #[Unexposed]
     public static function getCluster(): ?string
     {
         return static::$cluster;
     }
 
+    #[Unexposed]
     public static function prependClusterSlug(Panel $panel, string $slug): string
     {
         if (filled($cluster = static::getCluster())) {
@@ -344,6 +591,7 @@ abstract class Page extends BasePage
         return $slug;
     }
 
+    #[Unexposed]
     public static function prependClusterRouteBaseName(Panel $panel, string $name): string
     {
         if (filled($cluster = static::getCluster())) {
@@ -353,6 +601,7 @@ abstract class Page extends BasePage
         return $name;
     }
 
+    #[Unexposed]
     public function content(Schema $schema): Schema
     {
         return $schema;
@@ -361,6 +610,7 @@ abstract class Page extends BasePage
     /**
      * @return array<string>
      */
+    #[Unexposed]
     public function getPageClasses(): array
     {
         return [];
@@ -371,6 +621,7 @@ abstract class Page extends BasePage
      * @param  array<string, mixed>  $data
      * @return array<Component | Action | ActionGroup>
      */
+    #[Unexposed]
     public function getWidgetsSchemaComponents(array $widgets, array $data = []): array
     {
         return collect($widgets)
@@ -391,6 +642,7 @@ abstract class Page extends BasePage
             ->all();
     }
 
+    #[Unexposed]
     public function headerWidgets(Schema $schema): Schema
     {
         return $schema
@@ -403,6 +655,7 @@ abstract class Page extends BasePage
             ->hidden(fn (): bool => empty($this->cachedHeaderWidgetsSchemaComponents ??= $this->getWidgetsSchemaComponents($this->getHeaderWidgets())));
     }
 
+    #[Unexposed]
     public function footerWidgets(Schema $schema): Schema
     {
         return $schema
@@ -415,8 +668,71 @@ abstract class Page extends BasePage
             ->hidden(fn (): bool => empty($this->cachedFooterWidgetsSchemaComponents ??= $this->getWidgetsSchemaComponents($this->getFooterWidgets())));
     }
 
+    #[Unexposed]
     public function getDefaultTestingSchemaName(): ?string
     {
         return $this->getSchema('form') ? 'form' : 'content';
+    }
+
+    /**
+     * @return TConfiguration
+     */
+    #[Unexposed]
+    public static function make(string $key = 'default'): PageConfiguration
+    {
+        if (! static::$configurationClass) {
+            throw new Exception('Page ' . static::class . ' does not define a $configurationClass.');
+        }
+
+        return static::$configurationClass::make(static::class, $key);
+    }
+
+    /**
+     * @return ?TConfiguration
+     */
+    #[Unexposed]
+    public static function getConfiguration(?Panel $panel = null): ?PageConfiguration
+    {
+        $key = Filament::getCurrentPageConfigurationKey();
+
+        if ($key === null) {
+            return null;
+        }
+
+        $panel ??= Filament::getCurrentPanel();
+
+        return $panel->getPageConfiguration(static::class, $key);
+    }
+
+    #[Unexposed]
+    public static function hasConfiguration(): bool
+    {
+        return static::getConfiguration() !== null;
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  Closure(): TReturn  $callback
+     * @return TReturn
+     */
+    #[Unexposed]
+    public static function withConfiguration(string $key, Closure $callback): mixed
+    {
+        $configuration = Filament::getCurrentPanel()->getPageConfiguration(static::class, $key);
+
+        if (! $configuration) {
+            throw new Exception("Configuration '{$key}' not found for page " . static::class);
+        }
+
+        $previousKey = Filament::getCurrentPageConfigurationKey();
+
+        Filament::setCurrentPageConfigurationKey($key);
+
+        try {
+            return $callback();
+        } finally {
+            Filament::setCurrentPageConfigurationKey($previousKey);
+        }
     }
 }

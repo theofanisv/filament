@@ -1,8 +1,6 @@
 ---
 title: Textarea
 ---
-import AutoScreenshot from "@components/AutoScreenshot.astro"
-import UtilityInjection from "@components/UtilityInjection.astro"
 
 ## Introduction
 
@@ -14,7 +12,7 @@ use Filament\Forms\Components\Textarea;
 Textarea::make('description')
 ```
 
-<AutoScreenshot name="forms/fields/textarea/simple" alt="Textarea" version="4.x" />
+<AutoScreenshot name="forms/fields/textarea/simple" alt="Textarea" />
 
 ## Resizing the textarea
 
@@ -28,7 +26,9 @@ Textarea::make('description')
     ->cols(20)
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing static values, the `rows()` and `cols()` methods also accept functions to dynamically calculate them. You can inject various utilities into the functions as parameters.</UtilityInjection>
+<AutoScreenshot name="forms/fields/textarea/rows" alt="Textarea with custom row size" />
+
+<UtilityInjection set="formFields">As well as allowing static values, the `rows()` and `cols()` methods also accept functions to dynamically calculate them. You can inject various utilities into the functions as parameters.</UtilityInjection>
 
 ### Autosizing the textarea
 
@@ -50,7 +50,9 @@ Textarea::make('description')
     ->autosize(FeatureFlag::active())
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static value, the `autosize()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static value, the `autosize()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+
+<AutoScreenshot name="forms/fields/textarea/autosize" alt="Textarea with autosize" />
 
 ## Making the field read-only
 
@@ -65,7 +67,7 @@ Textarea::make('description')
 
 There are a few differences, compared to [`disabled()`](overview#disabling-a-field):
 
-- When using `readOnly()`, the field will still be sent to the server when the form is submitted. It can be mutated with the browser console, or via JavaScript. You can use [`dehydrated(false)`](overview#preventing-a-field-from-being-dehydrated) to prevent this.
+- When using `readOnly()`, the field will still be sent to the server when the form is submitted. It can be mutated with the browser console, or via JavaScript. You can use [`saved(false)`](overview#preventing-a-field-from-being-saved) to prevent this.
 - There are no styling changes, such as less opacity, when using `readOnly()`.
 - The field is still focusable when using `readOnly()`.
 
@@ -78,7 +80,7 @@ Textarea::make('description')
     ->readOnly(FeatureFlag::active())
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static value, the `readOnly()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static value, the `readOnly()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Disabling Grammarly checks
 
@@ -100,7 +102,7 @@ Textarea::make('description')
     ->disableGrammarly(FeatureFlag::active())
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing a static value, the `disableGrammarly()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing a static value, the `disableGrammarly()` method also accepts a function to dynamically calculate it. You can inject various utilities into the function as parameters.</UtilityInjection>
 
 ## Trimming whitespace
 
@@ -148,4 +150,4 @@ Textarea::make('question')
     ->length(100)
 ```
 
-<UtilityInjection set="formFields" version="4.x">As well as allowing static values, the `minLength()`, `maxLength()` and `length()` methods also accept a function to dynamically calculate them. You can inject various utilities into the function as parameters.</UtilityInjection>
+<UtilityInjection set="formFields">As well as allowing static values, the `minLength()`, `maxLength()` and `length()` methods also accept a function to dynamically calculate them. You can inject various utilities into the function as parameters.</UtilityInjection>

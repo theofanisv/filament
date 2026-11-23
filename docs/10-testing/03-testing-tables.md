@@ -1,7 +1,6 @@
 ---
 title: Testing tables
 ---
-import Aside from "@components/Aside.astro"
 
 ## Testing that a table can render
 
@@ -34,7 +33,7 @@ it('cannot display trashed posts by default', function () {
 
 > If your table uses pagination, `assertCanSeeTableRecords()` will only check for records on the first page. To switch page, call `call('gotoPage', 2)`.
 
-> If your table uses `deferLoading()`, you should call `loadTable()` before `assertCanSeeTableRecords()`.
+> If your table uses `lazyLoaded()`, you should call `loadTable()` before `assertCanSeeTableRecords()`.
 
 ## Testing columns
 
@@ -59,7 +58,7 @@ For testing that a column is not rendered, you can use `assertCanNotRenderTableC
 use function Pest\Livewire\livewire;
 
 it('can not render post comments', function () {
-    Post::factory()->count(10)->create()
+    Post::factory()->count(10)->create();
 
     livewire(PostResource\Pages\ListPosts::class)
         ->assertCanNotRenderTableColumn('comments');
@@ -129,9 +128,8 @@ it('can sort posts by title', function () {
 });
 ```
 
-<Aside variant="info">
-    Filament tables use a SQL `order` statement to sort records before they are output. Different database drivers can use different sorting strategies, and they can differ from PHP's own sorting strategy, so you should ensure that test records are sorted using `orderBy()` on a database query rather than `sortBy()` on a collection of models.
-</Aside>
+> [!NOTE]
+> Filament tables use a SQL `order` statement to sort records before they are output. Different database drivers can use different sorting strategies, and they can differ from PHP's own sorting strategy, so you should ensure that test records are sorted using `orderBy()` on a database query rather than `sortBy()` on a collection of models.
 
 ### Testing the state of a column
 
@@ -188,7 +186,7 @@ it('has an author column', function () {
     $post = Post::factory()->create();
     
     livewire(PostResource\Pages\ListPosts::class)
-        ->assertTableColumnExists('author', function (TextColumn $column): bool {
+        ->assertTableColumnExists('author', function (TextColumn $column) use ($post): bool {
             return $column->getDescriptionBelow() === $post->subtitle;
         }, $post);
 });
@@ -205,6 +203,21 @@ it('shows the correct columns', function () {
     livewire(PostResource\Pages\ListPosts::class)
         ->assertTableColumnVisible('created_at')
         ->assertTableColumnHidden('author');
+});
+```
+
+### Testing whether a column is enabled or disabled
+
+To ensure a column is enabled or disabled for a record, you can use the `assertTableColumnEnabled()` and `assertTableColumnDisabled()` methods. These check the column's disabled state, including any [editable column authorization](../tables/columns/toggle#authorization). They do not check visibility, validation, or whether an update is saved:
+
+```php
+use function Pest\Livewire\livewire;
+
+it('disables publishing posts for non-editors', function () {
+    $post = Post::factory()->create();
+
+    livewire(PostResource\Pages\ListPosts::class)
+        ->assertTableColumnDisabled('is_published', record: $post);
 });
 ```
 
@@ -321,7 +334,7 @@ use function Pest\Livewire\livewire;
 it('filters list by published', function () {
     $posts = Post::factory()->count(10)->create();
 
-    $unpublishedPosts = $posts->where('is_published', false)->get();
+    $unpublishedPosts = $posts->where('is_published', false);
 
     livewire(PostsTable::class)
         ->filterTable('is_published')
@@ -345,7 +358,7 @@ it('can remove all table filters', function () {
 
     livewire(PostsTable::class)
         ->filterTable('is_published')
-        ->filterTable('author', $author)
+        ->filterTable('author', $posts->first()->author)
         ->assertCanNotSeeTableRecords($unpublishedPosts)
         ->removeTableFilters()
         ->assertCanSeeTableRecords($posts);

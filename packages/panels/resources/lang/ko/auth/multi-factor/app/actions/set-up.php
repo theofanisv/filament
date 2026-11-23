@@ -42,6 +42,11 @@ return [
 
         'form' => [
 
+            'password' => [
+                'label' => '현재 비밀번호',
+                'validation_attribute' => '현재 비밀번호',
+            ],
+
             'code' => [
 
                 'label' => '인증 앱에서 6자리 코드를 입력하세요',
@@ -53,6 +58,8 @@ return [
                 'messages' => [
 
                     'invalid' => '입력한 코드가 올바르지 않습니다.',
+
+                    'rate_limited' => '시도 횟수가 너무 많습니다. 나중에 다시 시도하세요.',
 
                 ],
 

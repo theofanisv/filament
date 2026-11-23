@@ -22,13 +22,15 @@ return [
 
                     'invalid' => '입력한 코드가 올바르지 않습니다.',
 
+                    'rate_limited' => '시도 횟수가 너무 많습니다. 나중에 다시 시도하세요.',
+
                 ],
 
             ],
 
             'password' => [
 
-                'label' => '또는 현재 비밀번호를 입력하세요',
+                'label' => '현재 비밀번호를 입력하세요',
 
                 'validation_attribute' => '비밀번호',
 

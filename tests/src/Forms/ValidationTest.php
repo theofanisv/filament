@@ -1,1005 +1,1212 @@
 <?php
 
 use Filament\Forms\Components\Field;
+use Filament\Schemas\JsContent;
 use Filament\Schemas\Schema;
 use Filament\Tests\Fixtures\Enums\IntegerBackedEnum;
 use Filament\Tests\Fixtures\Enums\StringBackedEnum;
 use Filament\Tests\Fixtures\Livewire\Livewire;
+use Filament\Tests\Fixtures\Models\User;
+use Filament\Tests\Fixtures\ReadReplica;
 use Filament\Tests\TestCase;
 use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 uses(TestCase::class);
 
-test('fields can be required', function (): void {
-    $rules = [];
+describe('basic validation', function (): void {
+    test('fields can be `required()`', function (): void {
+        $rules = [];
 
-    try {
-        Schema::make(Livewire::make())
-            ->statePath('data')
-            ->components([
-                $field = (new Field(Str::random()))
-                    ->required(),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
+        try {
+            Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    $field = (new Field(Str::random()))
+                        ->required(),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
 
-    expect($rules)
-        ->toContain('Required');
-});
-
-test('fields use custom validation rules', function (): void {
-    $rules = [];
-
-    try {
-        Schema::make(Livewire::make())
-            ->statePath('data')
-            ->components([
-                $field = (new Field(Str::random()))
-                    ->rule('email')
-                    ->default(Str::random()),
-            ])
-            ->fill()
-            ->validate();
-    } catch (ValidationException $exception) {
-        $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($rules)
-        ->toContain('Email');
-});
-
-test('fields can be conditionally validated', function (): void {
-    $rules = [];
-
-    try {
-        Schema::make(Livewire::make())
-            ->statePath('data')
-            ->components([
-                $field = (new Field(Str::random()))
-                    ->required($isRequired = rand(0, 1)),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    if ($isRequired) {
         expect($rules)
             ->toContain('Required');
-    } else {
+    });
+
+    test('fields use custom validation rules through `rule()`', function (): void {
+        $rules = [];
+
+        try {
+            Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    $field = (new Field(Str::random()))
+                        ->rule('email')
+                        ->default(Str::random()),
+                ])
+                ->fill()
+                ->validate();
+        } catch (ValidationException $exception) {
+            $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
         expect($rules)
-            ->not->toContain('Required');
-    }
+            ->toContain('Email');
+    });
+
+    test('fields can be conditionally `required()`', function (bool $isRequired): void {
+        $rules = [];
+
+        try {
+            Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    $field = (new Field(Str::random()))
+                        ->required($isRequired),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        if ($isRequired) {
+            expect($rules)
+                ->toContain('Required');
+        } else {
+            expect($rules)
+                ->not->toContain('Required');
+        }
+    })->with([false, true]);
+
+    test('fields are validated when `dehydrated(false)`', function (): void {
+        $rules = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                (new Field(Str::random()))
+                    ->required()
+                    ->dehydrated(false),
+            ])
+            ->getValidationRules();
+
+        expect($rules)
+            ->not->toBeEmpty();
+    });
+
+    test('`validatedWhenNotDehydrated(false)` skips only non-dehydrated fields', function (): void {
+        $rules = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                (new Field(Str::random()))
+                    ->required()
+                    ->dehydrated(false)
+                    ->validatedWhenNotDehydrated(false),
+            ])
+            ->getValidationRules();
+
+        expect($rules)
+            ->toBeEmpty();
+
+        $rules = Schema::make(Livewire::make())
+            ->statePath('data')
+            ->components([
+                (new Field(Str::random()))
+                    ->required()
+                    ->dehydrated()
+                    ->validatedWhenNotDehydrated(false),
+            ])
+            ->getValidationRules();
+
+        expect($rules)
+            ->not->toBeEmpty();
+    });
+
+    test('fields can be `requiredIf()` another field matches', function (): void {
+        $rules = [];
+        $errors = [];
+
+        try {
+            Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    (new Field('one'))
+                        ->default('foo'),
+                    $field = (new Field('two'))
+                        ->requiredIf('one', 'foo'),
+                ])
+                ->fill()
+                ->validate();
+        } catch (ValidationException $exception) {
+            $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
+            $errors = $exception->validator->errors()->get($field->getStatePath());
+        }
+
+        expect($rules)
+            ->toContain('RequiredIf');
+
+        expect($errors)
+            ->toContain('The two field is required when one is foo.');
+    });
+
+    test('fields can be `requiredUnless()` another field matches', function (): void {
+        $rules = [];
+        $errors = [];
+
+        try {
+            Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    (new Field('one'))
+                        ->default('bar'),
+                    $field = (new Field('two'))
+                        ->requiredUnless('one', 'foo'),
+                ])
+                ->fill()
+                ->validate();
+        } catch (ValidationException $exception) {
+            $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
+            $errors = $exception->validator->errors()->get($field->getStatePath());
+        }
+
+        expect($rules)
+            ->toContain('RequiredUnless');
+
+        expect($errors)
+            ->toContain('The two field is required unless one is in foo.');
+    });
+
 });
 
-test('fields are validated if they are not dehydrated', function (): void {
-    $rules = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            (new Field(Str::random()))
-                ->required()
-                ->dehydrated(false),
-        ])
-        ->getValidationRules();
+describe('string validation rules', function (): void {
+    test('the `in()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
+        $filamentFails = [];
 
-    expect($rules)
-        ->not->toBeEmpty();
+        $laravelFails = [];
+
+        $fieldName = Str::random();
+
+        $component = Livewire::make()->data([$fieldName => $input]);
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->in($allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->rule(Rule::in($allowed instanceof Closure
+                            ? $allowed()
+                            : $allowed)),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($filamentFails)
+            ->toBe($laravelFails);
+    })->with([
+        [
+            'input' => 'foo',
+            'allowed' => ['bar'],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect(['bar']),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => 'bar',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => 'bar',
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => [],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => '',
+        ],
+        [
+            'input' => null,
+            'allowed' => [],
+        ],
+        [
+            'input' => null,
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => null,
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => null,
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => '',
+            'allowed' => [],
+        ],
+        [
+            'input' => '',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => '',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => '',
+            'allowed' => fn () => null,
+        ],
+    ]);
+
+    test('the `in()` rule can be conditionally validated', function (): void {
+        $fails = [];
+
+        $fieldName = Str::random();
+
+        try {
+            Schema::make(Livewire::make()->data([$fieldName => 'foo']))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->in(['bar'], false),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($fails)
+            ->toBeEmpty();
+    });
+
+    test('the `notIn()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
+        $filamentFails = [];
+
+        $laravelFails = [];
+
+        $fieldName = Str::random();
+
+        $component = Livewire::make()->data([$fieldName => $input]);
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->notIn($allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->rule(Rule::notIn($allowed instanceof Closure
+                            ? $allowed()
+                            : $allowed)),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($filamentFails)
+            ->toBe($laravelFails);
+    })->with([
+        [
+            'input' => 'foo',
+            'allowed' => ['bar'],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect(['bar']),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => 'bar',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => 'bar',
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => [],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => null,
+            'allowed' => [],
+        ],
+        [
+            'input' => null,
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => null,
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => null,
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => '',
+            'allowed' => [],
+        ],
+        [
+            'input' => '',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => '',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => '',
+            'allowed' => fn () => null,
+        ],
+    ]);
+
+    test('the `notIn()` rule can be conditionally validated', function (): void {
+        $fails = [];
+
+        $fieldName = Str::random();
+
+        try {
+            Schema::make(Livewire::make()->data([$fieldName => 'foo']))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->notIn(['bar'], false),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($fails)
+            ->toBeEmpty();
+    });
+
+    test('the `startsWith()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
+        $filamentFails = [];
+
+        $laravelFails = [];
+
+        $fieldName = Str::random();
+
+        $component = Livewire::make()->data([$fieldName => $input]);
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->startsWith($allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        $field = (new Field($fieldName));
+
+        $allowed = $field->evaluate($allowed);
+
+        if ($allowed instanceof Arrayable) {
+            $allowed = $allowed->toArray();
+        }
+
+        if (is_array($allowed)) {
+            $allowed = implode(',', $allowed);
+        }
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field->rule('starts_with:' . $allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($filamentFails)
+            ->toBe($laravelFails);
+    })->with([
+        [
+            'input' => 'foo',
+            'allowed' => ['bar'],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect(['bar']),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => 'bar',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => 'bar',
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => [],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => null,
+            'allowed' => [],
+        ],
+        [
+            'input' => null,
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => null,
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => null,
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => '',
+            'allowed' => [],
+        ],
+        [
+            'input' => '',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => '',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => '',
+            'allowed' => fn () => null,
+        ],
+    ]);
+
+    test('the `startsWith()` rule can be conditionally validated', function (): void {
+        $fails = [];
+
+        $fieldName = Str::random();
+
+        try {
+            Schema::make(Livewire::make()->data([$fieldName => 'foo']))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->startsWith(['bar'], false),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($fails)
+            ->toBeEmpty();
+    });
+
+    test('the `doesntStartWith()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
+        $filamentFails = [];
+
+        $laravelFails = [];
+
+        $fieldName = Str::random();
+
+        $component = Livewire::make()->data([$fieldName => $input]);
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->doesntStartWith($allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        $field = (new Field($fieldName));
+
+        $allowed = $field->evaluate($allowed);
+
+        if ($allowed instanceof Arrayable) {
+            $allowed = $allowed->toArray();
+        }
+
+        if (is_array($allowed)) {
+            $allowed = implode(',', $allowed);
+        }
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field->rule('doesnt_start_with:' . $allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($filamentFails)
+            ->toBe($laravelFails);
+    })->with([
+        [
+            'input' => 'foo',
+            'allowed' => ['bar'],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect(['bar']),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => 'bar',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => 'bar',
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => [],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => null,
+            'allowed' => [],
+        ],
+        [
+            'input' => null,
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => null,
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => null,
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => '',
+            'allowed' => [],
+        ],
+        [
+            'input' => '',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => '',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => '',
+            'allowed' => fn () => null,
+        ],
+    ]);
+
+    test('the `doesntStartWith()` rule can be conditionally validated', function (): void {
+        $fails = [];
+
+        $fieldName = Str::random();
+
+        try {
+            Schema::make(Livewire::make()->data([$fieldName => 'foo']))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->doesntStartWith(['bar'], false),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($fails)
+            ->toBeEmpty();
+    });
+
+    test('the `endsWith()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
+        $filamentFails = [];
+
+        $laravelFails = [];
+
+        $fieldName = Str::random();
+
+        $component = Livewire::make()->data([$fieldName => $input]);
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->endsWith($allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        $field = (new Field($fieldName));
+
+        $allowed = $field->evaluate($allowed);
+
+        if ($allowed instanceof Arrayable) {
+            $allowed = $allowed->toArray();
+        }
+
+        if (is_array($allowed)) {
+            $allowed = implode(',', $allowed);
+        }
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field->rule('ends_with:' . $allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($filamentFails)
+            ->toBe($laravelFails);
+    })->with([
+        [
+            'input' => 'foo',
+            'allowed' => ['bar'],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect(['bar']),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => 'bar',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => 'bar',
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => [],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => null,
+            'allowed' => [],
+        ],
+        [
+            'input' => null,
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => null,
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => null,
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => '',
+            'allowed' => [],
+        ],
+        [
+            'input' => '',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => '',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => '',
+            'allowed' => fn () => null,
+        ],
+    ]);
+
+    test('the `endsWith()` rule can be conditionally validated', function (): void {
+        $fails = [];
+
+        $fieldName = Str::random();
+
+        try {
+            Schema::make(Livewire::make()->data([$fieldName => 'foo']))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->endsWith(['bar'], false),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($fails)
+            ->toBeEmpty();
+    });
+
+    test('the `doesntEndWith()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
+        $filamentFails = [];
+
+        $laravelFails = [];
+
+        $fieldName = Str::random();
+
+        $component = Livewire::make()->data([$fieldName => $input]);
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->doesntEndWith($allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        $field = (new Field($fieldName));
+
+        $allowed = $field->evaluate($allowed);
+
+        if ($allowed instanceof Arrayable) {
+            $allowed = $allowed->toArray();
+        }
+
+        if (is_array($allowed)) {
+            $allowed = implode(',', $allowed);
+        }
+
+        try {
+            Schema::make($component)
+                ->statePath('data')
+                ->components([
+                    $field->rule('doesnt_end_with:' . $allowed),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($filamentFails)
+            ->toBe($laravelFails);
+    })->with([
+        [
+            'input' => 'foo',
+            'allowed' => ['bar'],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect(['bar']),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => 'bar',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => 'bar',
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => [],
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => 'foo',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => 'foo',
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => null,
+            'allowed' => [],
+        ],
+        [
+            'input' => null,
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => null,
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => null,
+            'allowed' => fn () => null,
+        ],
+        [
+            'input' => '',
+            'allowed' => [],
+        ],
+        [
+            'input' => '',
+            'allowed' => collect([]),
+        ],
+        [
+            'input' => '',
+            'allowed' => '',
+        ],
+        fn () => [
+            'input' => '',
+            'allowed' => fn () => null,
+        ],
+    ]);
+
+    test('the `doesntEndWith()` rule can be conditionally validated', function (): void {
+        $fails = [];
+
+        $fieldName = Str::random();
+
+        try {
+            Schema::make(Livewire::make()->data([$fieldName => 'foo']))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field($fieldName))
+                        ->doesntEndWith(['bar'], false),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($fails)
+            ->toBeEmpty();
+    });
+
 });
 
-test('fields are not validated if they are not dehydrated and configured as such', function (): void {
-    $rules = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            (new Field(Str::random()))
-                ->required()
-                ->dehydrated(false)
-                ->validatedWhenNotDehydrated(false),
-        ])
-        ->getValidationRules();
+describe('scoped database validation rules', function (): void {
+    test('`scopedUnique()` uses the given model when the schema has no model', function (): void {
+        $user = User::factory()->create();
 
-    expect($rules)
-        ->toBeEmpty();
+        $errors = [];
 
-    $rules = Schema::make(Livewire::make())
-        ->statePath('data')
-        ->components([
-            (new Field(Str::random()))
-                ->required()
-                ->dehydrated()
-                ->validatedWhenNotDehydrated(false),
-        ])
-        ->getValidationRules();
+        try {
+            Schema::make(Livewire::make()->data(['email' => $user->email]))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field('email'))
+                        ->scopedUnique(User::class),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $errors = $exception->validator->errors()->get($field->getStatePath());
+        }
 
-    expect($rules)
-        ->not->toBeEmpty();
+        expect($errors)
+            ->toContain('The email has already been taken.');
+    });
+
+    test('`scopedUnique()` uses the schema model when no model is given', function (): void {
+        $user = User::factory()->create();
+
+        $errors = [];
+
+        try {
+            Schema::make(Livewire::make()->data(['email' => $user->email]))
+                ->statePath('data')
+                ->model(User::class)
+                ->components([
+                    $field = (new Field('email'))
+                        ->scopedUnique(),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $errors = $exception->validator->errors()->get($field->getStatePath());
+        }
+
+        expect($errors)
+            ->toContain('The email has already been taken.');
+    });
+
+    test('`scopedExists()` uses the given model when the schema has no model', function (): void {
+        User::factory()->create();
+
+        $errors = [];
+
+        try {
+            Schema::make(Livewire::make()->data(['email' => 'missing@example.com']))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field('email'))
+                        ->scopedExists(User::class),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $errors = $exception->validator->errors()->get($field->getStatePath());
+        }
+
+        expect($errors)
+            ->toContain('The selected email is invalid.');
+    });
+
+    test('`scopedExists()` uses the schema model when no model is given', function (): void {
+        User::factory()->create();
+
+        $errors = [];
+
+        try {
+            Schema::make(Livewire::make()->data(['email' => 'missing@example.com']))
+                ->statePath('data')
+                ->model(User::class)
+                ->components([
+                    $field = (new Field('email'))
+                        ->scopedExists(),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $errors = $exception->validator->errors()->get($field->getStatePath());
+        }
+
+        expect($errors)
+            ->toContain('The selected email is invalid.');
+    });
+
+    test('`scopedExists()` validates against the write PDO after the query is replaced', function (): void {
+        $connection = ReadReplica::connection('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)');
+        $connection->getPdo()->exec("INSERT INTO users (email) VALUES ('primary@example.com')");
+        $connection->getReadPdo()->exec("INSERT INTO users (email) VALUES ('stale@example.com')");
+
+        $validate = function (string $email): array {
+            try {
+                Schema::make(Livewire::make()->data(['email' => $email]))
+                    ->statePath('data')
+                    ->components([
+                        $field = (new Field('email'))
+                            ->scopedExists(User::class, modifyQueryUsing: fn (): Builder => User::on('read-replica')->where('email', $email)),
+                    ])
+                    ->validate();
+
+                return [];
+            } catch (ValidationException $exception) {
+                return $exception->validator->errors()->get($field->getStatePath());
+            }
+        };
+
+        expect($validate('stale@example.com'))
+            ->toContain('The selected email is invalid.')
+            ->and($validate('primary@example.com'))
+            ->toBeEmpty();
+    });
+
+    test('`scopedUnique()` validates against the write PDO after the query is replaced', function (): void {
+        $connection = ReadReplica::connection('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)');
+        $connection->getPdo()->exec("INSERT INTO users (email) VALUES ('primary@example.com')");
+        $connection->getReadPdo()->exec("INSERT INTO users (email) VALUES ('removed@example.com')");
+
+        $validate = function (string $email): array {
+            try {
+                Schema::make(Livewire::make()->data(['email' => $email]))
+                    ->statePath('data')
+                    ->components([
+                        $field = (new Field('email'))
+                            ->scopedUnique(User::class, modifyQueryUsing: fn (): Builder => User::on('read-replica')->where('email', $email)),
+                    ])
+                    ->validate();
+
+                return [];
+            } catch (ValidationException $exception) {
+                return $exception->validator->errors()->get($field->getStatePath());
+            }
+        };
+
+        expect($validate('primary@example.com'))
+            ->toContain('The email has already been taken.')
+            ->and($validate('removed@example.com'))
+            ->toBeEmpty();
+    });
+
+    test('tenant-aware `exists()` validates against the write PDO', function (): void {
+        $connection = ReadReplica::connection('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)');
+        $connection->getPdo()->exec("INSERT INTO users (email) VALUES ('primary@example.com')");
+        $connection->getReadPdo()->exec("INSERT INTO users (email) VALUES ('stale@example.com')");
+        ReadReplicaValidationUser::addGlobalScope(filament()->getTenancyScopeName(), fn (Builder $query): Builder => $query);
+
+        $validate = function (string $email): array {
+            try {
+                Schema::make(Livewire::make()->data(['email' => $email]))
+                    ->statePath('data')
+                    ->components([
+                        $field = (new Field('email'))->exists(ReadReplicaValidationUser::class),
+                    ])
+                    ->validate();
+
+                return [];
+            } catch (ValidationException $exception) {
+                return $exception->validator->errors()->get($field->getStatePath());
+            }
+        };
+
+        expect($validate('stale@example.com'))
+            ->toContain('The selected email is invalid.')
+            ->and($validate('primary@example.com'))
+            ->toBeEmpty();
+    });
 });
 
-test('fields can be required if', function (): void {
-    $rules = [];
-    $errors = [];
+class ReadReplicaValidationUser extends User
+{
+    protected $connection = 'read-replica';
 
-    try {
-        Schema::make(Livewire::make())
-            ->statePath('data')
-            ->components([
-                $field1 = (new Field('one'))
-                    ->default('foo'),
-                $field2 = (new Field('two'))
-                    ->requiredIf('one', 'foo'),
-            ])
-            ->fill()
-            ->validate();
-    } catch (ValidationException $exception) {
-        $rules = array_keys($exception->validator->failed()[$field2->getStatePath()]);
-        $errors = $exception->validator->errors()->get($field2->getStatePath());
-    }
+    protected $table = 'users';
+}
 
-    expect($rules)
-        ->toContain('RequiredIf');
+describe('enum validation', function (): void {
+    test('conditional validation rules support enum instances', function (string $rule, BackedEnum $defaultValue, BackedEnum | array $enumValue): void {
+        $rules = [];
 
-    expect($errors)
-        ->toContain('The two field is required when one is foo.');
+        try {
+            Schema::make(Livewire::make())
+                ->statePath('data')
+                ->components([
+                    (new Field('status'))
+                        ->default($defaultValue),
+                    $field = (new Field('description'))
+                        ->{$rule}('status', $enumValue),
+                ])
+                ->fill()
+                ->validate();
+        } catch (ValidationException $exception) {
+            $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($rules)->not->toBeEmpty();
+    })->with([
+        ['requiredIf', StringBackedEnum::One, StringBackedEnum::One],
+        ['requiredIf', StringBackedEnum::One, [StringBackedEnum::One, StringBackedEnum::Two]],
+        ['requiredUnless', StringBackedEnum::Two, StringBackedEnum::One],
+        ['requiredUnless', StringBackedEnum::Three, [StringBackedEnum::One, StringBackedEnum::Two]],
+        ['requiredIf', IntegerBackedEnum::One, IntegerBackedEnum::One],
+        ['requiredIf', IntegerBackedEnum::One, [IntegerBackedEnum::One, IntegerBackedEnum::Two]],
+    ]);
+
+    test('`in()` and `notIn()` validation rules support enum instances', function (string $rule, BackedEnum $value): void {
+        $rules = [];
+
+        try {
+            Schema::make(Livewire::make()->data(['status' => $value]))
+                ->statePath('data')
+                ->components([
+                    $field = (new Field('status'))
+                        ->{$rule}([StringBackedEnum::One, StringBackedEnum::Two]),
+                ])
+                ->validate();
+        } catch (ValidationException $exception) {
+            $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
+        }
+
+        expect($rules)->not->toBeEmpty();
+    })->with([
+        ['notIn', StringBackedEnum::One],
+        ['in', StringBackedEnum::Three],
+    ]);
 });
 
-test('fields can be required unless', function (): void {
-    $rules = [];
-    $errors = [];
+describe('validation attributes', function (): void {
+    test('fields with `Htmlable` labels use the default label for validation attribute', function (): void {
+        $field = (new Field('user_name'))
+            ->label(JsContent::make('dynamicLabel'));
 
-    try {
-        Schema::make(Livewire::make())
-            ->statePath('data')
-            ->components([
-                $field1 = (new Field('one'))
-                    ->default('bar'),
-                $field2 = (new Field('two'))
-                    ->requiredUnless('one', 'foo'),
-            ])
-            ->fill()
-            ->validate();
-    } catch (ValidationException $exception) {
-        $rules = array_keys($exception->validator->failed()[$field2->getStatePath()]);
-        $errors = $exception->validator->errors()->get($field2->getStatePath());
-    }
+        expect($field->getValidationAttribute())
+            ->toBe('user name');
+    });
 
-    expect($rules)
-        ->toContain('RequiredUnless');
+    test('fields with `Htmlable` labels can still override the validation attribute', function (): void {
+        $field = (new Field('user_name'))
+            ->label(JsContent::make('dynamicLabel'))
+            ->validationAttribute('custom attribute');
 
-    expect($errors)
-        ->toContain('The two field is required unless one is in foo.');
+        expect($field->getValidationAttribute())
+            ->toBe('custom attribute');
+    });
 });
-
-test('the `in()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
-    $filamentFails = [];
-
-    $laravelFails = [];
-
-    $fieldName = Str::random();
-
-    $component = Livewire::make()->data([$fieldName => $input]);
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->in($allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->rule(Rule::in($allowed instanceof Closure
-                        ? $allowed()
-                        : $allowed)),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($filamentFails)
-        ->toBe($laravelFails);
-})->with([
-    [
-        'input' => 'foo',
-        'allowed' => ['bar'],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect(['bar']),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => 'bar',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => 'bar',
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => [],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => '',
-    ],
-    [
-        'input' => null,
-        'allowed' => [],
-    ],
-    [
-        'input' => null,
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => null,
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => null,
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => '',
-        'allowed' => [],
-    ],
-    [
-        'input' => '',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => '',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => '',
-        'allowed' => fn () => null,
-    ],
-]);
-
-test('the `in()` rule can be conditionally validated', function (): void {
-    $fails = [];
-
-    $fieldName = Str::random();
-
-    try {
-        Schema::make(Livewire::make()->data([$fieldName => 'foo']))
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->in(['bar'], false),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($fails)
-        ->toBeEmpty();
-});
-
-test('the `notIn()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
-    $filamentFails = [];
-
-    $laravelFails = [];
-
-    $fieldName = Str::random();
-
-    $component = Livewire::make()->data([$fieldName => $input]);
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->notIn($allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->rule(Rule::notIn($allowed instanceof Closure
-                        ? $allowed()
-                        : $allowed)),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($filamentFails)
-        ->toBe($laravelFails);
-})->with([
-    [
-        'input' => 'foo',
-        'allowed' => ['bar'],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect(['bar']),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => 'bar',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => 'bar',
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => [],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => null,
-        'allowed' => [],
-    ],
-    [
-        'input' => null,
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => null,
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => null,
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => '',
-        'allowed' => [],
-    ],
-    [
-        'input' => '',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => '',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => '',
-        'allowed' => fn () => null,
-    ],
-]);
-
-test('the `notIn()` rule can be conditionally validated', function (): void {
-    $fails = [];
-
-    $fieldName = Str::random();
-
-    try {
-        Schema::make(Livewire::make()->data([$fieldName => 'foo']))
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->notIn(['bar'], false),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($fails)
-        ->toBeEmpty();
-});
-
-test('the `startsWith()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
-    $filamentFails = [];
-
-    $laravelFails = [];
-
-    $fieldName = Str::random();
-
-    $component = Livewire::make()->data([$fieldName => $input]);
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->startsWith($allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    $field = (new Field($fieldName));
-
-    $allowed = $field->evaluate($allowed);
-
-    if ($allowed instanceof Arrayable) {
-        $allowed = $allowed->toArray();
-    }
-
-    if (is_array($allowed)) {
-        $allowed = implode(',', $allowed);
-    }
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field->rule('starts_with:' . $allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($filamentFails)
-        ->toBe($laravelFails);
-})->with([
-    [
-        'input' => 'foo',
-        'allowed' => ['bar'],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect(['bar']),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => 'bar',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => 'bar',
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => [],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => null,
-        'allowed' => [],
-    ],
-    [
-        'input' => null,
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => null,
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => null,
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => '',
-        'allowed' => [],
-    ],
-    [
-        'input' => '',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => '',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => '',
-        'allowed' => fn () => null,
-    ],
-]);
-
-test('the `startsWith()` rule can be conditionally validated', function (): void {
-    $fails = [];
-
-    $fieldName = Str::random();
-
-    try {
-        Schema::make(Livewire::make()->data([$fieldName => 'foo']))
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->startsWith(['bar'], false),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($fails)
-        ->toBeEmpty();
-});
-
-test('the `doesntStartWith()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
-    $filamentFails = [];
-
-    $laravelFails = [];
-
-    $fieldName = Str::random();
-
-    $component = Livewire::make()->data([$fieldName => $input]);
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->doesntStartWith($allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    $field = (new Field($fieldName));
-
-    $allowed = $field->evaluate($allowed);
-
-    if ($allowed instanceof Arrayable) {
-        $allowed = $allowed->toArray();
-    }
-
-    if (is_array($allowed)) {
-        $allowed = implode(',', $allowed);
-    }
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field->rule('doesnt_start_with:' . $allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($filamentFails)
-        ->toBe($laravelFails);
-})->with([
-    [
-        'input' => 'foo',
-        'allowed' => ['bar'],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect(['bar']),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => 'bar',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => 'bar',
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => [],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => null,
-        'allowed' => [],
-    ],
-    [
-        'input' => null,
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => null,
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => null,
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => '',
-        'allowed' => [],
-    ],
-    [
-        'input' => '',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => '',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => '',
-        'allowed' => fn () => null,
-    ],
-]);
-
-test('the `doesntStartWith()` rule can be conditionally validated', function (): void {
-    $fails = [];
-
-    $fieldName = Str::random();
-
-    try {
-        Schema::make(Livewire::make()->data([$fieldName => 'foo']))
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->doesntStartWith(['bar'], false),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($fails)
-        ->toBeEmpty();
-});
-
-test('the `endsWith()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
-    $filamentFails = [];
-
-    $laravelFails = [];
-
-    $fieldName = Str::random();
-
-    $component = Livewire::make()->data([$fieldName => $input]);
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->endsWith($allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    $field = (new Field($fieldName));
-
-    $allowed = $field->evaluate($allowed);
-
-    if ($allowed instanceof Arrayable) {
-        $allowed = $allowed->toArray();
-    }
-
-    if (is_array($allowed)) {
-        $allowed = implode(',', $allowed);
-    }
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field->rule('ends_with:' . $allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($filamentFails)
-        ->toBe($laravelFails);
-})->with([
-    [
-        'input' => 'foo',
-        'allowed' => ['bar'],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect(['bar']),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => 'bar',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => 'bar',
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => [],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => null,
-        'allowed' => [],
-    ],
-    [
-        'input' => null,
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => null,
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => null,
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => '',
-        'allowed' => [],
-    ],
-    [
-        'input' => '',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => '',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => '',
-        'allowed' => fn () => null,
-    ],
-]);
-
-test('the `endsWith()` rule can be conditionally validated', function (): void {
-    $fails = [];
-
-    $fieldName = Str::random();
-
-    try {
-        Schema::make(Livewire::make()->data([$fieldName => 'foo']))
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->endsWith(['bar'], false),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($fails)
-        ->toBeEmpty();
-});
-
-test('the `doesntEndWith()` rule behaves the same as Laravel\'s', function (?string $input, array | Arrayable | string | Closure $allowed): void {
-    $filamentFails = [];
-
-    $laravelFails = [];
-
-    $fieldName = Str::random();
-
-    $component = Livewire::make()->data([$fieldName => $input]);
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->doesntEndWith($allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $filamentFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    $field = (new Field($fieldName));
-
-    $allowed = $field->evaluate($allowed);
-
-    if ($allowed instanceof Arrayable) {
-        $allowed = $allowed->toArray();
-    }
-
-    if (is_array($allowed)) {
-        $allowed = implode(',', $allowed);
-    }
-
-    try {
-        Schema::make($component)
-            ->statePath('data')
-            ->components([
-                $field->rule('doesnt_end_with:' . $allowed),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $laravelFails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($filamentFails)
-        ->toBe($laravelFails);
-})->with([
-    [
-        'input' => 'foo',
-        'allowed' => ['bar'],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect(['bar']),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => 'bar',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => 'bar',
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => [],
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => 'foo',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => 'foo',
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => null,
-        'allowed' => [],
-    ],
-    [
-        'input' => null,
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => null,
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => null,
-        'allowed' => fn () => null,
-    ],
-    [
-        'input' => '',
-        'allowed' => [],
-    ],
-    [
-        'input' => '',
-        'allowed' => collect([]),
-    ],
-    [
-        'input' => '',
-        'allowed' => '',
-    ],
-    fn () => [
-        'input' => '',
-        'allowed' => fn () => null,
-    ],
-]);
-
-test('the `doesntEndWith()` rule can be conditionally validated', function (): void {
-    $fails = [];
-
-    $fieldName = Str::random();
-
-    try {
-        Schema::make(Livewire::make()->data([$fieldName => 'foo']))
-            ->statePath('data')
-            ->components([
-                $field = (new Field($fieldName))
-                    ->doesntEndWith(['bar'], false),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $fails = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($fails)
-        ->toBeEmpty();
-});
-
-test('conditional validation rules support enum instances', function (string $rule, BackedEnum $defaultValue, BackedEnum | array $enumValue): void {
-    $rules = [];
-
-    try {
-        Schema::make(Livewire::make())
-            ->statePath('data')
-            ->components([
-                (new Field('status'))
-                    ->default($defaultValue),
-                $field = (new Field('description'))
-                    ->{$rule}('status', $enumValue),
-            ])
-            ->fill()
-            ->validate();
-    } catch (ValidationException $exception) {
-        $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($rules)->not->toBeEmpty();
-})->with([
-    ['requiredIf', StringBackedEnum::One, StringBackedEnum::One],
-    ['requiredIf', StringBackedEnum::One, [StringBackedEnum::One, StringBackedEnum::Two]],
-    ['requiredUnless', StringBackedEnum::Two, StringBackedEnum::One],
-    ['requiredUnless', StringBackedEnum::Three, [StringBackedEnum::One, StringBackedEnum::Two]],
-    ['requiredIf', IntegerBackedEnum::One, IntegerBackedEnum::One],
-    ['requiredIf', IntegerBackedEnum::One, [IntegerBackedEnum::One, IntegerBackedEnum::Two]],
-]);
-
-test('in/notIn validation rules support enum instances', function (string $rule, BackedEnum $value): void {
-    $rules = [];
-
-    try {
-        Schema::make(Livewire::make()->data(['status' => $value]))
-            ->statePath('data')
-            ->components([
-                $field = (new Field('status'))
-                    ->{$rule}([StringBackedEnum::One, StringBackedEnum::Two]),
-            ])
-            ->validate();
-    } catch (ValidationException $exception) {
-        $rules = array_keys($exception->validator->failed()[$field->getStatePath()]);
-    }
-
-    expect($rules)->not->toBeEmpty();
-})->with([
-    ['notIn', StringBackedEnum::One],
-    ['in', StringBackedEnum::Three],
-]);

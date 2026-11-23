@@ -3,7 +3,7 @@
 namespace Filament\Forms\Components\Concerns;
 
 use Closure;
-use Filament\Support\Components\Attributes\ExposedLivewireMethod;
+use Filament\Support\Components\Attributes\Exposed;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Filesystem\FilesystemAdapter;
@@ -50,7 +50,7 @@ trait HasFileAttachments
         return $this;
     }
 
-    #[ExposedLivewireMethod]
+    #[Exposed]
     #[Renderless]
     public function getUploadedFileAttachmentTemporaryUrl(TemporaryUploadedFile | string | null $attachment = null): ?string
     {
@@ -104,9 +104,16 @@ trait HasFileAttachments
             return $savedFile;
         }
 
-        $storeMethod = $this->getFileAttachmentsVisibility() === 'public' ? 'storePublicly' : 'store';
+        $path = $file->store($this->getFileAttachmentsDirectory(), [
+            'disk' => $this->getFileAttachmentsDiskName(),
+            'mimetype' => $file->getMimeType(),
+        ]);
 
-        return $file->{$storeMethod}($this->getFileAttachmentsDirectory(), $this->getFileAttachmentsDiskName());
+        if ($this->getFileAttachmentsVisibility() === 'public') {
+            rescue(fn () => $this->getFileAttachmentsDisk()->setVisibility($path, 'public'), report: false);
+        }
+
+        return $path;
     }
 
     public function defaultSaveUploadedFileAttachment(TemporaryUploadedFile $file): mixed
@@ -114,10 +121,14 @@ trait HasFileAttachments
         return null;
     }
 
-    #[ExposedLivewireMethod]
+    #[Exposed]
     #[Renderless]
     public function saveUploadedFileAttachmentAndGetUrl(): ?string
     {
+        if ($this->isDisabled()) {
+            return null;
+        }
+
         $attachment = $this->getUploadedFileAttachment();
 
         if (! $attachment) {
@@ -243,7 +254,7 @@ trait HasFileAttachments
             try {
                 return $storage->temporaryUrl(
                     $file,
-                    now()->addMinutes(30)->endOfHour(),
+                    now()->addMinutes(config('filament.temporary_file_url_expiry_minutes', 30))->endOfHour(),
                 );
             } catch (Throwable $exception) {
                 // This driver does not support creating temporary URLs.

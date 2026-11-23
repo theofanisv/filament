@@ -1,3 +1,5 @@
+import normalizeSearchString from '../../../../support/resources/js/utilities/normalize-search-string.js'
+
 export default function checkboxListFormComponent({ livewireId }) {
     return {
         areAllCheckboxesChecked: false,
@@ -5,6 +7,8 @@ export default function checkboxListFormComponent({ livewireId }) {
         checkboxListOptions: [],
 
         search: '',
+
+        unsubscribeLivewireHook: null,
 
         visibleCheckboxListOptions: [],
 
@@ -19,7 +23,7 @@ export default function checkboxListFormComponent({ livewireId }) {
                 this.checkIfAllCheckboxesAreChecked()
             })
 
-            Livewire.hook(
+            this.unsubscribeLivewireHook = Livewire.hook(
                 'commit',
                 ({ component, commit, succeed, fail, respond }) => {
                     succeed(({ snapshot, effect }) => {
@@ -85,28 +89,33 @@ export default function checkboxListFormComponent({ livewireId }) {
 
         updateVisibleCheckboxListOptions() {
             this.visibleCheckboxListOptions = this.checkboxListOptions.filter(
-                (checkboxListItem) => {
-                    if (['', null, undefined].includes(this.search)) {
-                        return true
-                    }
-
-                    if (
-                        checkboxListItem
-                            .querySelector('.fi-fo-checkbox-list-option-label')
-                            ?.innerText.toLowerCase()
-                            .includes(this.search.toLowerCase())
-                    ) {
-                        return true
-                    }
-
-                    return checkboxListItem
-                        .querySelector(
-                            '.fi-fo-checkbox-list-option-description',
-                        )
-                        ?.innerText.toLowerCase()
-                        .includes(this.search.toLowerCase())
-                },
+                (checkboxListItem) => this.matchesSearch(checkboxListItem),
             )
+        },
+
+        matchesSearch(checkboxListItem) {
+            if (['', null, undefined].includes(this.search)) {
+                return true
+            }
+
+            const search = normalizeSearchString(this.search)
+
+            return (
+                normalizeSearchString(
+                    checkboxListItem.querySelector(
+                        '.fi-fo-checkbox-list-option-label',
+                    )?.innerText ?? '',
+                ).includes(search) ||
+                normalizeSearchString(
+                    checkboxListItem.querySelector(
+                        '.fi-fo-checkbox-list-option-description',
+                    )?.innerText ?? '',
+                ).includes(search)
+            )
+        },
+
+        destroy() {
+            this.unsubscribeLivewireHook?.()
         },
     }
 }

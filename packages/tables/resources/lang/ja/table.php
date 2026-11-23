@@ -12,6 +12,10 @@ return [
                 'label' => 'カラムに適用',
             ],
 
+            'reorder' => [
+                'label' => 'カラムを並び替え',
+            ],
+
             'reset' => [
                 'label' => 'リセット',
             ],
@@ -26,9 +30,20 @@ return [
             'label' => 'アクション',
         ],
 
+        'icon' => [
+
+            'boolean' => [
+                'true' => 'はい',
+                'false' => 'いいえ',
+            ],
+
+        ],
+
         'select' => [
 
             'loading_message' => '読み込み中...',
+
+            'no_options_message' => '利用可能なオプションはありません。',
 
             'no_search_results_message' => '条件に一致するオプションがありません。',
 
@@ -64,7 +79,7 @@ return [
         ],
 
         'bulk_select_group' => [
-            'label' => '一括操作のグループ:keyの選択/解除。',
+            'label' => '一括操作のグループ:titleの選択/解除。',
         ],
 
         'search' => [
@@ -113,6 +128,10 @@ return [
             'label' => 'レコードの並び替え',
         ],
 
+        'reorder_record' => [
+            'label' => '項目:keyを並び替え',
+        ],
+
         'filter' => [
             'label' => 'フィルタ',
         ],
@@ -127,6 +146,10 @@ return [
 
         'column_manager' => [
             'label' => '列を切り替える',
+        ],
+
+        'toggle_record_content' => [
+            'label' => '項目:keyを展開/折り畳む',
         ],
 
     ],
@@ -216,7 +239,11 @@ return [
 
     ],
 
+    'loading' => '読み込み中...',
+
     'reorder_indicator' => 'ドラッグ＆ドロップでレコードを並び替え。',
+
+    'result_count' => '{0} 結果がありません|{1} :count件の結果|[2,*] :count件の結果',
 
     'selection_indicator' => [
 

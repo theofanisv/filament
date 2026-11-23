@@ -12,6 +12,10 @@ return [
                 'label' => 'Apply columns',
             ],
 
+            'reorder' => [
+                'label' => 'Column awmna thlak',
+            ],
+
             'reset' => [
                 'label' => 'Tihṭhatna',
             ],
@@ -26,11 +30,22 @@ return [
             'label' => 'Thiltihna|Thiltihnate',
         ],
 
+        'icon' => [
+
+            'boolean' => [
+                'true' => 'Aw',
+                'false' => 'Aih',
+            ],
+
+        ],
+
         'select' => [
 
             'loading_message' => 'Loading...',
 
-            'no_search_results_message' => 'I search hi a awmlo.',
+            'no_options_message' => 'Duh thlan tur a awmlo.',
+
+            'no_search_results_message' => 'I thilzawn hi a awmlo.',
 
             'placeholder' => 'I duh thlang rawh...',
 
@@ -43,11 +58,11 @@ return [
         'text' => [
 
             'actions' => [
-                'collapse_list' => 'Show :count less',
-                'expand_list' => 'Show :count more',
+                'collapse_list' => ':count in tilang tlem rawh',
+                'expand_list' => ':count in tilang tam rawh',
             ],
 
-            'more_list_items' => 'and :count more',
+            'more_list_items' => 'leh adang :count',
 
         ],
 
@@ -70,7 +85,7 @@ return [
         'search' => [
             'label' => 'Zawnna',
             'placeholder' => 'Zawnna',
-            'indicator' => 'Zawnna',
+            'indicator' => 'Zawnte',
         ],
 
     ],
@@ -113,6 +128,10 @@ return [
             'label' => 'Records awmna thlak',
         ],
 
+        'reorder_record' => [
+            'label' => 'Reorder item :key',
+        ],
+
         'filter' => [
             'label' => 'Thlit fîmna',
         ],
@@ -129,13 +148,17 @@ return [
             'label' => 'Column manager',
         ],
 
+        'toggle_record_content' => [
+            'label' => 'Expand/collapse item :key',
+        ],
+
     ],
 
     'empty' => [
 
-        'heading' => ':Model an awm lo',
+        'heading' => ':Model a awm lo',
 
-        'description' => 'A bultan nan :model siam rawh.',
+        'description' => 'A bulṭan nan :model siam rawh.',
 
     ],
 
@@ -148,12 +171,12 @@ return [
             ],
 
             'remove' => [
-                'label' => 'Thlit fîm hlihna',
+                'label' => 'Thlit fîm hlîhna',
             ],
 
             'remove_all' => [
-                'label' => 'Thlit fîm ho hlihna',
-                'tooltip' => 'Thlit fîm ho hlihna',
+                'label' => 'Thlit fîm ho hlîhna',
+                'tooltip' => 'Thlit fîm ho hlîhna',
             ],
 
             'reset' => [
@@ -217,7 +240,11 @@ return [
 
     ],
 
-    'reorder_indicator' => 'Drag and drop the records into order.',
+    'loading' => 'Loading...',
+
+    'reorder_indicator' => 'A indawt dânin record dah kual rawh.',
+
+    'result_count' => '{0} A awm lo|{1} :count a awm|[2,*] :count an awm',
 
     'selection_indicator' => [
 

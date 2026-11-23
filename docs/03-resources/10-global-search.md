@@ -1,11 +1,12 @@
 ---
 title: Global search
 ---
-import Aside from "@components/Aside.astro"
 
 ## Introduction
 
 Global search allows you to search across all of your resource records, from anywhere in the app.
+
+<AutoScreenshot name="panels/resources/global-search" alt="Global search" />
 
 ## Setting global search result titles
 
@@ -17,9 +18,8 @@ protected static ?string $recordTitleAttribute = 'title';
 
 This attribute is used to retrieve the search result title for that record.
 
-<Aside variant="warning">
-    Your resource needs to have an Edit or View page to allow the global search results to link to a URL, otherwise no results will be returned for this resource.
-</Aside>
+> [!NOTE]
+> Your resource does not need an Edit or View page to appear in global search results. Results can also link to table action modals, as explained in [Customizing global search result URLs](#customizing-global-search-result-urls).
 
 You may customize the title further by overriding `getGlobalSearchResultTitle()` method. It may return a plain text string, or an instance of `Illuminate\Support\HtmlString` or `Illuminate\Contracts\Support\Htmlable`. This allows you to render HTML, or even Markdown, in the search result title:
 
@@ -57,7 +57,11 @@ public static function getGlobalSearchResultDetails(Model $record): array
 }
 ```
 
-In this example, the category and author of the record will be displayed below its title in the search result. However, the `category` and `author` relationships will be lazy-loaded, which will result in poor results performance. To [eager-load](https://laravel.com/docs/eloquent-relationships#eager-loading) these relationships, we must override the `getGlobalSearchEloquentQuery()` method:
+In this example, the category and author of the record will be displayed below its title in the search result.
+
+<AutoScreenshot name="panels/resources/global-search-details" alt="Global search with extra details" />
+
+However, the `category` and `author` relationships will be lazy-loaded, which will result in poor results performance. To [eager-load](https://laravel.com/docs/eloquent-relationships#eager-loading) these relationships, we must override the `getGlobalSearchEloquentQuery()` method:
 
 ```php
 public static function getGlobalSearchEloquentQuery(): Builder
@@ -68,7 +72,11 @@ public static function getGlobalSearchEloquentQuery(): Builder
 
 ## Customizing global search result URLs
 
-Global search results will link to the [Edit page](editing-records) of your resource, or the [View page](viewing-records) if the user does not have [edit permissions](editing-records#authorization). To customize this, you may override the `getGlobalSearchResultUrl()` method and return a route of your choice:
+By default, global search results link to the [View page](viewing-records) if it exists and the user has [view permissions](viewing-records#authorization). Otherwise, they link to the [Edit page](editing-records) if it exists and the user has [edit permissions](editing-records#authorization).
+
+If neither page is available to the user, Filament generates a URL to the resource's List page that targets the `view` table action if the user has view permissions, or the `edit` table action if they only have edit permissions. This default fallback requires a registered List (`index`) page with the corresponding table action configured to open a modal. Otherwise, you must provide a custom result URL. If the user has neither permission, the record is excluded from the results.
+
+To customize this, you may override the `getGlobalSearchResultUrl()` method and return a route of your choice:
 
 ```php
 public static function getGlobalSearchResultUrl(Model $record): string
@@ -76,6 +84,8 @@ public static function getGlobalSearchResultUrl(Model $record): string
     return UserResource::getUrl('edit', ['record' => $record]);
 }
 ```
+
+For [nested resources](nesting), you must override this method to provide a URL with the required parent record parameters. Nested resource records are excluded from global search results by default.
 
 ## Adding actions to global search results
 
@@ -96,6 +106,8 @@ public static function getGlobalSearchResultActions(Model $record): array
 ```
 
 You can learn more about how to style action buttons [here](../actions/overview).
+
+<AutoScreenshot name="panels/resources/global-search-actions" alt="Global search with actions" />
 
 ### Opening URLs from global search actions
 
@@ -121,11 +133,61 @@ Action::make('quickView')
 
 ## Limiting the number of global search results
 
-By default, global search will return up to 50 results per resource. You can customize this on the resource label by overriding the `$globalSearchResultsLimit` property:
+By default, global search will return up to 50 results per resource. You can customize this on the resource class by overriding the `$globalSearchResultsLimit` property:
 
 ```php
 protected static int $globalSearchResultsLimit = 20;
 ```
+
+## Sorting global search results
+
+By default, global search results are ordered alphabetically by resource name. You can customize this order by setting the `$globalSearchSort` property on your resource:
+
+```php
+protected static ?int $globalSearchSort = 3;
+```
+
+Resources with a lower sort value will appear before those with a higher sort value.
+
+## Disabling global search
+
+As [explained above](#setting-global-search-result-titles), global search is automatically enabled once you set a title attribute for your resource. Sometimes you may want to specify the title attribute while not enabling global search.
+
+This can be achieved by disabling global search in the [configuration](../panel-configuration):
+
+```php
+use Filament\Panel;
+
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        // ...
+        ->globalSearch(false);
+}
+```
+
+## Requiring resources to opt in to global search
+
+By default, all resources with a [title attribute](#setting-global-search-result-titles) are included in global search results. If you'd prefer resources to explicitly opt in, you can use the `globalSearchResourceOptIn()` method in the [configuration](../panel-configuration):
+
+```php
+use Filament\Panel;
+
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        // ...
+        ->globalSearchResourceOptIn();
+}
+```
+
+Now, only resources that explicitly set `$isGloballySearchable` to `true` will be included in global search results:
+
+```php
+protected static bool $isGloballySearchable = true;
+```
+
+Resources that do not declare this property will be excluded from global search, even if they have a title attribute set.
 
 ## Moving the global search to the sidebar
 
@@ -142,33 +204,6 @@ public function panel(Panel $panel): Panel
     return $panel
         // ...
         ->globalSearch(position: GlobalSearchPosition::Sidebar);
-}
-```
-
-## Sorting global search results
-
-By default, global search results are ordered alphabetically by resource name. You can customize this order by setting the `$globalSearchSort` property on your resource:
-
-```php
-protected static ?int $globalSearchSort = 3;
-```
-
-Now, navigation items with a lower sort value will appear before those with a higher sort value - the order is ascending.
-
-## Disabling global search
-
-As [explained above](#title), global search is automatically enabled once you set a title attribute for your resource. Sometimes you may want to specify the title attribute while not enabling global search.
-
-This can be achieved by disabling global search in the [configuration](../panel-configuration):
-
-```php
-use Filament\Panel;
-
-public function panel(Panel $panel): Panel
-{
-    return $panel
-        // ...
-        ->globalSearch(false);
 }
 ```
 
@@ -218,6 +253,8 @@ public function panel(Panel $panel): Panel
         ->globalSearchFieldKeyBindingSuffix();
 }
 ```
+
+<AutoScreenshot name="panels/resources/global-search-key-binding" alt="Global search field with key binding suffix" />
 
 To customize the suffix yourself, you can pass a string or function to the `globalSearchFieldSuffix()` method. For example, to provide a custom key binding suffix for each platform manually:
 
